@@ -79,6 +79,14 @@
         "types": "./dist/esm/component/convex.config.d.ts",
         "default": "./dist/esm/component/convex.config.js"
       }
+    },
+    "./dataModel": {
+      "import": {
+        "types": "./src/component/_generated/dataModel.d.ts"
+      },
+      "require": {
+        "types": "./src/component/_generated/dataModel.d.ts"
+      }
     }
   },
   "peerDependencies": {
