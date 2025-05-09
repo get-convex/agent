@@ -48,6 +48,59 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   agent: {
+    apiKeys: {
+      destroy: FunctionReference<
+        "mutation",
+        "internal",
+        { apiKey?: string; name?: string },
+        | "missing"
+        | "deleted"
+        | "name mismatch"
+        | "must provide either apiKey or name"
+      >;
+      issue: FunctionReference<
+        "mutation",
+        "internal",
+        { name?: string },
+        string
+      >;
+      validate: FunctionReference<
+        "query",
+        "internal",
+        { apiKey: string },
+        boolean
+      >;
+    };
+    files: {
+      addFile: FunctionReference<
+        "mutation",
+        "internal",
+        { hash: string; storageId: string },
+        string
+      >;
+      getFilesToDelete: FunctionReference<
+        "query",
+        "internal",
+        { cursor?: string; limit?: number },
+        {
+          continueCursor: string;
+          files: Array<{
+            _creationTime: number;
+            _id: string;
+            hash: string;
+            refcount: number;
+            storageId: string;
+          }>;
+          isDone: boolean;
+        }
+      >;
+      resuseFile: FunctionReference<
+        "mutation",
+        "internal",
+        { fileId: string },
+        null
+      >;
+    };
     messages: {
       addMessages: FunctionReference<
         "mutation",
@@ -533,7 +586,7 @@ export declare const components: {
         "internal",
         {
           failPendingSteps?: boolean;
-          messageId: string;
+          parentMessageId: string;
           step: {
             messages: Array<{
               embedding?: {
@@ -1131,88 +1184,11 @@ export declare const components: {
         { messageId: string },
         null
       >;
-      createThread: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          defaultSystemPrompt?: string;
-          parentThreadIds?: Array<string>;
-          summary?: string;
-          title?: string;
-          userId?: string;
-        },
-        {
-          _creationTime: number;
-          _id: string;
-          defaultSystemPrompt?: string;
-          order?: number;
-          parentThreadIds?: Array<string>;
-          status: "active" | "archived";
-          summary?: string;
-          title?: string;
-          userId?: string;
-        }
-      >;
-      deleteAllForThreadIdAsync: FunctionReference<
-        "mutation",
-        "internal",
-        { cursor?: string; limit?: number; threadId: string },
-        { cursor: string; isDone: boolean }
-      >;
-      deleteAllForThreadIdSync: FunctionReference<
-        "action",
-        "internal",
-        { cursor?: string; limit?: number; threadId: string },
-        { cursor: string; isDone: boolean }
-      >;
-      deleteAllForUserId: FunctionReference<
-        "action",
-        "internal",
-        { userId: string },
-        null
-      >;
-      deleteAllForUserIdAsync: FunctionReference<
-        "mutation",
-        "internal",
-        { userId: string },
-        boolean
-      >;
-      getFilesToDelete: FunctionReference<
-        "query",
-        "internal",
-        { cursor?: string; limit?: number },
-        {
-          continueCursor: string;
-          files: Array<{
-            _creationTime: number;
-            _id: string;
-            hash: string;
-            refcount: number;
-            storageId: string;
-          }>;
-          isDone: boolean;
-        }
-      >;
-      getThread: FunctionReference<
-        "query",
-        "internal",
-        { threadId: string },
-        {
-          _creationTime: number;
-          _id: string;
-          defaultSystemPrompt?: string;
-          order?: number;
-          parentThreadIds?: Array<string>;
-          status: "active" | "archived";
-          summary?: string;
-          title?: string;
-          userId?: string;
-        } | null
-      >;
       getThreadMessages: FunctionReference<
         "query",
         "internal",
         {
+          beforeMessageId?: string;
           isTool?: boolean;
           order?: "asc" | "desc";
           paginationOpts?: {
@@ -1223,7 +1199,6 @@ export declare const components: {
             maximumRowsRead?: number;
             numItems: number;
           };
-          parentMessageId?: string;
           statuses?: Array<"pending" | "success" | "failed">;
           threadId: string;
         },
@@ -1391,39 +1366,6 @@ export declare const components: {
           splitCursor?: string | null;
         }
       >;
-      getThreadsByUserId: FunctionReference<
-        "query",
-        "internal",
-        {
-          order?: "asc" | "desc";
-          paginationOpts?: {
-            cursor: string | null;
-            endCursor?: string | null;
-            id?: number;
-            maximumBytesRead?: number;
-            maximumRowsRead?: number;
-            numItems: number;
-          };
-          userId: string;
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            _creationTime: number;
-            _id: string;
-            defaultSystemPrompt?: string;
-            order?: number;
-            parentThreadIds?: Array<string>;
-            status: "active" | "archived";
-            summary?: string;
-            title?: string;
-            userId?: string;
-          }>;
-          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
-          splitCursor?: string | null;
-        }
-      >;
       rollbackMessage: FunctionReference<
         "mutation",
         "internal",
@@ -1434,9 +1376,9 @@ export declare const components: {
         "action",
         "internal",
         {
+          beforeMessageId?: string;
           limit: number;
           messageRange?: { after: number; before: number };
-          parentMessageId?: string;
           text?: string;
           threadId?: string;
           userId?: string;
@@ -1756,6 +1698,82 @@ export declare const components: {
           >;
         }>
       >;
+    };
+    threads: {
+      createThread: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          defaultSystemPrompt?: string;
+          parentThreadIds?: Array<string>;
+          summary?: string;
+          title?: string;
+          userId?: string;
+        },
+        {
+          _creationTime: number;
+          _id: string;
+          status: "active" | "archived";
+          summary?: string;
+          title?: string;
+          userId?: string;
+        }
+      >;
+      deleteAllForThreadIdAsync: FunctionReference<
+        "mutation",
+        "internal",
+        { cursor?: string; limit?: number; threadId: string },
+        { cursor: string; isDone: boolean }
+      >;
+      deleteAllForThreadIdSync: FunctionReference<
+        "action",
+        "internal",
+        { cursor?: string; limit?: number; threadId: string },
+        null
+      >;
+      getThread: FunctionReference<
+        "query",
+        "internal",
+        { threadId: string },
+        {
+          _creationTime: number;
+          _id: string;
+          status: "active" | "archived";
+          summary?: string;
+          title?: string;
+          userId?: string;
+        } | null
+      >;
+      getThreadsByUserId: FunctionReference<
+        "query",
+        "internal",
+        {
+          order?: "asc" | "desc";
+          paginationOpts?: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+          userId: string;
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            _creationTime: number;
+            _id: string;
+            status: "active" | "archived";
+            summary?: string;
+            title?: string;
+            userId?: string;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
       updateThread: FunctionReference<
         "mutation",
         "internal",
@@ -1770,13 +1788,45 @@ export declare const components: {
         {
           _creationTime: number;
           _id: string;
-          defaultSystemPrompt?: string;
-          order?: number;
-          parentThreadIds?: Array<string>;
           status: "active" | "archived";
           summary?: string;
           title?: string;
           userId?: string;
+        }
+      >;
+    };
+    users: {
+      deleteAllForUserId: FunctionReference<
+        "action",
+        "internal",
+        { userId: string },
+        null
+      >;
+      deleteAllForUserIdAsync: FunctionReference<
+        "mutation",
+        "internal",
+        { userId: string },
+        boolean
+      >;
+      listUsersWithThreads: FunctionReference<
+        "query",
+        "internal",
+        {
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<string>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
         }
       >;
     };

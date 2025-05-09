@@ -202,7 +202,7 @@ export const submitRandomThought = action({
 
 async function getOrCreateManagerThread(ctx: ActionCtx, userId: string) {
   const { page } = await ctx.runQuery(
-    components.agent.messages.getThreadsByUserId,
+    components.agent.threads.getThreadsByUserId,
     { userId, paginationOpts: { numItems: 1, cursor: null } },
   );
   const threadId = page[0]?._id;
@@ -273,7 +273,7 @@ export const inProgressMessages = query({
   args: { userId: v.string() },
   handler: async (ctx, { userId }): Promise<Array<MessageDoc>> => {
     const { page } = await ctx.runQuery(
-      components.agent.messages.getThreadsByUserId,
+      components.agent.threads.getThreadsByUserId,
       { userId },
     );
     const threadId = page[0]?._id;

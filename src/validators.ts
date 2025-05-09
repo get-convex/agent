@@ -356,7 +356,6 @@ const vCommonArgs = {
   threadId: v.optional(v.string()),
   contextOptions: v.optional(vContextOptions),
   storageOptions: v.optional(vStorageOptions),
-  parentMessageId: v.optional(v.string()),
   providerOptions,
   experimental_providerMetadata,
   ...vCallSettingsFields,
