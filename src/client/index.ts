@@ -66,6 +66,7 @@ import type {
 } from "./types.js";
 import schema from "../component/schema.js";
 
+export { extractText, isTool };
 export type { Usage, ProviderMetadata };
 export {
   vUsage,

@@ -50,6 +50,13 @@
         "default": "./dist/commonjs/client/index.js"
       }
     },
+    "./playground": {
+      "import": {
+        "@convex-dev/component-source": "./src/client/playground.ts",
+        "types": "./dist/esm/client/playground.d.ts",
+        "default": "./dist/esm/client/playground.js"
+      }
+    },
     "./validators": {
       "import": {
         "@convex-dev/component-source": "./src/validators.ts",

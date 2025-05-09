@@ -15,7 +15,7 @@ const usageHandler: UsageHandler = async (_ctx, args) => {
 };
 
 // Define an agent similarly to the AI SDK
-const weatherAgent = new Agent(components.agent, {
+export const weatherAgent = new Agent(components.agent, {
   name: "Weather Agent",
   chat: openai.chat("gpt-4o-mini"),
   textEmbedding: openai.embedding("text-embedding-3-small"),
@@ -29,7 +29,7 @@ const weatherAgent = new Agent(components.agent, {
   usageHandler,
 });
 
-const fashionAgent = new Agent(components.agent, {
+export const fashionAgent = new Agent(components.agent, {
   name: "Fashion Agent",
   chat: openai.chat("gpt-4o-mini"),
   textEmbedding: openai.embedding("text-embedding-3-small"),

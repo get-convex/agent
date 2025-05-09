@@ -12,6 +12,7 @@ import type * as example from "../example.js";
 import type * as http from "../http.js";
 import type * as ideaAgents from "../ideaAgents.js";
 import type * as ideas from "../ideas.js";
+import type * as playground from "../playground.js";
 import type * as weather from "../weather.js";
 
 import type {
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   ideaAgents: typeof ideaAgents;
   ideas: typeof ideas;
+  playground: typeof playground;
   weather: typeof weather;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
