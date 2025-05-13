@@ -47,6 +47,21 @@ function table<D extends number>(dimensions: D): Table<D> {
     .index("model_table_threadId", ["model", "table", "threadId"]);
 }
 
+type Table<D extends number> = TableDefinition<
+  VObject<ObjectType<typeof embeddings>, typeof embeddings>,
+  { model_table_threadId: ["model", "table", "threadId", "_creationTime"] },
+  GenericTableSearchIndexes,
+  VectorIndex<D>
+>;
+
+type VectorIndex<D extends number> = {
+  vector: {
+    vectorField: "vector";
+    dimensions: D;
+    filterFields: "model_table_userId" | "model_table_threadId";
+  };
+};
+
 export type VectorSchema = SchemaDefinition<
   { [key in VectorTableName]: Table<128> },
   true
@@ -79,21 +94,6 @@ export const vVectorId = v.union(
   GenericId<(typeof VectorTableNames)[number]>,
   VId<(typeof VectorTableNames)[number]>[]
 >;
-
-type Table<D extends number> = TableDefinition<
-  VObject<ObjectType<typeof embeddings>, typeof embeddings>,
-  { id: ["id"] },
-  GenericTableSearchIndexes,
-  VectorIndex<D>
->;
-
-type VectorIndex<D extends number> = {
-  vector: {
-    vectorField: "vector";
-    dimensions: D;
-    filterFields: string;
-  };
-};
 
 export function getVectorTableName(dimension: VectorDimension) {
   return `embeddings_${dimension}` as VectorTableName;

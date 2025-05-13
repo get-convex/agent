@@ -65,14 +65,13 @@ export const deleteBatchForThread = mutation({
   handler: async (ctx, args) => {
     const tableName = getVectorTableName(args.vectorDimension);
     const vectors = await mergedStream(
-      ["thread", "memory"].map((kind) =>
+      ["thread", "memory"].map((table) =>
         stream(ctx.db, schema)
           .query(tableName)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .withIndex("model_kind_threadId" as any, (q) =>
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (q.eq("model", args.model) as any)
-              .eq("kind", kind)
+          .withIndex("model_table_threadId", (q) =>
+            q
+              .eq("model", args.model)
+              .eq("table", table)
               .eq("threadId", args.threadId)
           )
       ),
