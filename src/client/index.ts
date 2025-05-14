@@ -56,9 +56,9 @@ import {
   type Usage,
   vSafeObjectArgs,
   vTextArgs,
+  vThreadStatus,
 } from "../validators.js";
 import type {
-  OpaqueIds,
   RunActionCtx,
   RunMutationCtx,
   RunQueryCtx,
@@ -77,16 +77,29 @@ export {
   vMessage,
 } from "../validators.js";
 
-export type ThreadDoc = OpaqueIds<
-  { _id: string; _creationTime: number } & Infer<
-    typeof schema.tables.threads.validator
-  >
->;
-export type MessageDoc = OpaqueIds<
-  { _id: string; _creationTime: number } & Infer<
-    typeof schema.tables.messages.validator
-  >
->;
+export const vThreadDoc = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  userId: v.optional(v.string()), // Unset for anonymous
+  title: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  status: vThreadStatus,
+});
+export type ThreadDoc = Infer<typeof vThreadDoc>;
+
+export const vMessageDoc = v.object({
+  _id: v.string(),
+  _creationTime: v.number(),
+  ...schema.tables.messages.validator.fields,
+  // Overwrite all the types that have a v.id validator
+  // Outside of the component, they are strings
+  threadId: v.string(),
+  parentMessageId: v.optional(v.string()),
+  stepId: v.optional(v.string()),
+  embeddingId: v.optional(v.string()),
+  fileId: v.optional(v.string()),
+});
+export type MessageDoc = Infer<typeof vMessageDoc>;
 
 /**
  * Options to configure what messages are fetched as context,
@@ -334,7 +347,7 @@ export class Agent<AgentTools extends ToolSet> {
     thread?: Thread<ThreadTools extends undefined ? AgentTools : ThreadTools>;
   }> {
     const threadDoc = await ctx.runMutation(
-      this.component.messages.createThread,
+      this.component.threads.createThread,
       {
         userId: args?.userId,
         title: args?.title,
@@ -415,7 +428,12 @@ export class Agent<AgentTools extends ToolSet> {
       userId: string | undefined;
       threadId: string | undefined;
       messages: CoreMessage[];
-      parentMessageId?: string;
+      /**
+       * If provided, it will search for messages before this message.
+       * Note: if this is far in the past, the search results may be more
+       * limited, as it's post-filtering the results.
+       */
+      beforeMessageId?: string;
       contextOptions: ContextOptions | undefined;
     }
   ): Promise<CoreMessage[]> {
@@ -435,7 +453,7 @@ export class Agent<AgentTools extends ToolSet> {
             ? args.userId
             : undefined,
           threadId: args.threadId,
-          parentMessageId: args.parentMessageId,
+          beforeMessageId: args.beforeMessageId,
           ...(await this.searchOptionsWithDefaults(opts, args.messages)),
         }
       );
@@ -453,7 +471,7 @@ export class Agent<AgentTools extends ToolSet> {
             numItems: opts.recentMessages ?? DEFAULT_RECENT_MESSAGES,
             cursor: null,
           },
-          parentMessageId: args.parentMessageId,
+          beforeMessageId: args.beforeMessageId,
           order: "desc",
           statuses: ["success"],
         }
@@ -544,13 +562,8 @@ export class Agent<AgentTools extends ToolSet> {
        */
       pending?: boolean;
       /**
-       * The message that this is responding to.
-       */
-      parentMessageId?: string;
-      /**
-       * Whether to mark all pending messages in the thread as failed.
-       * This is used to recover from a failure via a retry that wipes the slate clean.
-       * Defaults to true.
+       * If true, it will fail any pending steps.
+       * Defaults to false.
        */
       failPendingSteps?: boolean;
     }
@@ -575,9 +588,8 @@ export class Agent<AgentTools extends ToolSet> {
             message: serializeMessage(m),
           }) as MessageWithMetadata
       ),
-      failPendingSteps: args.failPendingSteps ?? true,
+      failPendingSteps: args.failPendingSteps ?? false,
       pending: args.pending ?? false,
-      parentMessageId: args.parentMessageId,
     });
     return {
       lastMessageId: result.messages.at(-1)!._id,
@@ -598,7 +610,7 @@ export class Agent<AgentTools extends ToolSet> {
       /**
        * The message this step is in response to.
        */
-      messageId: string;
+      parentMessageId: string;
       /**
        * The step to save, possibly including multiple tool calls.
        */
@@ -635,7 +647,7 @@ export class Agent<AgentTools extends ToolSet> {
     await ctx.runMutation(this.component.messages.addStep, {
       userId: args.userId,
       threadId: args.threadId,
-      messageId: args.messageId,
+      parentMessageId: args.parentMessageId,
       step: { step, messages },
       failPendingSteps: false,
     });
@@ -741,7 +753,7 @@ export class Agent<AgentTools extends ToolSet> {
             await this.saveStep(ctx, {
               userId,
               threadId,
-              messageId,
+              parentMessageId: messageId,
               step,
             });
           }
@@ -863,7 +875,7 @@ export class Agent<AgentTools extends ToolSet> {
           await this.saveStep(ctx, {
             userId,
             threadId,
-            messageId,
+            parentMessageId: messageId,
             step,
           });
         }
@@ -902,7 +914,6 @@ export class Agent<AgentTools extends ToolSet> {
     {
       userId,
       threadId,
-      parentMessageId,
       contextOptions,
       storageOptions,
     }: {
@@ -920,7 +931,6 @@ export class Agent<AgentTools extends ToolSet> {
       userId,
       threadId,
       messages,
-      parentMessageId,
       contextOptions,
     });
     let messageId: string | undefined;
@@ -933,9 +943,7 @@ export class Agent<AgentTools extends ToolSet> {
         messages: coreMessages,
         metadata: coreMessages.length === 1 ? [{ id: args.id }] : undefined,
         pending: true,
-        // We should just fail if you pass in an ID for the message, fail those children
-        // failPendingSteps: true,
-        parentMessageId,
+        failPendingSteps: true,
       });
       messageId = saved.lastMessageId;
     }
@@ -993,7 +1001,12 @@ export class Agent<AgentTools extends ToolSet> {
       } as any)) as GenerateObjectResult<T> & GenerationOutputMetadata;
 
       if (threadId && messageId && saveOutputMessages !== false) {
-        await this.saveObject(ctx, { threadId, messageId, result, userId });
+        await this.saveObject(ctx, {
+          threadId,
+          parentMessageId: messageId,
+          result,
+          userId,
+        });
       }
       result.messageId = messageId;
       if (trackUsage && result.usage) {
@@ -1070,7 +1083,7 @@ export class Agent<AgentTools extends ToolSet> {
           await this.saveObject(ctx, {
             userId,
             threadId,
-            messageId,
+            parentMessageId: messageId,
             result: {
               object: result.object,
               finishReason: "stop",
@@ -1118,7 +1131,7 @@ export class Agent<AgentTools extends ToolSet> {
     args: {
       userId: string | undefined;
       threadId: string;
-      messageId: string;
+      parentMessageId: string;
       result: GenerateObjectResult<unknown>;
       metadata?: Omit<MessageWithMetadata, "message">;
     }
@@ -1147,7 +1160,7 @@ export class Agent<AgentTools extends ToolSet> {
     await ctx.runMutation(this.component.messages.addStep, {
       userId: args.userId,
       threadId: args.threadId,
-      messageId: args.messageId,
+      parentMessageId: args.parentMessageId,
       failPendingSteps: false,
       step: { step, messages },
     });
@@ -1442,10 +1455,6 @@ function wrapTools(
 }
 
 type Options = {
-  /**
-   * The parent message id to use for the tool calls.
-   */
-  parentMessageId?: string;
   /**
    * The context options to use for passing in message history to the LLM.
    */

@@ -150,7 +150,7 @@ export const getThreads = query({
     { userId, paginationOpts },
   ): Promise<PaginationResult<ThreadDoc>> => {
     const results = await ctx.runQuery(
-      components.agent.messages.getThreadsByUserId,
+      components.agent.threads.getThreadsByUserId,
       { userId, paginationOpts },
     );
     return results;

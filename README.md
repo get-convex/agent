@@ -299,6 +299,40 @@ Specifying tools at each layer will overwrite the defaults.
 The tools will be `args.tools ?? thread.tools ?? agent.options.tools`.
 This allows you to create tools in a context that is convenient.
 
+### Fetching thread history
+
+Fetch the full messages directly. These will include things like usage, etc.
+
+```ts
+const messages = await ctx.runQuery(
+  components.agent.messages.getThreadMessages, {
+    threadId,
+    order: "desc",
+    paginationOpts: { cursor: null, numItems: 10 }
+});
+```
+
+### Search for messages
+
+This is what the agent does automatically, but it can be useful to do manually, e.g. to find custom context to include.
+
+Fetch CoreMessages (e.g. `{ role, content }`) for a user and/or thread.
+Accepts ContextOptions, e.g. includeToolCalls, searchOptions, etc.
+If you provide a `beforeMessageId`, it will only fetch messages from before that message.
+
+```ts
+const coreMessages = await supportAgent.fetchContextMessages(ctx, {
+  threadId, messages: [{ role, content }], contextOptions
+});
+```
+
+## Using the Workflow component for long-lived durable workflows
+
+The [Workflow component](https://convex.dev/components/workflow) is a great way to build long-lived, durable workflows.
+It handles retries and guarantees of eventually completing, surviving server restarts, and more.
+Read more about durable workflows in [this Stack post](https://stack.convex.dev/durable-workflows-and-strong-guarantees).
+
+
 ### Exposing the agent as Convex actions
 
 You can expose the agent as a Convex internal action.
@@ -358,14 +392,7 @@ export const supportAgentWorkflow = workflow.define({
 
 See another example in [example.ts](./example/convex/example.ts#L120).
 
-### Fetching thread history
-
-```ts
-const messages = await ctx.runQuery(
-  components.agent.messages.getThreadMessages,
-  { threadId }
-);
-```
+## Extra control: how to do more things yourself
 
 ### Generating text for a user without an associated thread
 
@@ -373,26 +400,7 @@ const messages = await ctx.runQuery(
 const result = await supportAgent.generateText(ctx, { userId }, { prompt });
 ```
 
-### Manually managing messages
-
-Fetch the full messages directly. These will include things like usage, etc.
-
-```ts
-const messages = await ctx.runQuery(
-  components.agent.messages.getThreadMessages,
-  { threadId, order: "desc", paginationOpts: { cursor: null, numItems: 10 } }
-);
-```
-
-Fetch CoreMessages (e.g. `{ role, content }`) for a user and/or thread.
-Accepts ContextOptions, e.g. includeToolCalls, searchOptions, etc.
-If you provide a parentMessageId, it will only fetch messages from before that message.
-
-```ts
-const coreMessages = await supportAgent.fetchContextMessages(ctx, {
-  threadId, messages: [{ role, content }], contextOptions
-});
-```
+### Saving messages manually
 
 Save messages to the database.
 

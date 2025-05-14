@@ -1,7 +1,5 @@
-import { assert, omit, pick } from "convex-helpers";
-import { paginator } from "convex-helpers/server/pagination";
+import { assert } from "convex-helpers";
 import { mergedStream, stream } from "convex-helpers/server/stream";
-import { nullable, partial } from "convex-helpers/validators";
 import { ObjectType } from "convex/values";
 import {
   DEFAULT_MESSAGE_RANGE,
@@ -20,7 +18,6 @@ import { api, internal } from "./_generated/api.js";
 import { Doc, Id } from "./_generated/dataModel.js";
 import {
   action,
-  internalMutation,
   internalQuery,
   mutation,
   MutationCtx,
@@ -37,187 +34,10 @@ import {
 } from "./vector/tables.js";
 import { paginationOptsValidator } from "convex/server";
 
-export const getThread = query({
-  args: { threadId: v.id("threads") },
-  handler: async (ctx, args) => {
-    return ctx.db.get(args.threadId);
-  },
-  returns: v.union(v.doc("threads"), v.null()),
-});
-
-export const getThreadsByUserId = query({
-  args: {
-    userId: v.string(),
-    order: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
-    paginationOpts: v.optional(paginationOptsValidator),
-  },
-  handler: async (ctx, args) => {
-    const threads = await paginator(ctx.db, schema)
-      .query("threads")
-      .withIndex("userId", (q) => q.eq("userId", args.userId))
-      .order(args.order ?? "desc")
-      .paginate(args.paginationOpts ?? { cursor: null, numItems: 100 });
-    return threads;
-  },
-  returns: paginationResultValidator(v.doc("threads")),
-});
-
-const vThread = schema.tables.threads.validator;
-
-export const createThread = mutation({
-  args: omit(vThread.fields, ["order", "status"]),
-  handler: async (ctx, args) => {
-    const threadId = await ctx.db.insert("threads", {
-      ...args,
-      status: "active",
-    });
-    return (await ctx.db.get(threadId))!;
-  },
-  returns: v.doc("threads"),
-});
-
-export const updateThread = mutation({
-  args: {
-    threadId: v.id("threads"),
-    patch: v.object(
-      partial(pick(vThread.fields, ["title", "summary", "status"]))
-    ),
-  },
-  handler: async (ctx, args) => {
-    const thread = await ctx.db.get(args.threadId);
-    assert(thread, `Thread ${args.threadId} not found`);
-    await ctx.db.patch(args.threadId, args.patch);
-    return (await ctx.db.get(args.threadId))!;
-  },
-  returns: v.doc("threads"),
-});
-
-// When we expose this, we need to also hide all the messages and steps
-// export const archiveThread = mutation({
-//   args: { threadId: v.id("threads") },
-//   handler: async (ctx, args) => {
-//     const thread = await ctx.db.get(args.threadId);
-//     assert(thread, `Thread ${args.threadId} not found`);
-//     await ctx.db.patch(args.threadId, { status: "archived" });
-//     return (await ctx.db.get(args.threadId))!;
-//   },
-//   returns: v.doc("threads"),
-// });
-
-export const deleteAllForUserId = action({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    let messagesCursor = null;
-    let threadsCursor = null;
-    let isDone = false;
-    while (!isDone) {
-      const result: {
-        messagesCursor: string;
-        threadsCursor: string | null;
-        isDone: boolean;
-      } = await ctx.runMutation(internal.messages._deletePageForUserId, {
-        userId: args.userId,
-        messagesCursor,
-        threadsCursor,
-      });
-      messagesCursor = result.messagesCursor;
-      threadsCursor = result.threadsCursor;
-      isDone = result.isDone;
-    }
-  },
-  returns: v.null(),
-});
-
-export const deleteAllForUserIdAsync = mutation({
-  args: {
-    userId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const isDone = await deleteAllForUserIdAsyncHandler(ctx, {
-      userId: args.userId,
-      messagesCursor: null,
-      threadsCursor: null,
-    });
-    return isDone;
-  },
-  returns: v.boolean(),
-});
-
-const deleteAllArgs = {
-  userId: v.string(),
-  messagesCursor: nullable(v.string()),
-  threadsCursor: nullable(v.string()),
-};
-type DeleteAllArgs = ObjectType<typeof deleteAllArgs>;
-const deleteAllReturns = {
-  messagesCursor: v.string(),
-  threadsCursor: nullable(v.string()),
-  isDone: v.boolean(),
-};
-type DeleteAllReturns = ObjectType<typeof deleteAllReturns>;
-
-export const _deleteAllForUserIdAsync = internalMutation({
-  args: deleteAllArgs,
-  handler: deleteAllForUserIdAsyncHandler,
-  returns: v.boolean(),
-});
-
-async function deleteAllForUserIdAsyncHandler(
+export async function deleteMessage(
   ctx: MutationCtx,
-  args: DeleteAllArgs
-): Promise<boolean> {
-  const result = await deletePageForUserId(ctx, args);
-  if (!result.isDone) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.messages._deleteAllForUserIdAsync,
-      {
-        userId: args.userId,
-        messagesCursor: result.messagesCursor,
-        threadsCursor: result.threadsCursor,
-      }
-    );
-  }
-  return result.isDone;
-}
-
-export const _deletePageForUserId = internalMutation({
-  args: deleteAllArgs,
-  handler: deletePageForUserId,
-  returns: deleteAllReturns,
-});
-async function deletePageForUserId(
-  ctx: MutationCtx,
-  args: DeleteAllArgs
-): Promise<DeleteAllReturns> {
-  const threads = await paginator(ctx.db, schema)
-    .query("threads")
-    .withIndex("userId", (q) => q.eq("userId", args.userId))
-    .order("desc")
-    .paginate({
-      numItems: 100,
-      cursor: args.threadsCursor ?? null,
-    });
-  await Promise.all(threads.page.map((c) => ctx.db.delete(c._id)));
-  const messages = await paginator(ctx.db, schema)
-    .query("messages")
-    .withIndex("userId_status_tool_order_stepOrder", (q) =>
-      q.eq("userId", args.userId)
-    )
-    .order("desc")
-    .paginate({
-      numItems: 100,
-      cursor: args.messagesCursor ?? null,
-    });
-  await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
-  return {
-    messagesCursor: messages.continueCursor,
-    threadsCursor: threads.continueCursor,
-    isDone: messages.isDone,
-  };
-}
-
-async function deleteMessage(ctx: MutationCtx, messageDoc: Doc<"messages">) {
+  messageDoc: Doc<"messages">
+) {
   await ctx.db.delete(messageDoc._id);
   if (messageDoc.embeddingId) {
     await ctx.db.delete(messageDoc.embeddingId);
@@ -229,98 +49,6 @@ async function deleteMessage(ctx: MutationCtx, messageDoc: Doc<"messages">) {
     }
   }
 }
-
-const deleteThreadArgs = {
-  threadId: v.id("threads"),
-  cursor: v.optional(v.string()),
-  limit: v.optional(v.number()),
-};
-type DeleteThreadArgs = ObjectType<typeof deleteThreadArgs>;
-const deleteThreadReturns = {
-  cursor: v.string(),
-  isDone: v.boolean(),
-};
-type DeleteThreadReturns = ObjectType<typeof deleteThreadReturns>;
-
-export const deleteAllForThreadIdSync = action({
-  args: deleteThreadArgs,
-  handler: async (ctx, args) => {
-    const result: DeleteThreadReturns = await ctx.runMutation(
-      internal.messages._deletePageForThreadId,
-      { threadId: args.threadId, cursor: args.cursor, limit: args.limit }
-    );
-    return result;
-  },
-  returns: deleteThreadReturns,
-});
-
-export const deleteAllForThreadIdAsync = mutation({
-  args: deleteThreadArgs,
-  handler: async (ctx, args) => {
-    const result = await deletePageForThreadIdHandler(ctx, args);
-    if (!result.isDone) {
-      await ctx.scheduler.runAfter(0, api.messages.deleteAllForThreadIdAsync, {
-        threadId: args.threadId,
-        cursor: result.cursor,
-      });
-    }
-    return result;
-  },
-  returns: deleteThreadReturns,
-});
-
-export const _deletePageForThreadId = internalMutation({
-  args: deleteThreadArgs,
-  handler: deletePageForThreadIdHandler,
-  returns: deleteThreadReturns,
-});
-
-async function deletePageForThreadIdHandler(
-  ctx: MutationCtx,
-  args: DeleteThreadArgs
-): Promise<DeleteThreadReturns> {
-  const messages = await paginator(ctx.db, schema)
-    .query("messages")
-    .withIndex("threadId_status_tool_order_stepOrder", (q) =>
-      q.eq("threadId", args.threadId)
-    )
-    .paginate({
-      numItems: args.limit ?? 100,
-      cursor: args.cursor ?? null,
-    });
-  await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
-  await ctx.db.delete(args.threadId);
-  return {
-    cursor: messages.continueCursor,
-    isDone: messages.isDone,
-  };
-}
-
-export const getFilesToDelete = query({
-  args: {
-    cursor: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const files = await paginator(ctx.db, schema)
-      .query("files")
-      .withIndex("refcount", (q) => q.eq("refcount", 0))
-      .paginate({
-        numItems: args.limit ?? 100,
-        cursor: args.cursor ?? null,
-      });
-    return {
-      files: files.page,
-      continueCursor: files.continueCursor,
-      isDone: files.isDone,
-    };
-  },
-  returns: v.object({
-    files: v.array(v.doc("files")),
-    continueCursor: v.string(),
-    isDone: v.boolean(),
-  }),
-});
 
 export const vMessageDoc = schema.tables.messages.validator;
 export const messageStatuses = vMessageDoc.fields.status.members.map(
@@ -358,9 +86,7 @@ async function addMessagesHandler(
   }
   const { failPendingSteps, pending, messages, parentMessageId, ...rest } =
     args;
-  const parent = parentMessageId && (await ctx.db.get(parentMessageId));
-  // TODO: I think this is a bug - parent will be pending always?
-  if (failPendingSteps && parent?.status !== "pending") {
+  if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
     const pendingMessages = await ctx.db
       .query("messages")
@@ -466,7 +192,7 @@ async function getMaxMessage(
 const addStepArgs = {
   userId: v.optional(v.string()),
   threadId: v.id("threads"),
-  messageId: v.id("messages"),
+  parentMessageId: v.id("messages"),
   step: vStepWithMessages,
   failPendingSteps: v.optional(v.boolean()),
 };
@@ -480,15 +206,15 @@ async function addStepHandler(
   ctx: MutationCtx,
   args: ObjectType<typeof addStepArgs>
 ) {
-  const parentMessage = await ctx.db.get(args.messageId);
-  assert(parentMessage, `Message ${args.messageId} not found`);
+  const parentMessage = await ctx.db.get(args.parentMessageId);
+  assert(parentMessage, `Message ${args.parentMessageId} not found`);
   const order = parentMessage.order;
-  assert(order !== undefined, `${args.messageId} has no order`);
+  assert(order !== undefined, `${args.parentMessageId} has no order`);
   let steps = await ctx.db
     .query("steps")
     .withIndex("parentMessageId_order_stepOrder", (q) =>
       // TODO: fetch pending, and commit later
-      q.eq("parentMessageId", args.messageId)
+      q.eq("parentMessageId", args.parentMessageId)
     )
     .collect();
   if (args.failPendingSteps) {
@@ -502,7 +228,7 @@ async function addStepHandler(
   const { step, messages } = args.step;
   const stepId = await ctx.db.insert("steps", {
     threadId: args.threadId,
-    parentMessageId: args.messageId,
+    parentMessageId: args.parentMessageId,
     order,
     stepOrder: (steps.at(-1)?.stepOrder ?? -1) + 1,
     status: step.finishReason === "stop" ? "success" : "pending",
@@ -512,7 +238,7 @@ async function addStepHandler(
     userId: args.userId,
     threadId: args.threadId,
     stepId,
-    parentMessageId: args.messageId,
+    parentMessageId: args.parentMessageId,
     agentName: parentMessage.agentName,
     messages,
     pending: step.finishReason === "stop" ? false : true,
@@ -520,7 +246,7 @@ async function addStepHandler(
   });
   // We don't commit if the parent is still pending.
   if (step.finishReason === "stop") {
-    await commitMessageHandler(ctx, { messageId: args.messageId });
+    await commitMessageHandler(ctx, { messageId: args.parentMessageId });
   }
   steps.push((await ctx.db.get(stepId))!);
   return steps;
@@ -609,12 +335,13 @@ export const getThreadMessages = query({
     order: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     paginationOpts: v.optional(paginationOptsValidator),
     statuses: v.optional(v.array(vMessageStatus)),
-    parentMessageId: v.optional(v.id("messages")),
+    beforeMessageId: v.optional(v.id("messages")),
   },
   handler: async (ctx, args) => {
-    const statuses = args.statuses ?? ["success"];
-    const parent =
-      args.parentMessageId && (await ctx.db.get(args.parentMessageId));
+    const statuses =
+      args.statuses ?? vMessageStatus.members.map((m) => m.value);
+    const before =
+      args.beforeMessageId && (await ctx.db.get(args.beforeMessageId));
     const toolOptions =
       args.isTool === undefined ? [true, false] : [args.isTool];
     const order = args.order ?? "desc";
@@ -627,8 +354,8 @@ export const getThreadMessages = query({
               .eq("threadId", args.threadId)
               .eq("status", status)
               .eq("tool", tool);
-            if (parent) {
-              return qq.lte("order", parent.order);
+            if (before) {
+              return qq.lte("order", before.order);
             }
             return qq;
           })
@@ -653,7 +380,7 @@ export const searchMessages = action({
   args: {
     userId: v.optional(v.string()),
     threadId: v.optional(v.id("threads")),
-    parentMessageId: v.optional(v.id("messages")),
+    beforeMessageId: v.optional(v.id("messages")),
     ...vSearchOptions.fields,
   },
   returns: v.array(v.doc("messages")),
@@ -697,7 +424,7 @@ export const searchMessages = action({
         .sort((a, b) => b.score - a.score);
       const vectorIds = vectorScores.slice(0, limit).map((v) => v.id);
       const messages: Doc<"messages">[] = await ctx.runQuery(
-        internal.messages._fetchVectorMessages,
+        internal.messages._fetchSearchMessages,
         {
           userId: args.userId,
           threadId: args.threadId,
@@ -706,7 +433,7 @@ export const searchMessages = action({
             (m) => !vectorIds.includes(m.embeddingId!)
           ),
           messageRange: args.messageRange ?? DEFAULT_MESSAGE_RANGE,
-          parentMessageId: args.parentMessageId,
+          beforeMessageId: args.beforeMessageId,
           limit,
         }
       );
@@ -716,20 +443,20 @@ export const searchMessages = action({
   },
 });
 
-export const _fetchVectorMessages = internalQuery({
+export const _fetchSearchMessages = internalQuery({
   args: {
     userId: v.optional(v.string()),
     threadId: v.optional(v.id("threads")),
     vectorIds: v.array(vVectorId),
     textSearchMessages: v.optional(v.array(v.doc("messages"))),
     messageRange: v.object({ before: v.number(), after: v.number() }),
-    parentMessageId: v.optional(v.id("messages")),
+    beforeMessageId: v.optional(v.id("messages")),
     limit: v.number(),
   },
   returns: v.array(v.doc("messages")),
   handler: async (ctx, args): Promise<Doc<"messages">[]> => {
-    const parent =
-      args.parentMessageId && (await ctx.db.get(args.parentMessageId));
+    const beforeMessage =
+      args.beforeMessageId && (await ctx.db.get(args.beforeMessageId));
     const { userId, threadId } = args;
     assert(userId || threadId, "Specify userId or threadId to search");
     let messages = (
@@ -753,7 +480,7 @@ export const _fetchVectorMessages = internalQuery({
         m !== undefined &&
         m !== null &&
         !m.tool &&
-        (!parent || m.order <= parent.order)
+        (!beforeMessage || m.order <= beforeMessage.order)
     );
     messages.push(...(args.textSearchMessages ?? []));
     // TODO: prioritize more recent messages

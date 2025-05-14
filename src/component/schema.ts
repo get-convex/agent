@@ -124,6 +124,12 @@ export const schema = defineSchema({
     .index("hash", ["hash"])
     .index("refcount", ["refcount"]),
   ...vectorTables,
+  // To authenticate playground usage
+  // Delete a key to invalidate it
+  // Provide a name to easily identify it / invalidate by name
+  apiKeys: defineTable({
+    name: v.optional(v.string()),
+  }).index("name", ["name"]),
 });
 
 export const vv = typedV(schema);
