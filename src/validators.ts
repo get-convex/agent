@@ -355,6 +355,7 @@ const vPromptFields = {
   system: v.optional(v.string()),
   prompt: v.optional(v.string()),
   messages: v.optional(v.array(vMessage)),
+  promptMessageId: v.optional(v.string()),
 };
 
 export const vCallSettingsFields = {
@@ -382,6 +383,7 @@ const vCommonArgs = {
 
 export const vTextArgs = v.object({
   ...vCommonArgs,
+  stream: v.optional(v.boolean()),
   toolChoice: v.optional(
     v.union(
       v.literal("auto"),
@@ -395,7 +397,6 @@ export const vTextArgs = v.object({
   ),
   maxSteps: v.optional(v.number()),
   experimental_continueSteps: v.optional(v.boolean()),
-  providerOptions,
 });
 export type TextArgs = Infer<typeof vTextArgs>;
 
@@ -426,3 +427,7 @@ export function paginationResultValidator<
     ),
   });
 }
+
+export const vStreamArgs = v.array(
+  v.object({ key: v.string(), cursor: v.number() })
+);

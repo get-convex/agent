@@ -87,6 +87,7 @@ export {
   vStorageOptions,
   vSystemMessage,
   vMessage,
+  vStreamArgs,
 } from "../validators.js";
 
 /**
@@ -155,6 +156,40 @@ export type StorageOptions = {
   saveAnyInputMessages?: boolean;
   /** Defaults to true. Whether to save messages generated while chatting. */
   saveOutputMessages?: boolean;
+  /**
+   * Whether to save incremental data (deltas) from streaming responses.
+   * Defaults to false.
+   * If false, it will not save any deltas to the database.
+   * If true, it will save deltas using the default options:
+   * { granularity: "word", min: 1, throttleMs: 100 }.
+   *
+   * Regardless of this option, when streaming you are able to iterate over the
+   * response in the action and/or return an http streaming response.
+   */
+  saveStreamDeltas?:
+    | boolean
+    | {
+        /**
+         * The minimum granularity of deltas to save.
+         * Note: this is not a guarantee that every delta will be exactly one line.
+         * E.g. if "line" is specified, it won't save any deltas until it encounters
+         * a newline character.
+         * Defaults to "word".
+         */
+        granularity?: "word" | "line" | "paragraph";
+        /**
+         * The minimum number of units of the granularity to save.
+         * E.g. if "line" and 10 are specified, it won't save any deltas until it encounters
+         * 10 lines of text.
+         * Defaults to 1.
+         */
+        min?: number;
+        /**
+         * The minimum number of milliseconds to wait before saving another delta.
+         * Defaults to 100.
+         */
+        throttleMs?: number;
+      };
 };
 
 export type GenerationOutputMetadata = { messageId?: string };
@@ -535,6 +570,35 @@ export class Agent<AgentTools extends ToolSet> {
       }
     }
     return embeddings;
+  }
+
+  async saveMessage(
+    ctx: RunMutationCtx,
+    args: {
+      threadId: string;
+      userId?: string;
+      metadata?: Omit<MessageWithMetadata, "message">;
+    } & (
+      | {
+          prompt?: undefined;
+          message: CoreMessage;
+        }
+      | {
+          prompt: string;
+          message?: undefined;
+        }
+    )
+  ) {
+    const { lastMessageId } = await this.saveMessages(ctx, {
+      threadId: args.threadId,
+      userId: args.userId,
+      messages:
+        args.prompt !== undefined
+          ? [{ role: "user", content: args.prompt }]
+          : [args.message],
+      metadata: args.metadata ? [args.metadata] : undefined,
+    });
+    return { messageId: lastMessageId };
   }
 
   /**
@@ -1276,28 +1340,39 @@ export class Agent<AgentTools extends ToolSet> {
     maxSteps?: number;
     contextOptions?: ContextOptions;
     storageOptions?: StorageOptions;
+    stream?: boolean;
   }) {
     const maxSteps = spec?.maxSteps ?? this.options.maxSteps;
     return internalActionGeneric({
       args: vTextArgs,
       handler: async (ctx, args) => {
         const { contextOptions, storageOptions, ...rest } = args;
-        const value = await this.generateText(
-          ctx,
-          { userId: args.userId, threadId: args.threadId },
-          { maxSteps, ...rest },
-          {
-            contextOptions:
-              contextOptions ??
-              spec?.contextOptions ??
-              this.options.contextOptions,
-            storageOptions:
-              storageOptions ??
-              spec?.storageOptions ??
-              this.options.storageOptions,
-          }
-        );
-        return value.text;
+        const stream = args.stream ?? spec?.stream ?? false;
+        const targetArgs = { userId: args.userId, threadId: args.threadId };
+        const llmArgs = { maxSteps, ...rest };
+        const opts = {
+          contextOptions:
+            contextOptions ??
+            spec?.contextOptions ??
+            this.options.contextOptions,
+          storageOptions:
+            storageOptions ??
+            spec?.storageOptions ??
+            this.options.storageOptions,
+        };
+        if (stream) {
+          const result = await this.streamText(ctx, targetArgs, llmArgs, opts);
+          await result.consumeStream();
+          return { text: await result.text };
+        } else {
+          const { text } = await this.generateText(
+            ctx,
+            targetArgs,
+            llmArgs,
+            opts
+          );
+          return { text };
+        }
       },
     });
   }
