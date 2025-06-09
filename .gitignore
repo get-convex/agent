@@ -17,3 +17,4 @@ react/package.json
 # npm pack output
 *.tgz
 
+*.tsbuildinfo
