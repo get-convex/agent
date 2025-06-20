@@ -18,14 +18,13 @@ async function findPackageJson(directory) {
 async function processSubPackages(packageJsonPath, exports, cleanup = false) {
   const baseDir = path.dirname(packageJsonPath);
 
-  for (const [subDir, _] of Object.entries(exports)) {
+  for (const [subDir, subExports] of Object.entries(exports)) {
     // package.json is already right where Node10 resolution would expect it.
     if (subDir.endsWith("package.json")) continue;
     // No need for Node10 resolution for component.config.ts
-    if (subDir.endsWith("convex.config.js")) continue;
+    if (subDir.startsWith("./convex.config")) continue;
     // . just works with Node10 resolution
     if (subDir === ".") continue;
-    console.log(subDir);
 
     const newDir = path.join(baseDir, subDir);
     const newPackageJsonPath = path.join(newDir, "package.json");
@@ -38,15 +37,15 @@ async function processSubPackages(packageJsonPath, exports, cleanup = false) {
       }
     } else {
       const newPackageJson = {
-        main: `../dist/commonjs/${subDir}/index.js`,
-        module: `../dist/esm/${subDir}/index.js`,
-        types: `../dist/commonjs/${subDir}/index.d.ts`,
+        main: "." + subExports.require.default,
+        module: "." + subExports.import.default,
+        types: "." + subExports.require.types,
       };
 
       await fs.mkdir(newDir, { recursive: true });
       await fs.writeFile(
         newPackageJsonPath,
-        JSON.stringify(newPackageJson, null, 2),
+        JSON.stringify(newPackageJson, null, 2)
       );
     }
   }
@@ -69,15 +68,15 @@ async function main() {
 
     await processSubPackages(packageJsonPath, packageJson.exports, isCleanup);
 
-    if (isCleanup) {
-      console.log(
-        "Node10 module resolution compatibility stub directories removed.",
-      );
-    } else {
-      console.log(
-        "Node10 module resolution compatibility stub directories created",
-      );
-    }
+    // if (isCleanup) {
+    //   console.log(
+    //     "Node10 module resolution compatibility stub directories removed.",
+    //   );
+    // } else {
+    //   console.log(
+    //     "Node10 module resolution compatibility stub directories created",
+    //   );
+    // }
   } catch (error) {
     console.error("Error:", error.message);
   }

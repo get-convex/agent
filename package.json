@@ -35,11 +35,14 @@
     "test:watch": "vitest --typecheck --config ./src/vitest.config.ts",
     "test:debug": "vitest --inspect-brk --no-file-parallelism --config ./src/vitest.config.ts",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
+    "attw": "attw -P . --exclude-entrypoints ./convex.config",
     "version": "pbcopy <<<$npm_package_version; vim CHANGELOG.md && git add CHANGELOG.md"
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "validators",
+    "react"
   ],
   "exports": {
     "./package.json": "./package.json",

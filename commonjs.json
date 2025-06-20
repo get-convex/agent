@@ -3,6 +3,9 @@
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.*", "../src/package.json"],
   "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "verbatimModuleSyntax": false,
     "outDir": "./dist/commonjs"
   }
 }
