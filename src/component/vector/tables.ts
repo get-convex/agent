@@ -15,7 +15,7 @@ import {
   type VObject,
   type VUnion,
 } from "convex/values";
-import type { QueryCtx } from "../_generated/server";
+import type { QueryCtx } from "../_generated/server.js";
 
 // We only generate embeddings for non-tool, non-system messages
 const embeddings = {

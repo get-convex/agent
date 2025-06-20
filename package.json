@@ -31,11 +31,12 @@
     "postpack": "node node10stubs.mjs --cleanup",
     "alpha": "rm -rf dist && npm run build && npm run test && npm version prerelease --preid alpha && npm publish --tag alpha && git push --tags",
     "release": "rm -rf dist && npm run build && npm run test && npm version patch && npm publish && git push --tags",
-    "test": "vitest run --typecheck --config ./src/vitest.config.ts",
+    "test": "vitest run --typecheck --config ./src/vitest.config.ts && npm run lint && npm run typecheck && npm run attw",
     "test:watch": "vitest --typecheck --config ./src/vitest.config.ts",
     "test:debug": "vitest --inspect-brk --no-file-parallelism --config ./src/vitest.config.ts",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
-    "attw": "attw -P . --exclude-entrypoints ./convex.config",
+    "lint": "eslint src",
+    "attw": "attw $(npm pack -s) --exclude-entrypoints ./convex.config",
     "version": "pbcopy <<<$npm_package_version; vim CHANGELOG.md && git add CHANGELOG.md"
   },
   "files": [

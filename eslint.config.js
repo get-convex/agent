@@ -35,6 +35,11 @@ export default [
       "src/react/**/*.ts",
     ],
     plugins: { react: reactPlugin, "react-hooks": reactHooks },
+    settings: {
+      react: {
+        version: "detect",
+      },
+    },
     rules: {
       ...reactPlugin.configs["recommended"].rules,
       "react/jsx-uses-react": "off",

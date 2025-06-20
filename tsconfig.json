@@ -9,8 +9,10 @@
     "lib": ["ES2021", "dom", "dom.iterable"],
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
+    // We enforce stricter module resolution for Node16 compatibility
+    // But when building we use Bundler & ESNext for ESM
+    "module": "Node16",
+    "moduleResolution": "NodeNext",
     // See these docs to get this working:
     //https://github.com/xixixao/convex-typescript-plugin/
     // "plugins": [{ "name": "@xixixao/convex-typescript-plugin" }],
