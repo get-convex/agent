@@ -1414,6 +1414,12 @@ export type Mounts = {
     >;
   };
   streams: {
+    abort: FunctionReference<
+      "mutation",
+      "public",
+      { reason: string; streamId: string },
+      null
+    >;
     addDelta: FunctionReference<
       "mutation",
       "public",
@@ -1569,13 +1575,18 @@ export type Mounts = {
     list: FunctionReference<
       "query",
       "public",
-      { threadId: string },
+      {
+        startOrder?: number;
+        statuses?: Array<"streaming" | "finished" | "aborted">;
+        threadId: string;
+      },
       Array<{
         agentName?: string;
         model?: string;
         order: number;
         provider?: string;
         providerOptions?: Record<string, Record<string, any>>;
+        status: "streaming" | "finished" | "aborted";
         stepOrder: number;
         streamId: string;
         userId?: string;

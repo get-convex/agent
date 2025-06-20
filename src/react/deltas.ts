@@ -256,12 +256,14 @@ export function createStreamingMessage(
 ): MessageDoc {
   const { streamId, ...rest } = message;
   const metadata: MessageDoc = {
+    ...rest,
     _id: `${streamId}-${index}`,
     _creationTime: Date.now(),
-    status: "pending",
+    status: (
+      { streaming: "pending", finished: "success", aborted: "failed" } as const
+    )[message.status],
     threadId,
     tool: false,
-    ...rest,
   };
   switch (part.type) {
     case "text-delta":
