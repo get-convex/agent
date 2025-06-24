@@ -96,7 +96,13 @@ export class DeltaStreamer {
     this.#nextStepOrder = (metadata.stepOrder ?? 0) + 1;
     this.abortController = new AbortController();
     if (metadata.abortSignal) {
-      metadata.abortSignal.addEventListener("abort", () => {
+      metadata.abortSignal.addEventListener("abort", async () => {
+        if (this.streamId) {
+          await this.ctx.runMutation(this.component.streams.abort, {
+            streamId: this.streamId,
+            reason: "abortSignal",
+          });
+        }
         this.abortController.abort();
       });
     }

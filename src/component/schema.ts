@@ -110,8 +110,8 @@ export const schema = defineSchema({
         endedAt: v.number(),
       }),
       v.object({
-        kind: v.literal("error"),
-        error: v.string(),
+        kind: v.literal("aborted"),
+        reason: v.string(),
       })
     ),
   })

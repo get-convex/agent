@@ -994,6 +994,8 @@ export class Agent<AgentTools extends ToolSet> {
     args: {
       threadId: string;
       streamArgs: StreamArgs | undefined;
+      // By default, only streaming messages are included.
+      includeStatuses?: ("streaming" | "finished" | "aborted")[];
     }
   ): Promise<SyncStreamsReturnValue | undefined> {
     if (!args.streamArgs) return undefined;
@@ -1002,6 +1004,8 @@ export class Agent<AgentTools extends ToolSet> {
         kind: "list",
         messages: await ctx.runQuery(this.component.streams.list, {
           threadId: args.threadId,
+          startOrder: args.streamArgs.startOrder,
+          statuses: args.includeStatuses,
         }),
       };
     } else {
