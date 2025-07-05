@@ -520,6 +520,24 @@ export declare const components: {
         { messageId: string },
         null
       >;
+      deleteByIds: FunctionReference<
+        "mutation",
+        "internal",
+        { messageIds: Array<string> },
+        Array<string>
+      >;
+      deleteByOrder: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          endOrder: number;
+          endStepOrder?: number;
+          startOrder: number;
+          startStepOrder?: number;
+          threadId: string;
+        },
+        { isDone: boolean; lastOrder?: number; lastStepOrder?: number }
+      >;
       getMessagesByIds: FunctionReference<
         "query",
         "internal",
@@ -1342,6 +1360,7 @@ export declare const components: {
           messageId: string;
           patch: {
             error?: string;
+            fileIds?: Array<string>;
             message?:
               | {
                   content:

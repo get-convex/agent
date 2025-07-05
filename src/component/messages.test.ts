@@ -358,7 +358,7 @@ describe("agent", () => {
     });
 
     // Create multiple rounds of messages with different orders
-    const { messages: round1 } = await t.mutation(api.messages.addMessages, {
+    await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       messages: [
         { message: { role: "user", content: "message order 0, step 0" } },
@@ -366,7 +366,7 @@ describe("agent", () => {
       ],
     });
 
-    const { messages: round2 } = await t.mutation(api.messages.addMessages, {
+    await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       messages: [
         { message: { role: "user", content: "message order 1, step 0" } },
@@ -374,7 +374,7 @@ describe("agent", () => {
       ],
     });
 
-    const { messages: round3 } = await t.mutation(api.messages.addMessages, {
+    await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       messages: [
         { message: { role: "user", content: "message order 2, step 0" } },
@@ -412,7 +412,7 @@ describe("agent", () => {
     });
 
     // Create messages with the same order but different step orders
-    const { messages } = await t.mutation(api.messages.addMessages, {
+    await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       messages: [
         { message: { role: "user", content: "step 0" } },
@@ -456,7 +456,7 @@ describe("agent", () => {
 
     // This test would be more realistic with 65+ messages, but for test efficiency
     // we'll just verify the basic structure works with fewer messages
-    const { messages } = await t.mutation(api.messages.addMessages, {
+    await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       messages: [
         { message: { role: "user", content: "message 1" } },
@@ -482,7 +482,7 @@ describe("agent", () => {
       userId: "test",
     });
 
-    const { messages } = await t.mutation(api.messages.addMessages, {
+    await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       messages: [{ message: { role: "user", content: "message order 0" } }],
     });

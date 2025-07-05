@@ -109,7 +109,7 @@ export type {
   UsageHandler,
 };
 
-export class Agent<AgentTools extends ToolSet> {
+export class Agent<AgentTools extends ToolSet = ToolSet> {
   constructor(
     public component: AgentComponent,
     public options: {

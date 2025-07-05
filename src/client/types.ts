@@ -26,8 +26,6 @@ import type {
   GenericDataModel,
   GenericMutationCtx,
   GenericQueryCtx,
-  PaginationOptions,
-  PaginationResult,
   StorageActionWriter,
   StorageReader,
   WithoutSystemFields,

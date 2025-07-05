@@ -6,6 +6,7 @@ import {
   GenericDataModel,
   GenericQueryCtx,
   ApiFromModules,
+  GenericActionCtx,
 } from "convex/server";
 import {
   vMessageDoc,
@@ -25,31 +26,37 @@ export type PlaygroundAPI = ApiFromModules<{
   playground: ReturnType<typeof definePlaygroundAPI>;
 }>["playground"];
 
+export type AgentsFn<DataModel extends GenericDataModel> = (
+  ctx: GenericActionCtx<DataModel> | GenericQueryCtx<DataModel>,
+  args: { userId: string | undefined; threadId: string | undefined }
+) => Promise<Agent<ToolSet>[]>;
+
 // Playground API definition
-export function definePlaygroundAPI(
+export function definePlaygroundAPI<DataModel extends GenericDataModel>(
   component: AgentComponent,
   {
-    agents,
+    agents: agentsOrFn,
     userNameLookup,
   }: {
-    agents: Agent<ToolSet>[];
-    userNameLookup?: <DataModel extends GenericDataModel>(
+    agents: Agent<ToolSet>[] | AgentsFn<DataModel>;
+    userNameLookup?: (
       ctx: GenericQueryCtx<DataModel>,
       userId: string
     ) => string | Promise<string>;
   }
 ) {
-  // Map agent name to instance
-  const agentMap: Record<string, Agent<ToolSet>> = Object.fromEntries(
-    agents.map((agent) => [agent.options.name, agent])
-  );
-
-  for (const agent of agents) {
-    if (!agent.options.name) {
-      throw new Error(
-        `Agent has no name (instructions: ${agent.options.instructions})`
-      );
+  function validateAgents(agents: Agent<ToolSet>[]) {
+    for (const agent of agents) {
+      if (!agent.options.name) {
+        throw new Error(
+          `Agent has no name (instructions: ${agent.options.instructions})`
+        );
+      }
     }
+  }
+
+  if (Array.isArray(agentsOrFn)) {
+    validateAgents(agentsOrFn);
   }
 
   async function validateApiKey(ctx: RunQueryCtx, apiKey: string) {
@@ -71,14 +78,31 @@ export function definePlaygroundAPI(
     returns: v.boolean(),
   });
 
+  async function getAgents(
+    ctx: GenericActionCtx<DataModel> | GenericQueryCtx<DataModel>,
+    args: { userId: string | undefined; threadId: string | undefined }
+  ) {
+    const agents = Array.isArray(agentsOrFn)
+      ? agentsOrFn
+      : await agentsOrFn(ctx, args);
+    validateAgents(agents);
+    return agents;
+  }
+
   // List all agents
   const listAgents = queryGeneric({
     args: {
       apiKey: v.string(),
+      userId: v.optional(v.string()),
+      threadId: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+      const agents = await getAgents(ctx, {
+        userId: args.userId,
+        threadId: args.threadId,
+      });
       await validateApiKey(ctx, args.apiKey);
-      const agents = Object.values(agentMap)
+      return agents
         .map((agent) =>
           agent.options.name
             ? {
@@ -95,7 +119,6 @@ export function definePlaygroundAPI(
             : undefined
         )
         .filter((agent) => agent !== undefined);
-      return agents;
     },
   });
 
@@ -199,21 +222,25 @@ export function definePlaygroundAPI(
   const createThread = mutationGeneric({
     args: {
       apiKey: v.string(),
-      agentName: v.string(),
       userId: v.string(),
       title: v.optional(v.string()),
       summary: v.optional(v.string()),
+      /** @deprecated Unused. */
+      agentName: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+      // if (args.agentName) {
+      //   console.warn(
+      //     "Upgrade to the latest version of @convex-dev/agent-playground"
+      //   );
+      // }
       await validateApiKey(ctx, args.apiKey);
-      const agent = agentMap[args.agentName];
-      if (!agent) throw new Error(`Unknown agent: ${args.agentName}`);
-      const { threadId } = await agent.createThread(ctx, {
+      const { _id } = await ctx.runMutation(component.threads.createThread, {
         userId: args.userId,
         title: args.title,
         summary: args.summary,
       });
-      return { threadId };
+      return { threadId: _id };
     },
     returns: v.object({ threadId: v.string() }),
   });
@@ -233,7 +260,7 @@ export function definePlaygroundAPI(
       messages: v.optional(v.array(vMessage)),
       system: v.optional(v.string()),
     },
-    handler: async (ctx, args) => {
+    handler: async (ctx: GenericActionCtx<DataModel>, args) => {
       const {
         apiKey,
         agentName,
@@ -245,8 +272,14 @@ export function definePlaygroundAPI(
         ...rest
       } = args;
       await validateApiKey(ctx, apiKey);
-      const agent = agentMap[agentName];
-      if (!agent) throw new Error(`Unknown agent: ${agentName}`);
+      const agents = await getAgents(ctx, {
+        userId: args.userId,
+        threadId: args.threadId,
+      });
+      const agent = agents.find(
+        (agent) => agent.options.name === args.agentName
+      );
+      if (!agent) throw new Error(`Unknown agent: ${args.agentName}`);
       const { thread } = await agent.continueThread(ctx, { threadId, userId });
       const { messageId, text } = await thread.generateText(
         { ...rest, ...(system ? { system } : {}) },
@@ -272,7 +305,13 @@ export function definePlaygroundAPI(
     },
     handler: async (ctx, args) => {
       await validateApiKey(ctx, args.apiKey);
-      const agent = agentMap[args.agentName];
+      const agents = await getAgents(ctx, {
+        userId: args.userId,
+        threadId: args.threadId,
+      });
+      const agent = agents.find(
+        (agent) => agent.options.name === args.agentName
+      );
       if (!agent) throw new Error(`Unknown agent: ${args.agentName}`);
       const contextOptions =
         args.contextOptions ??
