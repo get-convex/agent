@@ -11,7 +11,7 @@ export function optimisticallySendMessage(
 ) => void {
   return (store, args) => {
     const queries = store.getAllQueries(query);
-    let maxOrder = 0;
+    let maxOrder = -1;
     let maxStepOrder = 0;
     for (const q of queries) {
       if (q.args?.threadId !== args.threadId) continue;

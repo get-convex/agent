@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.15 alpha
+
+- You can request that `syncStreams` return aborted streamed messages,
+  if you want to show those in your UI.
+- They will have `msg.streaming === false` if they were aborted.
+- Fix: stream deletion is idempotent and cleanup is canceled if it's already deleted.
+
 ## 0.1.14
 
 - Expose delete functions for messages & threads on the Agent class
@@ -39,7 +46,7 @@
 
 ## 0.1.9
 
-- You can finish a stream asynchronously and have it abort the streaming.
+- You can abort a stream asynchronously and have it stop writing deltas smoothly.
 - The timeout for streaming deltas with no sign of life has been
   increased to 10 minutes.
 - Delete stream deltas automatically 5 min after the stream finishes.

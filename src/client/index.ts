@@ -110,7 +110,7 @@ export type {
   UsageHandler,
 };
 
-export class Agent<AgentTools extends ToolSet> {
+export class Agent<AgentTools extends ToolSet = ToolSet> {
   constructor(
     public component: AgentComponent,
     public options: {
@@ -598,6 +598,7 @@ export class Agent<AgentTools extends ToolSet> {
             error: (error.error as Error).message,
           });
         }
+        // TODO: update the streamer to error state
         return args.onError?.(error);
       },
       onStepFinish: async (step) => {
@@ -611,7 +612,6 @@ export class Agent<AgentTools extends ToolSet> {
             promptMessageId: messageId,
             step,
           });
-          // TODO: figure out pending/not
           await streamer?.finish(saved.messages);
         }
         if (this.options.rawRequestResponseHandler) {
@@ -1027,6 +1027,8 @@ export class Agent<AgentTools extends ToolSet> {
     args: {
       threadId: string;
       streamArgs: StreamArgs | undefined;
+      // By default, only streaming messages are included.
+      includeStatuses?: ("streaming" | "finished" | "aborted")[];
     }
   ): Promise<SyncStreamsReturnValue | undefined> {
     if (!args.streamArgs) return undefined;
@@ -1035,6 +1037,8 @@ export class Agent<AgentTools extends ToolSet> {
         kind: "list",
         messages: await ctx.runQuery(this.component.streams.list, {
           threadId: args.threadId,
+          startOrder: args.streamArgs.startOrder,
+          statuses: args.includeStatuses,
         }),
       };
     } else {

@@ -66,7 +66,11 @@ const Play = ({ apiKey, api }: PlayProps) => {
     }
   }, [messages.results, selectedMessageId]);
 
-  const agents = useQuery(api.listAgents, { apiKey });
+  const agents = useQuery(api.listAgents, {
+    apiKey,
+    threadId: selectedThreadId,
+    userId: selectedUserId,
+  });
   useEffect(() => {
     if (agents && agents.length > 0 && !selectedAgent) {
       setSelectedAgent(agents[0]);
@@ -75,6 +79,18 @@ const Play = ({ apiKey, api }: PlayProps) => {
       }
       if (agents[0].storageOptions) {
         setStorageOptions(agents[0].storageOptions);
+      }
+    } else if (agents && selectedAgent) {
+      const newAgent = agents.find(
+        (agent) => agent.name === selectedAgent.name
+      );
+      if (newAgent) {
+        if (JSON.stringify(selectedAgent) !== JSON.stringify(newAgent)) {
+          setSelectedAgent(newAgent);
+        }
+      } else {
+        // The selected agent is no longer in the list of agents, so clear it
+        setSelectedAgent(undefined);
       }
     }
   }, [agents, selectedAgent]);
@@ -106,7 +122,11 @@ const Play = ({ apiKey, api }: PlayProps) => {
   const handleSelectMessage = (messageId: string) => {
     setSelectedMessageId(messageId);
     const message = messages.results.find((m) => m._id === messageId);
-    if (message && message.agentName && selectedAgent !== message.agentName) {
+    if (
+      message &&
+      message.agentName &&
+      selectedAgent?.name !== message.agentName
+    ) {
       const agent = agents?.find((a) => a.name === message.agentName);
       if (agent) {
         setSelectedAgent(agent);
@@ -127,7 +147,7 @@ const Play = ({ apiKey, api }: PlayProps) => {
           agentName: selectedAgent.name,
           threadId: selectedThreadId,
           userId: selectedUserId,
-          messages: [selectedMessage.message],
+          messages: selectedMessage.message ? [selectedMessage.message] : [],
           contextOptions,
           beforeMessageId: selectedMessage._id,
         });
@@ -214,7 +234,7 @@ const Play = ({ apiKey, api }: PlayProps) => {
         </div>
         <div className="w-2/5 h-full">
           <RightPanel
-            selectedMessage={selectedMessage}
+            selectedMessage={selectedMessage ?? null}
             contextMessages={contextMessages}
             contextOptions={contextOptions}
             setContextOptions={setContextOptions}

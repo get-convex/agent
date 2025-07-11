@@ -460,6 +460,7 @@ export const vStreamArgs = v.optional(
   v.union(
     v.object({
       kind: v.literal("list"),
+      startOrder: v.optional(v.number()),
     }),
     v.object({
       kind: v.literal("deltas"),
@@ -471,6 +472,11 @@ export type StreamArgs = Infer<typeof vStreamArgs>;
 
 export const vStreamMessage = v.object({
   streamId: v.string(),
+  status: v.union(
+    v.literal("streaming"),
+    v.literal("finished"),
+    v.literal("aborted")
+  ),
   order: v.number(),
   stepOrder: v.number(),
   // metadata
