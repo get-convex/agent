@@ -277,7 +277,7 @@ export const vMessageEmbeddings = v.object({
   dimension: vVectorDimension,
   vectors: v.array(v.union(v.array(v.number()), v.null())),
 });
-
+export type MessageEmbeddings = Infer<typeof vMessageEmbeddings>;
 
 export const vObjectResult = v.object({
   request: vRequest,

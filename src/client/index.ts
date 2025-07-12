@@ -12,7 +12,7 @@ import type {
   ToolSet,
 } from "ai";
 import { generateObject, generateText, streamObject, streamText } from "ai";
-import { assert } from "convex-helpers";
+import { assert, type BetterOmit } from "convex-helpers";
 import {
   internalActionGeneric,
   internalMutationGeneric,
@@ -44,6 +44,7 @@ import {
   vMessageWithMetadata,
   vSafeObjectArgs,
   vTextArgs,
+  type MessageEmbeddings,
 } from "../validators.js";
 import { createTool, wrapTools } from "./createTool.js";
 import {
@@ -824,14 +825,7 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
    */
   async saveMessage(
     ctx: RunMutationCtx,
-    args: {
-      threadId: string;
-      userId?: string;
-      /**
-       * Metadata to save with the messages. Each element corresponds to the
-       * message at the same index.
-       */
-      metadata?: Omit<MessageWithMetadata, "message">;
+    args: SaveMessageArgs & {
       /**
        * If true, it will not generate embeddings for the message.
        * Useful if you're saving messages in a mutation where you can't run `fetch`.
@@ -839,22 +833,7 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
        * action later that calls `agent.generateAndSaveEmbeddings`.
        */
       skipEmbeddings?: boolean;
-    } & (
-      | {
-          prompt?: undefined;
-          /**
-           * The message to save.
-           */
-          message: CoreMessage;
-        }
-      | {
-          /*
-           * The prompt to save with the message.
-           */
-          prompt: string;
-          message?: undefined;
-        }
-    )
+    }
   ) {
     const { lastMessageId, messages } = await this.saveMessages(ctx, {
       threadId: args.threadId,
@@ -871,40 +850,15 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
 
   /**
    * Explicitly save messages associated with the thread (& user if provided)
+   * If you have an embedding model set, it will also generate embeddings for
+   * the messages.
    * @param ctx The ctx parameter to a mutation or action.
    * @param args The messages and context to save
    * @returns
    */
   async saveMessages(
     ctx: RunMutationCtx | RunActionCtx,
-    args: {
-      threadId: string;
-      userId?: string;
-      /**
-       * The message that these messages are in response to. They will be
-       * the same "order" as this message, at increasing stepOrder(s).
-       */
-      promptMessageId?: string;
-      /**
-       * The messages to save.
-       */
-      messages: CoreMessageMaybeWithId[];
-      /**
-       * Metadata to save with the messages. Each element corresponds to the
-       * message at the same index.
-       */
-      metadata?: Omit<MessageWithMetadata, "message">[];
-      /**
-       * If false, it will "commit" the messages immediately.
-       * If true, it will mark them as pending until the final step has finished.
-       * Defaults to false.
-       */
-      pending?: boolean;
-      /**
-       * If true, it will fail any pending steps.
-       * Defaults to false.
-       */
-      failPendingSteps?: boolean;
+    args: SaveMessagesArgs & {
       /**
        * Skip generating embeddings for the messages. Useful if you're
        * saving messages in a mutation where you can't run `fetch`.
@@ -924,9 +878,12 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
           model: string;
         }
       | undefined;
-    if (args.skipEmbeddings || !("runAction" in ctx)) {
+    const { skipEmbeddings, ...rest } = args;
+    if (args.embeddings) {
+      embeddings = args.embeddings;
+    } else if (skipEmbeddings || !("runAction" in ctx)) {
       embeddings = undefined;
-      if (!args.skipEmbeddings && this.options.textEmbedding) {
+      if (!skipEmbeddings && this.options.textEmbedding) {
         console.warn(
           "You're trying to save messages and generate embeddings, but you're in a mutation. " +
             "Pass `skipEmbeddings: true` to skip generating embeddings in the mutation and skip this warning. " +
@@ -944,33 +901,11 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
         args.messages
       );
     }
-    const result = await ctx.runMutation(this.component.messages.addMessages, {
-      threadId: args.threadId,
-      userId: args.userId,
+    return saveMessages(ctx, this.component, {
+      ...rest,
       agentName: this.options.name,
-      promptMessageId: args.promptMessageId,
       embeddings,
-      messages: await Promise.all(
-        args.messages.map(async (m, i) => {
-          const { message, fileIds } = await serializeMessage(
-            ctx,
-            this.component,
-            m
-          );
-          return {
-            ...args.metadata?.[i],
-            message,
-            fileIds,
-          } as MessageWithMetadata;
-        })
-      ),
-      failPendingSteps: args.failPendingSteps ?? false,
-      pending: args.pending ?? false,
     });
-    return {
-      lastMessageId: result.messages.at(-1)!._id,
-      messages: result.messages,
-    };
   }
 
   /**
@@ -2041,4 +1976,148 @@ export async function getThreadMetadata(
     throw new Error("Thread not found");
   }
   return thread;
+}
+
+type SaveMessagesArgs = {
+  threadId: string;
+  userId?: string;
+  /**
+   * The message that these messages are in response to. They will be
+   * the same "order" as this message, at increasing stepOrder(s).
+   */
+  promptMessageId?: string;
+  /**
+   * The messages to save.
+   */
+  messages: CoreMessageMaybeWithId[];
+  /**
+   * Metadata to save with the messages. Each element corresponds to the
+   * message at the same index.
+   */
+  metadata?: Omit<MessageWithMetadata, "message">[];
+  /**
+   * If false, it will "commit" the messages immediately.
+   * If true, it will mark them as pending until the final step has finished.
+   * Defaults to false.
+   */
+  pending?: boolean;
+  /**
+   * If true, it will fail any pending steps.
+   * Defaults to false.
+   */
+  failPendingSteps?: boolean;
+  /**
+   * The embeddings to save with the messages.
+   */
+  embeddings?: MessageEmbeddings;
+};
+
+/**
+ * Explicitly save messages associated with the thread (& user if provided)
+ */
+export async function saveMessages(
+  ctx: RunMutationCtx,
+  component: AgentComponent,
+  args: SaveMessagesArgs & {
+    /**
+     * The agent name to associate with the messages.
+     */
+    agentName?: string;
+  }
+) {
+  const result = await ctx.runMutation(component.messages.addMessages, {
+    threadId: args.threadId,
+    userId: args.userId,
+    agentName: args.agentName,
+    promptMessageId: args.promptMessageId,
+    embeddings: args.embeddings,
+    messages: await Promise.all(
+      args.messages.map(async (m, i) => {
+        const { message, fileIds } = await serializeMessage(ctx, component, m);
+        return {
+          ...args.metadata?.[i],
+          message,
+          fileIds,
+        } as MessageWithMetadata;
+      })
+    ),
+    failPendingSteps: args.failPendingSteps ?? false,
+    pending: args.pending ?? false,
+  });
+  return {
+    lastMessageId: result.messages.at(-1)!._id,
+    messages: result.messages,
+  };
+}
+
+type SaveMessageArgs = {
+  threadId: string;
+  userId?: string;
+  /**
+   * Metadata to save with the messages. Each element corresponds to the
+   * message at the same index.
+   */
+  metadata?: Omit<MessageWithMetadata, "message">;
+  /**
+   * The embedding to save with the message.
+   */
+  embedding?: {
+    vector: number[];
+    model: string;
+  };
+} & (
+  | {
+      prompt?: undefined;
+      /**
+       * The message to save.
+       */
+      message: CoreMessage;
+    }
+  | {
+      /*
+       * The prompt to save with the message.
+       */
+      prompt: string;
+      message?: undefined;
+    }
+);
+
+/**
+ * Save a message to the thread.
+ * @param ctx A ctx object from a mutation or action.
+ * @param args The message and what to associate it with (user / thread)
+ * You can pass extra metadata alongside the message, e.g. associated fileIds.
+ * @returns The messageId of the saved message.
+ */
+export async function saveMessage(
+  ctx: RunMutationCtx,
+  component: AgentComponent,
+  args: SaveMessageArgs & {
+    /**
+     * The agent name to associate with the message.
+     */
+    agentName?: string;
+  }
+) {
+  let embeddings: MessageEmbeddings | undefined;
+  if (args.embedding) {
+    const dimension = args.embedding.vector.length;
+    validateVectorDimension(dimension);
+    embeddings = {
+      model: args.embedding.model,
+      dimension,
+      vectors: [args.embedding.vector],
+    };
+  }
+  const { lastMessageId, messages } = await saveMessages(ctx, component, {
+    threadId: args.threadId,
+    userId: args.userId,
+    messages:
+      args.prompt !== undefined
+        ? [{ role: "user", content: args.prompt }]
+        : [args.message],
+    metadata: args.metadata ? [args.metadata] : undefined,
+    embeddings,
+  });
+  return { messageId: lastMessageId, message: messages.at(-1)! };
 }
