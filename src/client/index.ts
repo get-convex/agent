@@ -274,25 +274,18 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
     threadId: string;
     thread?: Thread<ThreadTools extends undefined ? AgentTools : ThreadTools>;
   }> {
-    const threadDoc = await ctx.runMutation(
-      this.component.threads.createThread,
-      {
-        userId: args?.userId,
-        title: args?.title,
-        summary: args?.summary,
-      }
-    );
+    const threadId = await createThread(ctx, this.component, args);
     if (!("runAction" in ctx)) {
-      return { threadId: threadDoc._id };
+      return { threadId };
     }
     const { thread } = await this.continueThread(ctx, {
-      threadId: threadDoc._id,
+      threadId,
       userId: args?.userId,
       usageHandler: args?.usageHandler,
       tools: args?.tools,
     });
     return {
-      threadId: threadDoc._id,
+      threadId,
       thread,
     };
   }
@@ -2012,3 +2005,26 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
 }
 
 type CoreMessageMaybeWithId = CoreMessage & { id?: string | undefined };
+
+/**
+ * Create a thread to store messages with an Agent.
+ * @param ctx The context from a mutation or action.
+ * @param component The Agent component, usually `components.agent`.
+ * @param args The associated thread metadata.
+ * @returns The id of the created thread.
+ */
+export async function createThread(
+  ctx: RunMutationCtx,
+  component: AgentComponent,
+  args?: {
+    userId?: string;
+    title?: string;
+    summary?: string;
+  }
+) {
+  const { _id: threadId } = await ctx.runMutation(
+    component.threads.createThread,
+    { userId: args?.userId, title: args?.title, summary: args?.summary }
+  );
+  return threadId;
+}
