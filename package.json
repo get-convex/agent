@@ -21,7 +21,7 @@
     "dev": "run-p 'example' 'build:watch'",
     "setup": "node setup.cjs && cd example && npx convex dev --once",
     "dashboard": "cd example && npx convex dashboard",
-    "build:watch": "cd src && npx chokidar '../tsconfig*' '**/*.ts' -c 'npm run build' --initial",
+    "build:watch": "npx chokidar 'tsconfig*.json' 'src/**/*.ts' -c 'npm run build' --initial",
     "build": "tsc --project ./tsconfig.build.json && npm run copy:dts && echo '{\\n  \"type\": \"module\"\\n}' > dist/package.json",
     "copy:dts": "rsync -a --include='*/' --include='*.d.ts' --exclude='*' src/ dist/ || cpy 'src/**/*.d.ts' 'dist/' --parents",
     "typecheck": "tsc --noEmit",
