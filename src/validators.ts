@@ -290,20 +290,12 @@ export const vObjectResult = v.object({
   providerMetadata,
 });
 export type ObjectResult = Infer<typeof vObjectResult>;
-export const vSearchOptions = v.object({
-  vector: v.optional(v.array(v.number())),
-  vectorModel: v.optional(v.string()),
-  text: v.optional(v.string()),
-  limit: v.number(),
-  vectorScoreThreshold: v.optional(v.number()),
-  messageRange: v.optional(v.object({ before: v.number(), after: v.number() })),
-});
-export type SearchOptions = Infer<typeof vSearchOptions>;
 
 export const vContextOptionsSearchOptions = v.object({
   limit: v.number(),
   textSearch: v.optional(v.boolean()),
   vectorSearch: v.optional(v.boolean()),
+  vectorScoreThreshold: v.optional(v.number()),
   messageRange: v.optional(v.object({ before: v.number(), after: v.number() })),
 });
 

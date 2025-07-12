@@ -34,17 +34,11 @@ import {
   serializeNewMessagesInStep,
   serializeObjectResult,
 } from "../mapping.js";
-import {
-  DEFAULT_MESSAGE_RANGE,
-  DEFAULT_RECENT_MESSAGES,
-  extractText,
-  isTool,
-} from "../shared.js";
+import { extractText, isTool } from "../shared.js";
 import {
   type MessageWithMetadata,
   type MessageStatus,
   type ProviderMetadata,
-  type SearchOptions,
   type StreamArgs,
   type Usage,
   vMessageWithMetadata,
@@ -77,6 +71,9 @@ import type {
   UsageHandler,
 } from "./types.js";
 import type { threadFieldsSupportingPatch } from "../component/threads.js";
+import { listMessages } from "./listMessages.js";
+import { syncStreams } from "./streaming.js";
+import { fetchContextMessages } from "./search.js";
 
 export { storeFile, getFile } from "./files.js";
 export { serializeDataOrUrl } from "../mapping.js";
@@ -95,7 +92,8 @@ export {
   vUserMessage,
 } from "../validators.js";
 export type { ToolCtx } from "./createTool.js";
-export { createTool, extractText, isTool };
+export { filterOutOrphanedToolMessages } from "./search.js";
+export { createTool, extractText, isTool, listMessages, syncStreams };
 export type {
   AgentComponent,
   ContextOptions,
@@ -1001,17 +999,7 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
       statuses?: MessageStatus[];
     }
   ): Promise<PaginationResult<MessageDoc>> {
-    if (args.paginationOpts.numItems === 0) {
-      return {
-        page: [],
-        isDone: true,
-        continueCursor: args.paginationOpts.cursor ?? "",
-      };
-    }
-    return ctx.runQuery(this.component.messages.listMessagesByThreadId, {
-      order: "desc",
-      ...args,
-    });
+    return listMessages(ctx, this.component, args);
   }
 
   /**
@@ -1031,25 +1019,7 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
       includeStatuses?: ("streaming" | "finished" | "aborted")[];
     }
   ): Promise<SyncStreamsReturnValue | undefined> {
-    if (!args.streamArgs) return undefined;
-    if (args.streamArgs.kind === "list") {
-      return {
-        kind: "list",
-        messages: await ctx.runQuery(this.component.streams.list, {
-          threadId: args.threadId,
-          startOrder: args.streamArgs.startOrder,
-          statuses: args.includeStatuses,
-        }),
-      };
-    } else {
-      return {
-        kind: "deltas",
-        deltas: await ctx.runQuery(this.component.streams.listDeltas, {
-          threadId: args.threadId,
-          cursors: args.streamArgs.cursors,
-        }),
-      };
-    }
+    return syncStreams(ctx, this.component, args);
   }
 
   /**
@@ -1076,76 +1046,28 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
     }
   ): Promise<MessageDoc[]> {
     assert(args.userId || args.threadId, "Specify userId or threadId");
-    // Fetch the latest messages from the thread
-    let included: Set<string> | undefined;
     const opts = this._mergedContextOptions(args.contextOptions);
-    const contextMessages: MessageDoc[] = [];
-    if (
-      args.threadId &&
-      (opts.recentMessages !== 0 || args.upToAndIncludingMessageId)
-    ) {
-      const { page } = await ctx.runQuery(
-        this.component.messages.listMessagesByThreadId,
-        {
-          threadId: args.threadId,
-          excludeToolMessages: opts.excludeToolMessages,
-          paginationOpts: {
-            numItems: opts.recentMessages ?? DEFAULT_RECENT_MESSAGES,
-            cursor: null,
-          },
-          upToAndIncludingMessageId: args.upToAndIncludingMessageId,
-          order: "desc",
-          statuses: ["success"],
-        }
-      );
-      included = new Set(page.map((m) => m._id));
-      contextMessages.push(
-        // Reverse since we fetched in descending order
-        ...page.reverse()
-      );
-    }
-    if (opts.searchOptions?.textSearch || opts.searchOptions?.vectorSearch) {
-      const targetMessage = contextMessages.find(
-        (m) => m._id === args.upToAndIncludingMessageId
-      )?.message;
-      const messagesToSearch = targetMessage ? [targetMessage] : args.messages;
-      if (!("runAction" in ctx)) {
-        throw new Error("searchUserMessages only works in an action");
-      }
-      const searchMessages = await ctx.runAction(
-        this.component.messages.searchMessages,
-        {
-          searchAllMessagesForUserId: opts?.searchOtherThreads
-            ? args.userId ??
-              (args.threadId &&
-                (
-                  await ctx.runQuery(this.component.threads.getThread, {
-                    threadId: args.threadId,
-                  })
-                )?.userId)
-            : undefined,
-          threadId: args.threadId,
-          beforeMessageId: args.upToAndIncludingMessageId,
-          ...(await this._searchOptionsWithEmbeddingAndDefaults(
-            ctx,
-            { userId: args.userId, threadId: args.threadId },
-            opts,
-            messagesToSearch
-          )),
-        }
-      );
-      // TODO: track what messages we used for context
-      contextMessages.unshift(
-        ...searchMessages.filter((m) => !included?.has(m._id))
-      );
-    }
-    // Ensure we don't include tool messages without a corresponding tool call
-    return filterOutOrphanedToolMessages(
-      contextMessages.sort((a, b) =>
-        // Sort the raw MessageDocs by order and stepOrder
-        a.order === b.order ? a.stepOrder - b.stepOrder : a.order - b.order
-      )
-    );
+    return fetchContextMessages(ctx, this.component, {
+      ...args,
+      contextOptions: opts,
+      getEmbedding: async (text) => {
+        assert("runAction" in ctx);
+        assert(
+          this.options.textEmbedding,
+          "A textEmbedding model is required to be set on the Agent that you're doing vector search with"
+        );
+        return {
+          vector: (
+            await this.doEmbed(ctx, {
+              userId: args.userId,
+              threadId: args.threadId,
+              values: [text],
+            })
+          ).embeddings[0],
+          vectorModel: this.options.textEmbedding.modelId,
+        };
+      },
+    });
   }
 
   /**
@@ -1769,47 +1691,9 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
       ...this.options.contextOptions,
       ...opts,
       searchOptions: searchOptions.limit
-        ? (searchOptions as SearchOptions)
+        ? (searchOptions as ContextOptions["searchOptions"])
         : undefined,
     };
-  }
-
-  async _searchOptionsWithEmbeddingAndDefaults(
-    ctx: RunActionCtx,
-    { userId, threadId }: { userId?: string; threadId?: string },
-    contextOptions: ContextOptions,
-    messages: CoreMessage[]
-  ): Promise<SearchOptions> {
-    assert(
-      contextOptions.searchOptions?.textSearch ||
-        contextOptions.searchOptions?.vectorSearch,
-      "searchOptions is required"
-    );
-    assert(messages.length > 0, "Core messages cannot be empty");
-    const text = extractText(messages.at(-1)!);
-    const search: SearchOptions = {
-      limit: contextOptions.searchOptions?.limit ?? 10,
-      messageRange: {
-        ...DEFAULT_MESSAGE_RANGE,
-        ...contextOptions.searchOptions?.messageRange,
-      },
-      text: extractText(messages.at(-1)!),
-    };
-    if (
-      contextOptions.searchOptions?.vectorSearch &&
-      text &&
-      this.options.textEmbedding
-    ) {
-      search.vector = (
-        await this.doEmbed(ctx, {
-          threadId,
-          userId,
-          values: [text],
-        })
-      ).embeddings[0];
-      search.vectorModel = this.options.textEmbedding.modelId;
-    }
-    return search;
   }
 
   async doEmbed(
@@ -1823,7 +1707,10 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
     }
   ): Promise<{ embeddings: number[][] }> {
     const embedding = this.options.textEmbedding;
-    assert(embedding, "textEmbedding is required");
+    assert(
+      embedding,
+      "a textEmbedding model is required to be set on the Agent that you're doing vector search with"
+    );
     const result = await embedding.doEmbed({
       values: options.values,
       abortSignal: options.abortSignal,
@@ -2122,33 +2009,6 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
       },
     });
   }
-}
-
-export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
-  const toolCallIds = new Set<string>();
-  const result: MessageDoc[] = [];
-  for (const doc of docs) {
-    if (
-      doc.message?.role === "assistant" &&
-      Array.isArray(doc.message.content)
-    ) {
-      for (const content of doc.message.content) {
-        if (content.type === "tool-call") {
-          toolCallIds.add(content.toolCallId);
-        }
-      }
-      result.push(doc);
-    } else if (doc.message?.role === "tool") {
-      if (doc.message.content.every((c) => toolCallIds.has(c.toolCallId))) {
-        result.push(doc);
-      } else {
-        console.debug("Filtering out orphaned tool message", doc);
-      }
-    } else {
-      result.push(doc);
-    }
-  }
-  return result;
 }
 
 type CoreMessageMaybeWithId = CoreMessage & { id?: string | undefined };

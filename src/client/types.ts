@@ -78,6 +78,10 @@ export type ContextOptions = {
      */
     vectorSearch?: boolean;
     /**
+     * The score threshold for vector search. Default is 0.0.
+     */
+    vectorScoreThreshold?: number;
+    /**
      * What messages around the search results to include.
      * Default: { before: 2, after: 1 }
      * (two before, and one after each message found in the search)

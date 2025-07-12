@@ -182,10 +182,10 @@ export const updateBatch = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await Promise.all(
-      args.vectors.map((v) =>
-        ctx.db.patch(v.id, {
-          model: v.model,
-          vector: v.vector,
+      args.vectors.map((embedding) =>
+        ctx.db.patch(embedding.id, {
+          model: embedding.model,
+          vector: embedding.vector,
         })
       )
     );

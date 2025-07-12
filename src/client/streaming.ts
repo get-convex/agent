@@ -6,11 +6,58 @@ import {
 } from "ai";
 import type {
   ProviderOptions,
+  StreamArgs,
   StreamDelta,
   TextStreamPart,
 } from "../validators.js";
-import type { AgentComponent, MessageDoc } from "./index.js";
-import type { RunActionCtx } from "./types.js";
+import type { MessageDoc } from "../component/schema.js";
+import type {
+  AgentComponent,
+  RunActionCtx,
+  RunQueryCtx,
+  SyncStreamsReturnValue,
+} from "./types.js";
+
+/**
+ * A function that handles fetching stream deltas, used with the React hooks
+ * `useThreadMessages` or `useStreamingThreadMessages`.
+ * @param ctx A ctx object from a query, mutation, or action.
+ * @param component The agent component, usually `components.agent`.
+ * @param args.threadId The thread to sync streams for.
+ * @param args.streamArgs The stream arguments with per-stream cursors.
+ * @returns The deltas for each stream from their existing cursor.
+ */
+export async function syncStreams(
+  ctx: RunQueryCtx,
+  component: AgentComponent,
+  args: {
+    threadId: string;
+    streamArgs: StreamArgs | undefined;
+    // By default, only streaming messages are included.
+    includeStatuses?: ("streaming" | "finished" | "aborted")[];
+  }
+): Promise<SyncStreamsReturnValue | undefined> {
+  if (!args.streamArgs) return undefined;
+  if (args.streamArgs.kind === "list") {
+    return {
+      kind: "list",
+      messages: await ctx.runQuery(component.streams.list, {
+        threadId: args.threadId,
+        startOrder: args.streamArgs.startOrder,
+        statuses: args.includeStatuses,
+      }),
+    };
+  } else {
+    return {
+      kind: "deltas",
+      deltas: await ctx.runQuery(component.streams.listDeltas, {
+        threadId: args.threadId,
+        cursors: args.streamArgs.cursors,
+      }),
+    };
+  }
+}
+
 
 export type StreamingOptions = {
   /**

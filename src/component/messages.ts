@@ -13,7 +13,6 @@ import {
   vMessageStatus,
   vMessageWithMetadataInternal,
   vPaginationResult,
-  vSearchOptions,
 } from "../validators.js";
 import { api, internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -467,7 +466,14 @@ export const searchMessages = action({
     threadId: v.optional(v.id("threads")),
     searchAllMessagesForUserId: v.optional(v.string()),
     beforeMessageId: v.optional(v.id("messages")),
-    ...vSearchOptions.fields,
+    embedding: v.optional(v.array(v.number())),
+    embeddingModel: v.optional(v.string()),
+    text: v.optional(v.string()),
+    limit: v.number(),
+    vectorScoreThreshold: v.optional(v.number()),
+    messageRange: v.optional(
+      v.object({ before: v.number(), after: v.number() })
+    ),
   },
   returns: v.array(vMessageDoc),
   handler: async (ctx, args): Promise<MessageDoc[]> => {
@@ -486,15 +492,15 @@ export const searchMessages = action({
         beforeMessageId: args.beforeMessageId,
       });
     }
-    if (args.vector) {
-      const dimension = args.vector.length as VectorDimension;
+    if (args.embedding) {
+      const dimension = args.embedding.length as VectorDimension;
       if (!VectorDimensions.includes(dimension)) {
-        throw new Error(`Unsupported vector dimension: ${dimension}`);
+        throw new Error(`Unsupported embedding dimension: ${dimension}`);
       }
       const vectors = (
-        await searchVectors(ctx, args.vector, {
+        await searchVectors(ctx, args.embedding, {
           dimension,
-          model: args.vectorModel ?? "unknown",
+          model: args.embeddingModel ?? "unknown",
           table: "messages",
           searchAllMessagesForUserId: args.searchAllMessagesForUserId,
           threadId: args.threadId,
