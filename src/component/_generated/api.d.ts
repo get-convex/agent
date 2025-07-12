@@ -900,13 +900,13 @@ export type Mounts = {
       "public",
       {
         beforeMessageId?: string;
+        embedding?: Array<number>;
+        embeddingModel?: string;
         limit: number;
         messageRange?: { after: number; before: number };
         searchAllMessagesForUserId?: string;
         text?: string;
         threadId?: string;
-        vector?: Array<number>;
-        vectorModel?: string;
         vectorScoreThreshold?: number;
       },
       Array<{
