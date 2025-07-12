@@ -1073,13 +1073,7 @@ export class Agent<AgentTools extends ToolSet = ToolSet> {
     ctx: RunQueryCtx,
     args: { threadId: string }
   ): Promise<ThreadDoc> {
-    const thread = await ctx.runQuery(this.component.threads.getThread, {
-      threadId: args.threadId,
-    });
-    if (!thread) {
-      throw new Error("Thread not found");
-    }
-    return thread;
+    return getThreadMetadata(ctx, this.component, args);
   }
 
   /**
@@ -2027,4 +2021,24 @@ export async function createThread(
     { userId: args?.userId, title: args?.title, summary: args?.summary }
   );
   return threadId;
+}
+
+/**
+ * Get the metadata for a thread.
+ * @param ctx A ctx object from a query, mutation, or action.
+ * @param args.threadId The thread to get the metadata for.
+ * @returns The metadata for the thread.
+ */
+export async function getThreadMetadata(
+  ctx: RunQueryCtx,
+  component: AgentComponent,
+  args: { threadId: string }
+): Promise<ThreadDoc> {
+  const thread = await ctx.runQuery(component.threads.getThread, {
+    threadId: args.threadId,
+  });
+  if (!thread) {
+    throw new Error("Thread not found");
+  }
+  return thread;
 }
