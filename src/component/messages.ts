@@ -149,7 +149,7 @@ async function findAssociatedToolCall(
     const messages = await ctx.db
       .query("messages")
       .withIndex("threadId_status_tool_order_stepOrder", (q: any) =>
-        q.eq("threadId", threadId).eq("order", searchOrder)
+        q.eq("threadId", threadId).eq("status", "success").eq("order", searchOrder)
       )
       .order("desc")
       .collect();
@@ -257,13 +257,10 @@ async function addMessagesHandler(
     let currentFail = fail;
     
     if (message.message.role === "user") {
-      if (i > 0 && !promptMessageId) {
-        order++;
-      }
-      if (promptMessageId) {
-        stepOrder++;
-      } else {
+      if (i === 0 && !promptMessageId) {
         stepOrder = 0;
+      } else {
+        stepOrder++;
       }
     } else if (message.message.role === "tool") {
       const toolCallId = extractToolCallId(message.message);
