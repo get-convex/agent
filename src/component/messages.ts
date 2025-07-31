@@ -131,6 +131,43 @@ const addMessagesArgs = {
   pending: v.optional(v.boolean()),
   failPendingSteps: v.optional(v.boolean()),
 };
+function extractToolCallId(message: any): string | undefined {
+  if (message.role === "tool" && Array.isArray(message.content)) {
+    const toolResult = message.content.find((c: any) => c.type === "tool-result");
+    return toolResult?.toolCallId;
+  }
+  return undefined;
+}
+
+async function findAssociatedToolCall(
+  ctx: any,
+  threadId: any,
+  toolCallId: string,
+  currentOrder: number,
+): Promise<any> {
+  for (let searchOrder = currentOrder; searchOrder >= 0; searchOrder--) {
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("threadId_status_tool_order_stepOrder", (q: any) =>
+        q.eq("threadId", threadId).eq("order", searchOrder)
+      )
+      .order("desc")
+      .collect();
+    
+    for (const msg of messages) {
+      if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
+        const toolCall = msg.message.content.find(
+          (c: any) => c.type === "tool-call" && c.toolCallId === toolCallId
+        );
+        if (toolCall) {
+          return msg;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export const addMessages = mutation({
   args: addMessagesArgs,
   handler: addMessagesHandler,
@@ -176,19 +213,26 @@ async function addMessagesHandler(
   }
   let order, stepOrder;
   let fail = false;
+  
   if (promptMessageId) {
     assert(parentMessage, `Parent message ${promptMessageId} not found`);
     if (parentMessage.status === "failed") {
       fail = true;
     }
     order = parentMessage.order;
-    // Defend against there being existing messages with this parent.
     const maxMessage = await getMaxMessage(ctx, threadId, order);
     stepOrder = maxMessage?.stepOrder ?? parentMessage.stepOrder;
   } else {
     const maxMessage = await getMaxMessage(ctx, threadId);
-    order = maxMessage ? maxMessage.order + 1 : 0;
-    stepOrder = -1;
+    
+    const firstMessage = messages[0];
+    if (firstMessage && firstMessage.message.role === "user") {
+      order = maxMessage ? maxMessage.order + 1 : 0;
+      stepOrder = -1;
+    } else {
+      order = maxMessage ? maxMessage.order : 0;
+      stepOrder = maxMessage?.stepOrder ?? -1;
+    }
   }
   const toReturn: Doc<"messages">[] = [];
   if (embeddings) {
@@ -209,7 +253,30 @@ async function addMessagesHandler(
         threadId,
       });
     }
-    stepOrder++;
+    
+    let currentFail = fail;
+    
+    if (message.message.role === "user") {
+      if (i > 0) {
+        order++;
+      }
+      stepOrder = 0;
+    } else if (message.message.role === "tool") {
+      const toolCallId = extractToolCallId(message.message);
+      if (toolCallId) {
+        const associatedToolCall = await findAssociatedToolCall(ctx, threadId, toolCallId, order);
+        if (associatedToolCall) {
+          order = associatedToolCall.order;
+          if (associatedToolCall.status === "failed") {
+            currentFail = true;
+          }
+        }
+      }
+      stepOrder++;
+    } else {
+      stepOrder++;
+    }
+
     const messageId = await ctx.db.insert("messages", {
       ...rest,
       ...message,
@@ -219,8 +286,8 @@ async function addMessagesHandler(
       order,
       tool: isTool(message.message),
       text: extractText(message.message),
-      status: fail ? "failed" : pending ? "pending" : "success",
-      error: fail ? "Parent message failed" : undefined,
+      status: currentFail ? "failed" : pending ? "pending" : "success",
+      error: currentFail ? "Parent message failed" : undefined,
       stepOrder,
     });
     // Let's just not set the id field and have it set only in explicit cases.
