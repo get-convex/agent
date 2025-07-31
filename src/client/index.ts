@@ -532,7 +532,7 @@ export class Agent<
           error: (error as Error).message,
         });
         
-        await ctx.runMutation(this.component.messages.saveFailedMessage, {
+        await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
           threadId,
           userId,
           order,
@@ -654,12 +654,12 @@ export class Agent<
         if (threadId && messageId && saveOutput) {
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
-            error: (error.error as Error).message,
+            error: (error.error as any)?.message || String(error.error),
           });
           
           const partialText = streamer ? await this.getStreamedText(streamer) : undefined;
           
-          await ctx.runMutation(this.component.messages.saveFailedMessage, {
+          await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
             threadId,
             userId,
             order,
@@ -667,7 +667,7 @@ export class Agent<
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
-            error: (error.error as Error).message,
+            error: (error.error as any)?.message || String(error.error),
             partialText,
           });
         }
@@ -800,7 +800,7 @@ export class Agent<
           error: (error as Error).message,
         });
         
-        await ctx.runMutation(this.component.messages.saveFailedMessage, {
+        await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
           threadId,
           userId,
           order,
@@ -862,10 +862,10 @@ export class Agent<
         if (threadId && messageId && saveOutputMessages) {
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
-            error: (error as Error).message,
+            error: (error as any)?.message || String(error),
           });
           
-          await ctx.runMutation(this.component.messages.saveFailedMessage, {
+          await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
             threadId,
             userId,
             order,
@@ -873,7 +873,7 @@ export class Agent<
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
-            error: (error as Error).message,
+            error: (error as any)?.message || String(error),
           });
         }
         return args.onError?.(error);
@@ -1435,7 +1435,7 @@ export class Agent<
       });
       const messageDoc = message[0];
       if (messageDoc) {
-        await ctx.runMutation(this.component.messages.saveFailedMessage, {
+        await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
           threadId: messageDoc.threadId,
           userId: messageDoc.userId,
           order: messageDoc.order,
@@ -2047,6 +2047,15 @@ export class Agent<
         );
         return {
           object: value.object as T,
+          messageId: value.messageId,
+          order: value.order,
+          finishReason: value.finishReason,
+          warnings: value.warnings,
+        };
+      },
+    });
+  }
+
   private async getStreamedText(streamer: DeltaStreamer): Promise<string | undefined> {
     try {
       const parts = (streamer as any)['#nextParts'] || [];
@@ -2057,23 +2066,6 @@ export class Agent<
     }
   }
 
-  private asObjectAction<T>(
-    ctx: ActionCtx,
-    args: OurStreamObjectArgs<T>,
-    options?: Options,
-  ) {
-    return {
-      async *[Symbol.asyncIterator]() {
-        const value = await this.streamObject(ctx, {}, args, options);
-        yield {
-          messageId: value.messageId,
-          order: value.order,
-          finishReason: value.finishReason,
-          warnings: value.warnings,
-        };
-      },
-    };
-  }
 
   /**
    * Save messages to the thread.

@@ -204,7 +204,7 @@ export class DeltaStreamer {
           const partialText = this.#nextParts.map((part: any) => part.text || '').join('');
           if (metadata.threadId && metadata.order !== undefined) {
             try {
-              const messageId = await this.ctx.runMutation(this.component.messages.saveFailedMessage, {
+              const messageId = await this.ctx.runMutation((this.component.messages as any).saveFailedMessage, {
                 threadId: metadata.threadId,
                 userId: metadata.userId,
                 order: metadata.order,
