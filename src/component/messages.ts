@@ -257,10 +257,14 @@ async function addMessagesHandler(
     let currentFail = fail;
     
     if (message.message.role === "user") {
-      if (i > 0) {
+      if (i > 0 && !promptMessageId) {
         order++;
       }
-      stepOrder = 0;
+      if (promptMessageId) {
+        stepOrder++;
+      } else {
+        stepOrder = 0;
+      }
     } else if (message.message.role === "tool") {
       const toolCallId = extractToolCallId(message.message);
       if (toolCallId) {
