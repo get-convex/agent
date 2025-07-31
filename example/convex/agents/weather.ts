@@ -8,7 +8,7 @@ import { chat, textEmbedding } from "../modelsForDemo";
 // Define an agent similarly to the AI SDK
 export const weatherAgent = new Agent(components.agent, {
   name: "Weather Agent",
-  chat,
+  chat: chat as any,
   textEmbedding,
   instructions:
     "You describe the weather for a location as if you were a TV weather reporter.",

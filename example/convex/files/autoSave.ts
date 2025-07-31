@@ -14,9 +14,9 @@ export const askAboutImage = action({
   args: {
     prompt: v.string(),
     image: v.bytes(),
-    mimeType: v.string(),
+    mediaType: v.string(),
   },
-  handler: async (ctx, { prompt, image, mimeType }) => {
+  handler: async (ctx, { prompt, image, mediaType }) => {
     const { thread, threadId } = await agent.createThread(ctx, {});
     const result = await thread.generateText({
       prompt,
@@ -26,7 +26,7 @@ export const askAboutImage = action({
           content: [
             // You can pass the data in directly. It will automatically store
             // it in file storage and pass around the URL.
-            { type: "image", image, mimeType },
+            { type: "image", image, mediaType },
             { type: "text", text: prompt },
           ],
         },

@@ -17,7 +17,7 @@ import { components } from "../_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { authorizeThreadAccess } from "../threads";
 import { z } from "zod";
-import { tool } from "ai";
+import { createTool } from "@convex-dev/agent";
 import { agent } from "../agents/simple";
 
 /**
@@ -70,11 +70,14 @@ export const sendMessageFromUser = mutation({
  * ===============================
  */
 
-export const askHuman = tool({
+export const askHuman = createTool({
   description: "Ask a human a question",
-  parameters: z.object({
+  args: z.object({
     question: z.string().describe("The question to ask the human"),
   }),
+  handler: async (ctx, { question }) => {
+    return question;
+  },
 });
 
 export const ask = action({
@@ -90,9 +93,9 @@ export const ask = action({
     );
     const supportRequests = result.toolCalls
       .filter((tc) => tc.toolName === "askHuman")
-      .map(({ toolCallId, args: { question } }) => ({
-        toolCallId,
-        question,
+      .map((tc) => ({
+        toolCallId: tc.toolCallId,
+        question: (tc.input as { question: string }).question,
       }));
     if (supportRequests.length > 0) {
       // Do something so the support agent knows they need to respond,
@@ -126,7 +129,7 @@ export const humanResponseAsToolCall = internalAction({
         content: [
           {
             type: "tool-result",
-            result: args.response,
+            output: args.response as any,
             toolCallId: args.toolCallId,
             toolName: "askHuman",
           },

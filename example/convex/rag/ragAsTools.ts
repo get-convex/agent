@@ -10,7 +10,7 @@ import { agent } from "../agents/simple";
 import { getAuthUserId } from "../utils";
 
 const rag = new RAG(components.rag, {
-  textEmbeddingModel: openai.embedding("text-embedding-3-small"),
+  textEmbeddingModel: openai.embedding("text-embedding-3-small") as any,
   embeddingDimension: 1536,
 });
 

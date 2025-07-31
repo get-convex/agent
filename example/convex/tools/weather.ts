@@ -1,15 +1,15 @@
 // See the docs at https://docs.convex.dev/agents/tools
-import { tool } from "ai";
+import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 
-export const getGeocoding = tool({
+export const getGeocoding = createTool({
   description: "Get the latitude and longitude of a location",
-  parameters: z.object({
+  args: z.object({
     location: z
       .string()
       .describe("The location to get the geocoding for, e.g. 'San Francisco'"),
   }),
-  execute: async ({ location }) => {
+  handler: async (ctx, { location }) => {
     console.log("getting geocoding for location", location);
     const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`;
     const geocodingResponse = await fetch(geocodingUrl);
@@ -31,13 +31,13 @@ export const getGeocoding = tool({
   },
 });
 
-export const getWeather = tool({
+export const getWeather = createTool({
   description: "Get the weather for a location",
-  parameters: z.object({
+  args: z.object({
     latitude: z.number(),
     longitude: z.number(),
   }),
-  execute: async (args) => {
+  handler: async (ctx, args) => {
     console.log("getting weather for location", args);
     const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${args.latitude}&longitude=${args.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code&wind_speed_unit=mph&temperature_unit=fahrenheit`;
 

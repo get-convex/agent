@@ -46,7 +46,7 @@ export const createNewThread = mutation({
     if (initialMessage) {
       await saveMessage(ctx, components.agent, {
         threadId,
-        message: initialMessage,
+        message: initialMessage as any,
       });
     }
     return threadId;

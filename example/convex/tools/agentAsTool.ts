@@ -10,13 +10,13 @@ export const runAgentAsTool = action({
   args: {},
   handler: async (ctx) => {
     const agentWithTools = new Agent(components.agent, {
-      chat: openai.chat("gpt-4o-mini"),
+      chat: openai.chat("gpt-4o-mini") as any,
       textEmbedding: openai.embedding("text-embedding-3-small"),
       instructions: "You are a helpful assistant.",
       tools: {
         doSomething: tool({
           description: "Call this function when asked to do something",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async (args, options) => {
             console.log("doingSomething", options.toolCallId);
             return "hello";
@@ -24,7 +24,7 @@ export const runAgentAsTool = action({
         }),
         doSomethingElse: tool({
           description: "Call this function when asked to do something else",
-          parameters: z.object({}),
+          inputSchema: z.object({}),
           execute: async (args, options) => {
             console.log("doSomethingElse", options.toolCallId);
             return "hello";
@@ -59,7 +59,7 @@ export const runAgentAsTool = action({
       },
     });
     const dispatchAgent = new Agent(components.agent, {
-      chat: openai.chat("gpt-4o-mini"),
+      chat: openai.chat("gpt-4o-mini") as any,
       textEmbedding: openai.embedding("text-embedding-3-small"),
       instructions:
         "You can call agentWithToolsAsTool as many times as told with the argument whatToDo.",

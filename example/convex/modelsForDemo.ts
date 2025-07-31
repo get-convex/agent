@@ -1,15 +1,15 @@
 // import { openrouter } from "@openrouter/ai-sdk-provider";
 import type { EmbeddingModel } from "ai";
-import type { LanguageModelV2 } from "@ai-sdk/provider";
+import type { LanguageModelV1 } from "@ai-sdk/provider";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
 
-let chat: LanguageModelV2;
+let chat: LanguageModelV1;
 let textEmbedding: EmbeddingModel<string>;
 
 if (process.env.OPENAI_API_KEY) {
-  chat = openai.chat("gpt-4o-mini");
-  textEmbedding = openai.textEmbeddingModel("text-embedding-3-small");
+  chat = openai.languageModel("gpt-4o-mini") as any;
+  textEmbedding = openai.embedding("text-embedding-3-small");
 } else if (process.env.GROQ_API_KEY) {
   chat = groq.languageModel("meta-llama/llama-4-scout-17b-16e-instruct");
   // } else if (process.env.OPENROUTER_API_KEY) {

@@ -11,7 +11,7 @@ import { usageHandler } from "../usage_tracking/usageHandler";
 // Define an agent similarly to the AI SDK
 export const fileAgent = new Agent(components.agent, {
   name: "File Reviewer Agent",
-  chat: chat,
+  chat: chat as any,
   instructions: "You are an expert in reviewing and analyzing files & images.",
   // Optional:
   textEmbedding,
@@ -31,7 +31,7 @@ export const fileAgent = new Agent(components.agent, {
 export const uploadFile = action({
   args: {
     filename: v.string(),
-    mimeType: v.string(),
+    mediaType: v.string(),
     bytes: v.bytes(),
     sha256: v.optional(v.string()),
   },
@@ -47,7 +47,7 @@ export const uploadFile = action({
     } = await storeFile(
       ctx,
       components.agent,
-      new Blob([args.bytes], { type: args.mimeType }),
+      new Blob([args.bytes], { type: args.mediaType }),
       args.filename,
       args.sha256,
     );

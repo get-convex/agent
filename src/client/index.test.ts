@@ -19,8 +19,8 @@ import type {
 } from "convex/server";
 import { v } from "convex/values";
 import { defineSchema } from "convex/server";
-import { MockLanguageModelV1 } from "ai/test";
-import type { LanguageModelV1, LanguageModelV1StreamPart } from "ai";
+import { MockLanguageModelV2 } from "ai/test";
+import type { LanguageModelV2, LanguageModelV2StreamPart } from "ai";
 import { simulateReadableStream } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { z } from "zod";
@@ -252,8 +252,8 @@ describe("filterOutOrphanedToolMessages", () => {
   });
 });
 
-function mockModel(): LanguageModelV1 {
-  return new MockLanguageModelV1({
+function mockModel(): LanguageModelV2 {
+  return new MockLanguageModelV2({
     provider: "mock",
     modelId: "mock",
     defaultObjectGenerationMode: "json",
@@ -280,7 +280,7 @@ function mockModel(): LanguageModelV1 {
             logprobs: undefined,
             usage: { completionTokens: 10, promptTokens: 3 },
           },
-        ] as LanguageModelV1StreamPart[],
+        ] as LanguageModelV2StreamPart[],
       }),
       rawCall: { rawPrompt: null, rawSettings: {} },
     }),

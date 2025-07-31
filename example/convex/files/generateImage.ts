@@ -47,8 +47,8 @@ export const replyWithImage = internalAction({
     if (!image.ok) {
       throw new Error("Failed to fetch image. " + JSON.stringify(image));
     }
-    const mimeType = image.headers.get("content-type")!;
-    if (!mimeType) {
+    const mediaType = image.headers.get("content-type")!;
+    if (!mediaType) {
       throw new Error(
         "No MIME type found. Response: " + JSON.stringify(image.headers),
       );
@@ -65,7 +65,7 @@ export const replyWithImage = internalAction({
             // NOTE: passing in the bytes directly!
             // It will be saved automatically in file storage.
             data: await image.arrayBuffer(),
-            mimeType: image.headers.get("content-type")!,
+            mediaType: image.headers.get("content-type")!,
           },
         ],
       },
