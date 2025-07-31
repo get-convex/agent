@@ -200,6 +200,27 @@ export class DeltaStreamer {
             streamId: this.streamId,
             reason: "abortSignal",
           });
+          
+          const partialText = this.#nextParts.map((part: any) => part.text || '').join('');
+          if (metadata.threadId && metadata.order !== undefined) {
+            try {
+              const messageId = await this.ctx.runMutation(this.component.messages.saveFailedMessage, {
+                threadId: metadata.threadId,
+                userId: metadata.userId,
+                order: metadata.order,
+                promptMessageId: this.streamId as any,
+                agentName: metadata.agentName,
+                model: metadata.model,
+                provider: metadata.provider,
+                error: "Stream aborted",
+                partialText: partialText || undefined,
+                abortReason: "abortSignal",
+              });
+              console.log("Saved failed message for aborted stream:", messageId);
+            } catch (e) {
+              console.warn("Could not save failed message on abort:", e);
+            }
+          }
         }
         this.abortController.abort();
       });

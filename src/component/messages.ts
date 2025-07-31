@@ -303,6 +303,43 @@ export const rollbackMessage = mutation({
   },
 });
 
+export const saveFailedMessage = mutation({
+  args: {
+    threadId: v.id("threads"),
+    userId: v.optional(v.string()),
+    order: v.number(),
+    promptMessageId: v.id("messages"),
+    agentName: v.optional(v.string()),
+    model: v.optional(v.string()),
+    provider: v.optional(v.string()),
+    error: v.string(),
+    partialText: v.optional(v.string()),
+    abortReason: v.optional(v.string()),
+  },
+  returns: v.id("messages"),
+  handler: async (ctx, args) => {
+    const message = {
+      userId: args.userId,
+      threadId: args.threadId,
+      order: args.order,
+      stepOrder: 0,
+      agentName: args.agentName,
+      model: args.model,
+      provider: args.provider,
+      status: "failed" as const,
+      error: args.error,
+      tool: false,
+      text: args.partialText,
+      message: args.partialText ? {
+        role: "assistant" as const,
+        content: args.partialText,
+      } : undefined,
+    };
+    
+    return await ctx.db.insert("messages", message);
+  },
+});
+
 export const commitMessage = mutation({
   args: {
     messageId: v.id("messages"),

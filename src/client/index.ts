@@ -531,6 +531,17 @@ export class Agent<
           messageId,
           error: (error as Error).message,
         });
+        
+        await ctx.runMutation(this.component.messages.saveFailedMessage, {
+          threadId,
+          userId,
+          order,
+          promptMessageId: messageId,
+          agentName: this.options.name,
+          model: aiArgs.model.modelId,
+          provider: aiArgs.model.provider,
+          error: (error as Error).message,
+        });
       }
       throw error;
     }
@@ -645,8 +656,21 @@ export class Agent<
             messageId,
             error: (error.error as Error).message,
           });
+          
+          const partialText = streamer ? await this.getStreamedText(streamer) : undefined;
+          
+          await ctx.runMutation(this.component.messages.saveFailedMessage, {
+            threadId,
+            userId,
+            order,
+            promptMessageId: messageId,
+            agentName: this.options.name,
+            model: aiArgs.model.modelId,
+            provider: aiArgs.model.provider,
+            error: (error.error as Error).message,
+            partialText,
+          });
         }
-        // TODO: update the streamer to error state
         return args.onError?.(error);
       },
       onStepFinish: async (step) => {
@@ -775,6 +799,17 @@ export class Agent<
           messageId,
           error: (error as Error).message,
         });
+        
+        await ctx.runMutation(this.component.messages.saveFailedMessage, {
+          threadId,
+          userId,
+          order,
+          promptMessageId: messageId,
+          agentName: this.options.name,
+          model: aiArgs.model.modelId,
+          provider: aiArgs.model.provider,
+          error: (error as Error).message,
+        });
       }
       throw error;
     }
@@ -824,6 +859,23 @@ export class Agent<
       ...(aiArgs as any),
       onError: async (error) => {
         console.error("onError", error);
+        if (threadId && messageId && saveOutputMessages) {
+          await ctx.runMutation(this.component.messages.rollbackMessage, {
+            messageId,
+            error: (error as Error).message,
+          });
+          
+          await ctx.runMutation(this.component.messages.saveFailedMessage, {
+            threadId,
+            userId,
+            order,
+            promptMessageId: messageId,
+            agentName: this.options.name,
+            model: aiArgs.model.modelId,
+            provider: aiArgs.model.provider,
+            error: (error as Error).message,
+          });
+        }
         return args.onError?.(error);
       },
       onFinish: async (result) => {
@@ -1377,6 +1429,23 @@ export class Agent<
         messageId: args.messageId,
         error: result.error,
       });
+      
+      const message = await ctx.runQuery(this.component.messages.getMessagesByIds, {
+        messageIds: [args.messageId],
+      });
+      const messageDoc = message[0];
+      if (messageDoc) {
+        await ctx.runMutation(this.component.messages.saveFailedMessage, {
+          threadId: messageDoc.threadId,
+          userId: messageDoc.userId,
+          order: messageDoc.order,
+          promptMessageId: args.messageId,
+          agentName: messageDoc.agentName,
+          model: messageDoc.model,
+          provider: messageDoc.provider,
+          error: result.error,
+        });
+      }
     }
   }
 
@@ -1978,6 +2047,25 @@ export class Agent<
         );
         return {
           object: value.object as T,
+  private async getStreamedText(streamer: DeltaStreamer): Promise<string | undefined> {
+    try {
+      const parts = (streamer as any)['#nextParts'] || [];
+      return parts.map((part: any) => part.text || '').join('');
+    } catch (e) {
+      console.warn("Could not extract streamed text:", e);
+      return undefined;
+    }
+  }
+
+  private asObjectAction<T>(
+    ctx: ActionCtx,
+    args: OurStreamObjectArgs<T>,
+    options?: Options,
+  ) {
+    return {
+      async *[Symbol.asyncIterator]() {
+        const value = await this.streamObject(ctx, {}, args, options);
+        yield {
           messageId: value.messageId,
           order: value.order,
           finishReason: value.finishReason,
