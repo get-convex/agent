@@ -149,8 +149,9 @@ async function findAssociatedToolCall(
     const messages = await ctx.db
       .query("messages")
       .withIndex("threadId_status_tool_order_stepOrder", (q: any) =>
-        q.eq("threadId", threadId).eq("status", "success").eq("order", searchOrder)
+        q.eq("threadId", threadId).eq("status", "success")
       )
+      .filter((q: any) => q.eq(q.field("order"), searchOrder))
       .order("desc")
       .collect();
     
