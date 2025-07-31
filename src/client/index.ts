@@ -524,15 +524,28 @@ export class Agent<
       result.messageId = messageId;
       result.order = order;
       return result;
-    } catch (error) {
+    } catch (err) {
       if (threadId && messageId) {
         console.error("RollbackMessage", messageId);
+        const error = err instanceof Error ? err.message : String(err);
         await ctx.runMutation(this.component.messages.rollbackMessage, {
           messageId,
-          error: (error as Error).message,
+          error,
         });
+        if (saveOutput) {
+          await ctx.runMutation(this.component.messages.addFailedMessage, {
+            promptMessageId: messageId,
+            threadId,
+            userId,
+            agentName: this.options.name,
+            model: aiArgs.model.modelId,
+            provider: aiArgs.model.provider,
+            error,
+            providerOptions: aiArgs.providerOptions,
+          });
+        }
       }
-      throw error;
+      throw err;
     }
   }
 
@@ -613,6 +626,7 @@ export class Agent<
         ? new DeltaStreamer(this.component, ctx, opts.saveStreamDeltas, {
             threadId,
             userId,
+            promptMessageId: saveOutput ? messageId : undefined,
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
@@ -638,16 +652,32 @@ export class Agent<
         // console.log("onChunk", chunk);
         return args.onChunk?.(event);
       },
-      onError: async (error) => {
-        console.error("onError", error);
+      onError: async (err) => {
+        console.error("onError", err);
         if (threadId && messageId && saveOutput) {
+          const error =
+            err.error instanceof Error ? err.error.message : String(err.error);
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
-            error: (error.error as Error).message,
+            error,
           });
+          if (streamer) {
+            await streamer.fail(error);
+          } else {
+            // TODO: capture the parts that were generated so far for the failed message
+            await ctx.runMutation(this.component.messages.addFailedMessage, {
+              threadId,
+              userId,
+              promptMessageId: messageId,
+              agentName: this.options.name,
+              model: aiArgs.model.modelId,
+              provider: aiArgs.model.provider,
+              providerOptions: aiArgs.providerOptions,
+              error,
+            });
+          }
         }
-        // TODO: update the streamer to error state
-        return args.onError?.(error);
+        return args.onError?.(err);
       },
       onStepFinish: async (step) => {
         // console.log("onStepFinish", step);
@@ -775,6 +805,17 @@ export class Agent<
           messageId,
           error: (error as Error).message,
         });
+
+        await ctx.runMutation(this.component.messages.addFailedMessage, {
+          threadId,
+          userId,
+          promptMessageId: messageId,
+          agentName: this.options.name,
+          model: aiArgs.model.modelId,
+          provider: aiArgs.model.provider,
+          providerOptions: aiArgs.providerOptions,
+          error: (error as Error).message,
+        });
       }
       throw error;
     }
@@ -822,9 +863,28 @@ export class Agent<
     const stream = streamObject<T>({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(aiArgs as any),
-      onError: async (error) => {
-        console.error("onError", error);
-        return args.onError?.(error);
+      onError: async (err) => {
+        console.error("onError", err);
+        if (threadId && messageId && saveOutput) {
+          const error =
+            err.error instanceof Error ? err.error.message : String(err.error);
+          await ctx.runMutation(this.component.messages.rollbackMessage, {
+            messageId,
+            error,
+          });
+
+          await ctx.runMutation(this.component.messages.addFailedMessage, {
+            threadId,
+            userId,
+            promptMessageId: messageId,
+            agentName: this.options.name,
+            model: aiArgs.model.modelId,
+            provider: aiArgs.model.provider,
+            providerOptions: aiArgs.providerOptions,
+            error,
+          });
+        }
+        return args.onError?.(err);
       },
       onFinish: async (result) => {
         if (threadId && messageId && saveOutput) {
