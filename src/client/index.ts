@@ -532,6 +532,7 @@ export class Agent<
           error: (error as Error).message,
         });
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
           threadId,
           userId,
@@ -654,11 +655,13 @@ export class Agent<
         if (threadId && messageId && saveOutput) {
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             error: (error.error as any)?.message || String(error.error),
           });
           
           const partialText = streamer ? await this.getStreamedText(streamer) : undefined;
           
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
             threadId,
             userId,
@@ -667,6 +670,7 @@ export class Agent<
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             error: (error.error as any)?.message || String(error.error),
             partialText,
           });
@@ -800,6 +804,7 @@ export class Agent<
           error: (error as Error).message,
         });
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
           threadId,
           userId,
@@ -862,9 +867,11 @@ export class Agent<
         if (threadId && messageId && saveOutputMessages) {
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             error: (error as any)?.message || String(error),
           });
           
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
             threadId,
             userId,
@@ -873,6 +880,7 @@ export class Agent<
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             error: (error as any)?.message || String(error),
           });
         }
@@ -1435,6 +1443,7 @@ export class Agent<
       });
       const messageDoc = message[0];
       if (messageDoc) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
           threadId: messageDoc.threadId,
           userId: messageDoc.userId,
@@ -2058,7 +2067,9 @@ export class Agent<
 
   private async getStreamedText(streamer: DeltaStreamer): Promise<string | undefined> {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const parts = (streamer as any)['#nextParts'] || [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return parts.map((part: any) => part.text || '').join('');
     } catch (e) {
       console.warn("Could not extract streamed text:", e);

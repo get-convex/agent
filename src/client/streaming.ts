@@ -201,13 +201,16 @@ export class DeltaStreamer {
             reason: "abortSignal",
           });
           
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const partialText = this.#nextParts.map((part: any) => part.text || '').join('');
           if (metadata.threadId && metadata.order !== undefined) {
             try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const messageId = await this.ctx.runMutation((this.component.messages as any).saveFailedMessage, {
                 threadId: metadata.threadId,
                 userId: metadata.userId,
                 order: metadata.order,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 promptMessageId: this.streamId as any,
                 agentName: metadata.agentName,
                 model: metadata.model,
