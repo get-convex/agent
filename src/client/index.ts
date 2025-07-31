@@ -2072,7 +2072,7 @@ export class Agent<
           warnings: value.warnings,
         };
       },
-    });
+    };
   }
 
   /**
