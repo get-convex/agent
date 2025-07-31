@@ -7,6 +7,8 @@ import schema from "./schema.js";
 import { modules } from "./setup.test.js";
 import type { Doc } from "./_generated/dataModel.js";
 import type { PaginationResult } from "convex/server";
+import { storeFile } from "../client/files.js";
+import type { ActionCtx, AgentComponent } from "../client/types.js";
 
 describe("files", () => {
   test("addFile increments refcount and does not create a new entry", async () => {
@@ -126,5 +128,47 @@ describe("files", () => {
     expect(isDone).toBe(true);
     // All fileIds should be seen
     expect(seen.sort()).toEqual(files.sort());
+  });
+
+
+  test("blob consumption behavior - direct test", async () => {
+    const originalContent = "Test content to check blob consumption";
+    const blob = new Blob([originalContent], { type: "text/plain" });
+    
+    expect(blob.size).toBe(originalContent.length);
+    
+    const buffer = await blob.arrayBuffer();
+    expect(buffer.byteLength).toBe(originalContent.length);
+    expect(blob.size).toBe(originalContent.length);
+    
+    const buffer2 = await blob.arrayBuffer();
+    expect(buffer2.byteLength).toBe(originalContent.length);
+    expect(blob.size).toBe(originalContent.length);
+  });
+
+  test("blob consumption with hash calculation - simulates storeFile behavior", async () => {
+    const originalContent = "Test content for hash calculation simulation";
+    const blob = new Blob([originalContent], { type: "text/plain" });
+    
+    expect(blob.size).toBe(originalContent.length);
+    
+    const hash = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()),
+      ),
+    )
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    
+    expect(blob.size).toBe(originalContent.length);
+    expect(hash).toBeTruthy();
+    expect(hash.length).toBe(64);
+    
+    const mockStore = async (blob: Blob) => {
+      return { size: blob.size, id: "mock-storage-id" };
+    };
+    
+    const storeResult = await mockStore(blob);
+    expect(storeResult.size).toBe(originalContent.length);
   });
 });

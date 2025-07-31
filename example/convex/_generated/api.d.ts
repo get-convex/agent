@@ -21,6 +21,8 @@ import type * as debugging_rawRequestResponseHandler from "../debugging/rawReque
 import type * as files_addFile from "../files/addFile.js";
 import type * as files_autoSave from "../files/autoSave.js";
 import type * as files_generateImage from "../files/generateImage.js";
+import type * as files_runBlobTest from "../files/runBlobTest.js";
+import type * as files_testBlobConsumption from "../files/testBlobConsumption.js";
 import type * as files_vacuum from "../files/vacuum.js";
 import type * as http from "../http.js";
 import type * as modelsForDemo from "../modelsForDemo.js";
@@ -71,6 +73,8 @@ declare const fullApi: ApiFromModules<{
   "files/addFile": typeof files_addFile;
   "files/autoSave": typeof files_autoSave;
   "files/generateImage": typeof files_generateImage;
+  "files/runBlobTest": typeof files_runBlobTest;
+  "files/testBlobConsumption": typeof files_testBlobConsumption;
   "files/vacuum": typeof files_vacuum;
   http: typeof http;
   modelsForDemo: typeof modelsForDemo;
