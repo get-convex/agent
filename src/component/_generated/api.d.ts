@@ -746,6 +746,23 @@ export type Mounts = {
       { error?: string; messageId: string },
       null
     >;
+    saveFailedMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        abortReason?: string;
+        agentName?: string;
+        error: string;
+        model?: string;
+        order: number;
+        partialText?: string;
+        promptMessageId: string;
+        provider?: string;
+        threadId: string;
+        userId?: string;
+      },
+      string
+    >;
     searchMessages: FunctionReference<
       "action",
       "public",

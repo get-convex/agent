@@ -914,6 +914,23 @@ export declare const components: {
         { error?: string; messageId: string },
         null
       >;
+      saveFailedMessage: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          abortReason?: string;
+          agentName?: string;
+          error: string;
+          model?: string;
+          order: number;
+          partialText?: string;
+          promptMessageId: string;
+          provider?: string;
+          threadId: string;
+          userId?: string;
+        },
+        string
+      >;
       searchMessages: FunctionReference<
         "action",
         "internal",
