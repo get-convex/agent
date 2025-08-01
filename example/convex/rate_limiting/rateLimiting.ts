@@ -56,7 +56,7 @@ export const rateLimitedUsageHandler: UsageHandler = async (ctx, args) => {
 
 export const rateLimitedAgent = new Agent(components.agent, {
   name: "Rate Limited Agent",
-  chat: chat as any,
+  chat,
   usageHandler: rateLimitedUsageHandler,
   // Optional:
   textEmbedding,

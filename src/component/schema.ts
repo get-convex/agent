@@ -6,7 +6,7 @@ import {
   vMessageStatus,
   vUsage,
   vSource,
-  vLanguageModelV2CallWarning,
+  vLanguageModelCallWarning,
   vFinishReason,
   vProviderOptions,
   vProviderMetadata,
@@ -62,7 +62,7 @@ export const schema = defineSchema({
     sources: v.optional(v.array(vSource)),
     reasoning: v.optional(v.string()),
     reasoningDetails: v.optional(vReasoningDetails),
-    warnings: v.optional(v.array(vLanguageModelV2CallWarning)),
+    warnings: v.optional(v.array(vLanguageModelCallWarning)),
     finishReason: v.optional(vFinishReason),
     // DEPRECATED
     parentMessageId: v.optional(v.id("messages")),

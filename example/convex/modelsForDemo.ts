@@ -4,14 +4,14 @@ import type { LanguageModelV1 } from "@ai-sdk/provider";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
 
-let chat: LanguageModelV1;
+let chat: any;
 let textEmbedding: EmbeddingModel<string>;
 
 if (process.env.OPENAI_API_KEY) {
   chat = openai.languageModel("gpt-4o-mini") as any;
   textEmbedding = openai.embedding("text-embedding-3-small");
 } else if (process.env.GROQ_API_KEY) {
-  chat = groq.languageModel("meta-llama/llama-4-scout-17b-16e-instruct");
+  chat = groq.languageModel("meta-llama/llama-4-scout-17b-16e-instruct") as any;
   // } else if (process.env.OPENROUTER_API_KEY) {
   //   chat = openrouter.chat("openai/gpt-4o-mini") as LanguageModelV2;
 } else {

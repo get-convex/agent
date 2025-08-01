@@ -251,6 +251,23 @@ export const vUsage = v.object({
 });
 export type Usage = Infer<typeof vUsage>;
 
+export const vLanguageModelV1CallWarning = v.union(
+  v.object({
+    type: v.literal("unsupported-setting"),
+    setting: v.string(),
+    details: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("unsupported-tool"),
+    tool: v.any(),
+    details: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("other"),
+    message: v.string(),
+  }),
+);
+
 export const vLanguageModelV2CallWarning = v.union(
   v.object({
     type: v.literal("unsupported-setting"),
@@ -268,6 +285,11 @@ export const vLanguageModelV2CallWarning = v.union(
   }),
 );
 
+export const vLanguageModelCallWarning = v.union(
+  vLanguageModelV1CallWarning,
+  vLanguageModelV2CallWarning,
+);
+
 export const vMessageWithMetadataInternal = v.object({
   id: v.optional(v.string()), // external id, e.g. from Vercel AI SDK
   message: vMessage,
@@ -282,7 +304,7 @@ export const vMessageWithMetadataInternal = v.object({
   reasoning: v.optional(v.string()),
   reasoningDetails: v.optional(vReasoningDetails),
   usage: v.optional(vUsage),
-  warnings: v.optional(v.array(vLanguageModelV2CallWarning)),
+  warnings: v.optional(v.array(vLanguageModelCallWarning)),
   error: v.optional(v.string()),
 });
 export const vMessageWithMetadata = v.object({
@@ -305,7 +327,7 @@ export const vObjectResult = v.object({
   usage: v.optional(v.any()),
   object: v.any(),
   error: v.optional(v.string()),
-  warnings: v.optional(v.array(vLanguageModelV2CallWarning)),
+  warnings: v.optional(v.array(vLanguageModelCallWarning)),
   providerMetadata,
 });
 export type ObjectResult = Infer<typeof vObjectResult>;

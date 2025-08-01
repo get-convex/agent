@@ -7,7 +7,7 @@ import { chat, textEmbedding } from "../modelsForDemo";
 
 export const fashionAgent = new Agent(components.agent, {
   name: "Fashion Agent",
-  chat: chat as any,
+  chat,
   instructions:
     "You give fashion advice for a place a user is visiting, based on the weather.",
   tools: {

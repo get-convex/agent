@@ -7,7 +7,7 @@ import { usageHandler } from "../usage_tracking/usageHandler";
 // Define an agent similarly to the AI SDK
 export const storyAgent = new Agent(components.agent, {
   name: "Story Agent",
-  chat: chat as any,
+  chat,
   textEmbedding,
   instructions: "You tell stories with twist endings. ~ 200 words.",
   usageHandler,
