@@ -17,7 +17,7 @@ import { components } from "../_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { authorizeThreadAccess } from "../threads";
 import { z } from "zod";
-import { createTool } from "@convex-dev/agent";
+import { tool } from "ai";
 import { agent } from "../agents/simple";
 
 /**
@@ -70,14 +70,11 @@ export const sendMessageFromUser = mutation({
  * ===============================
  */
 
-export const askHuman = createTool({
+export const askHuman = tool({
   description: "Ask a human a question",
-  args: z.object({
+  inputSchema: z.object({
     question: z.string().describe("The question to ask the human"),
   }),
-  handler: async (ctx, { question }) => {
-    return question;
-  },
 });
 
 export const ask = action({
@@ -93,10 +90,15 @@ export const ask = action({
     );
     const supportRequests = result.toolCalls
       .filter((tc) => tc.toolName === "askHuman")
-      .map((tc) => ({
-        toolCallId: tc.toolCallId,
-        question: (tc.input as { question: string }).question,
-      }));
+      .map(({ toolCallId, input }) => {
+        if (typeof input === "object" && input !== null && "question" in input) {
+          return {
+            toolCallId,
+            question: String(input.question),
+          };
+        }
+        throw new Error(`Invalid input for askHuman tool call: ${JSON.stringify(input)}`);
+      });
     if (supportRequests.length > 0) {
       // Do something so the support agent knows they need to respond,
       // e.g. save a message to their inbox
@@ -129,9 +131,12 @@ export const humanResponseAsToolCall = internalAction({
         content: [
           {
             type: "tool-result",
-            output: args.response as any,
             toolCallId: args.toolCallId,
             toolName: "askHuman",
+            output: {
+              type: "text",
+              value: args.response,
+            },
           },
         ],
       },

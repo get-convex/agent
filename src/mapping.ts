@@ -86,6 +86,7 @@ export function serializeUsage(usage: LanguageModelUsage): Usage {
     completionTokens: usage.outputTokens ?? 0,
     totalTokens: usage.totalTokens ?? 0,
     reasoningTokens: usage.reasoningTokens,
+    cachedInputTokens: usage.cachedInputTokens,
   };
 }
 

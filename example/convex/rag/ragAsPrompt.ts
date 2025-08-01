@@ -3,12 +3,12 @@ import { RAG } from "@convex-dev/rag";
 import { v } from "convex/values";
 import { components, internal } from "../_generated/api";
 import { action, internalAction, mutation } from "../_generated/server";
-import { openai } from "@ai-sdk/openai";
+import { textEmbeddingV1 } from "../modelsForDemo";
 import { agent } from "../agents/simple";
 import { authorizeThreadAccess } from "../threads";
 
 export const rag = new RAG(components.rag, {
-  textEmbeddingModel: openai.embedding("text-embedding-3-small") as any,
+  textEmbeddingModel: textEmbeddingV1,
   embeddingDimension: 1536,
 });
 

@@ -21,9 +21,9 @@ export const usageHandler: UsageHandler = async (ctx, args) => {
     model: args.model,
     provider: args.provider,
     usage: {
-      promptTokens: args.usage.inputTokens || 0,
-      completionTokens: args.usage.outputTokens || 0,
-      totalTokens: args.usage.totalTokens || 0,
+      inputTokens: args.usage.inputTokens ?? 0,
+      outputTokens: args.usage.outputTokens ?? 0,
+      totalTokens: args.usage.totalTokens ?? 0,
       reasoningTokens: args.usage.reasoningTokens,
       cachedInputTokens: args.usage.cachedInputTokens,
     },

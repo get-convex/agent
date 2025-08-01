@@ -268,22 +268,7 @@ export const vLanguageModelV1CallWarning = v.union(
   }),
 );
 
-export const vLanguageModelV2CallWarning = v.union(
-  v.object({
-    type: v.literal("unsupported-setting"),
-    setting: v.string(),
-    details: v.optional(v.string()),
-  }),
-  v.object({
-    type: v.literal("unsupported-tool"),
-    tool: v.any(),
-    details: v.optional(v.string()),
-  }),
-  v.object({
-    type: v.literal("other"),
-    message: v.string(),
-  }),
-);
+export const vLanguageModelV2CallWarning = vLanguageModelV1CallWarning;
 
 export const vLanguageModelCallWarning = v.union(
   vLanguageModelV1CallWarning,

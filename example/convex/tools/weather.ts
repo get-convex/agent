@@ -1,66 +1,22 @@
 // See the docs at https://docs.convex.dev/agents/tools
-import { createTool } from "@convex-dev/agent";
+import { tool } from "ai";
 import { z } from "zod";
 
-export const getGeocoding = createTool({
+export const getGeocoding = tool({
   description: "Get the latitude and longitude of a location",
-  args: z.object({
+  inputSchema: z.object({
     location: z
       .string()
       .describe("The location to get the geocoding for, e.g. 'San Francisco'"),
   }),
-  handler: async (ctx, { location }) => {
-    console.log("getting geocoding for location", location);
-    const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`;
-    const geocodingResponse = await fetch(geocodingUrl);
-    const geocodingData = (await geocodingResponse.json()) as {
-      results: {
-        latitude: number;
-        longitude: number;
-        name: string;
-      }[];
-    };
-
-    if (!geocodingData.results?.[0]) {
-      throw new Error(`Location '${location}' not found`);
-    }
-
-    const { latitude, longitude, name } = geocodingData.results[0];
-    console.log("got geocoding for location", name, latitude, longitude);
-    return { latitude, longitude, name };
-  },
 });
 
-export const getWeather = createTool({
+export const getWeather = tool({
   description: "Get the weather for a location",
-  args: z.object({
+  inputSchema: z.object({
     latitude: z.number(),
     longitude: z.number(),
   }),
-  handler: async (ctx, args) => {
-    console.log("getting weather for location", args);
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${args.latitude}&longitude=${args.longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code&wind_speed_unit=mph&temperature_unit=fahrenheit`;
-
-    const response = await fetch(weatherUrl);
-    const data = (await response.json()) as {
-      current: {
-        time: string;
-        temperature_2m: number;
-        apparent_temperature: number;
-        wind_speed_10m: number;
-        wind_gusts_10m: number;
-        weather_code: number;
-      };
-    };
-    console.log("got weather for location", data);
-    return {
-      temperature: `${data.current.temperature_2m}°F`,
-      feelsLike: `${data.current.apparent_temperature}°F`,
-      windSpeed: `${data.current.wind_speed_10m} mph`,
-      windGust: `${data.current.wind_gusts_10m} mph`,
-      description: nameOfWeatherCode(data.current.weather_code),
-    };
-  },
 });
 
 /**

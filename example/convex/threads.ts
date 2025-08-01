@@ -17,6 +17,7 @@ import {
   saveMessage,
   vMessage,
 } from "@convex-dev/agent";
+import { deserializeMessage } from "../../src/mapping";
 import { getAuthUserId } from "./utils";
 import { agent } from "./agents/simple";
 import z from "zod";
@@ -46,7 +47,7 @@ export const createNewThread = mutation({
     if (initialMessage) {
       await saveMessage(ctx, components.agent, {
         threadId,
-        message: initialMessage as any,
+        message: deserializeMessage(initialMessage),
       });
     }
     return threadId;
