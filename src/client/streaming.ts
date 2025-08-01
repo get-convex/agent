@@ -201,8 +201,17 @@ export class DeltaStreamer {
             reason: "abortSignal",
           });
           
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const partialText = this.#nextParts.map((part: any) => part.text || '').join('');
+          const partialText = this.#nextParts.map((part) => {
+            switch (part.type) {
+              case "text-delta":
+              case "reasoning":
+                return part.textDelta;
+              case "tool-call-delta":
+                return part.argsTextDelta;
+              default:
+                return '';
+            }
+          }).join('');
           if (metadata.threadId && metadata.order !== undefined) {
             try {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
