@@ -20,6 +20,7 @@ import type {
   SyncStreamsReturnValue,
 } from "./types.js";
 import { omit } from "convex-helpers";
+import { convexToJson } from "convex/values";
 
 /**
  * A function that handles fetching stream deltas, used with the React hooks
@@ -164,6 +165,7 @@ export class DeltaStreamer {
   #latestWrite: number = 0;
   #ongoingWrite: Promise<void> | undefined;
   #cursor: number = 0;
+  #draining: boolean = false;
   public abortController: AbortController;
 
   constructor(
@@ -172,6 +174,7 @@ export class DeltaStreamer {
     options: true | StreamingOptions,
     public readonly metadata: {
       threadId: string;
+      promptMessageId: string | undefined;
       agentName: string | undefined;
       model: string | undefined;
       provider: string | undefined;
@@ -196,12 +199,14 @@ export class DeltaStreamer {
     if (metadata.abortSignal) {
       metadata.abortSignal.addEventListener("abort", async () => {
         if (this.streamId) {
-          await this.ctx.runMutation(this.component.streams.abort, {
-            streamId: this.streamId,
-            reason: "abortSignal",
-          });
+          const reason = metadata.abortSignal?.reason
+            ? typeof metadata.abortSignal.reason === "string"
+              ? metadata.abortSignal.reason
+              : JSON.stringify(convexToJson(metadata.abortSignal.reason))
+            : "abortSignal";
+          await this.fail(reason);
         }
-        this.abortController.abort();
+        this.abortController.abort(metadata.abortSignal?.reason);
       });
     }
   }
@@ -213,7 +218,7 @@ export class DeltaStreamer {
       this.streamId = await this.ctx.runMutation(
         this.component.streams.create,
         {
-          ...omit(this.metadata, ["abortSignal"]),
+          ...omit(this.metadata, ["abortSignal", "promptMessageId"]),
           order: this.#nextOrder,
           stepOrder: this.#nextStepOrder,
         },
@@ -249,7 +254,9 @@ export class DeltaStreamer {
     // Now that we've sent the delta, check if we need to send another one.
     if (
       this.#nextParts.length > 0 &&
-      Date.now() - this.#latestWrite >= this.options.throttleMs
+      Date.now() - this.#latestWrite >= this.options.throttleMs &&
+      !this.abortController.signal.aborted &&
+      !this.#draining
     ) {
       // We send again immediately with the accumulated deltas.
       this.#ongoingWrite = this.#sendDelta();
@@ -273,6 +280,27 @@ export class DeltaStreamer {
       end,
       parts,
     };
+  }
+
+  public async fail(reason: string) {
+    if (this.streamId) {
+      this.#draining = true;
+      if (this.#ongoingWrite) {
+        await this.#ongoingWrite;
+      }
+      // TODO: const delta = this.#createDelta();
+      await this.ctx.runMutation(this.component.streams.abort, {
+        streamId: this.streamId,
+        reason,
+        // finalDelta: delta,
+      });
+    } else if (this.metadata.promptMessageId) {
+      await this.ctx.runMutation(this.component.messages.addFailedMessage, {
+        ...omit(this.metadata, ["abortSignal", "order", "stepOrder"]),
+        promptMessageId: this.metadata.promptMessageId,
+        error: reason,
+      });
+    }
   }
 
   public async finish(messages: MessageDoc[]) {

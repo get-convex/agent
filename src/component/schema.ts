@@ -41,7 +41,6 @@ export const schema = defineSchema({
     stepOrder: v.number(),
     embeddingId: v.optional(vVectorId),
     fileIds: v.optional(v.array(v.id("files"))),
-    error: v.optional(v.string()),
     status: vMessageStatus,
 
     // Context on how it was generated
@@ -57,6 +56,7 @@ export const schema = defineSchema({
     text: v.optional(v.string()),
 
     // Result metadata
+    error: v.optional(v.string()),
     usage: v.optional(vUsage),
     providerMetadata: v.optional(vProviderMetadata), // Received from model
     sources: v.optional(v.array(vSource)),

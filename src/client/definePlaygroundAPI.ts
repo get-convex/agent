@@ -17,8 +17,7 @@ import {
   vStorageOptions,
   type AgentComponent,
   type Agent,
-} from "@convex-dev/agent";
-import type { ToolSet } from "ai";
+} from "./index.js";
 import { v } from "convex/values";
 
 export type PlaygroundAPI = ApiFromModules<{
