@@ -275,6 +275,16 @@ function orderedMessagesStream(
   );
 }
 
+// TODO: we need to decide whether rolling back makes sense in the context
+// of failed messages.
+// 1. User sends message, agent fails response.
+//   - user can retry using the latest message ID as the prompt
+//   - user can delete all messages at that order
+//   - user can mark all messages at that order as failed
+// 2. Workflow attempts with retries, using a promptMessageId
+//   - each time it should keep any successes.
+//   - a failed message should get recorded, and they can decide whether to include
+//     it in the prompt to the next agent (e.g. if it had a message already)
 export const rollbackMessage = mutation({
   args: {
     messageId: v.id("messages"),
