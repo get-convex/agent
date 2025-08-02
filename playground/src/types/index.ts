@@ -10,7 +10,6 @@ export interface Agent {
   instructions: string | undefined;
   contextOptions: ContextOptions | undefined;
   storageOptions: StorageOptions | undefined;
-  maxSteps: number | undefined;
   maxRetries: number | undefined;
   tools: string[];
 }

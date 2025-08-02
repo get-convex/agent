@@ -46,8 +46,8 @@ if (initFlag) {
 
     if (
       errorOutput.includes("OPENAI_API_KEY") ||
-      errorOutput.includes("GROQ_API_KEY") ||
-      errorOutput.includes("OPENROUTER_API_KEY")
+      errorOutput.includes("GROQ_API_KEY")
+      // || errorOutput.includes("OPENROUTER_API_KEY")
     ) {
       console.log("🔑 LLM API key required. Let's set one up...\n");
 
@@ -81,10 +81,10 @@ if (initFlag) {
           if (wantsGroq.toLowerCase().startsWith("y")) {
             apiKey = await askQuestion("Enter your Groq API key: ");
             envVarName = "GROQ_API_KEY";
-          } else {
-            // Default to OpenRouter
-            apiKey = await askQuestion("Enter your OpenRouter API key: ");
-            envVarName = "OPENROUTER_API_KEY";
+            // } else {
+            //   // Default to OpenRouter
+            //   apiKey = await askQuestion("Enter your OpenRouter API key: ");
+            //   envVarName = "OPENROUTER_API_KEY";
           }
         }
 
@@ -178,7 +178,7 @@ function setEnvironmentVariable(cwd, name, value) {
     console.log(`Setting ${name}...`);
     execSync(`npx convex env set ${name} "${value}"`, {
       cwd: cwd,
-      stdio: "inherit"
+      stdio: "inherit",
     });
     console.log("✅ Environment variable set successfully!");
     console.log("🎉 Setup complete! You can now run: npm run dev");

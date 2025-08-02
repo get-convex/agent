@@ -9,7 +9,7 @@ import type {
   StreamArgs,
   StreamDelta,
   StreamMessage,
-  TextStreamPart,
+  vTextStreamPartV5,
 } from "../validators.js";
 import type { MessageDoc } from "../component/schema.js";
 import type {
@@ -20,6 +20,7 @@ import type {
   SyncStreamsReturnValue,
 } from "./types.js";
 import { omit } from "convex-helpers";
+import type { Infer } from "convex/values";
 
 /**
  * A function that handles fetching stream deltas, used with the React hooks
@@ -158,7 +159,7 @@ export function mergeTransforms<TOOLS extends ToolSet>(
 export class DeltaStreamer {
   public streamId: string | undefined;
   public readonly options: Required<StreamingOptions>;
-  #nextParts: TextStreamPart[] = [];
+  #nextParts: Infer<typeof vTextStreamPartV5>[] = [];
   #nextOrder: number;
   #nextStepOrder: number;
   #latestWrite: number = 0;
@@ -205,7 +206,7 @@ export class DeltaStreamer {
       });
     }
   }
-  public async addParts(parts: TextStreamPart[]) {
+  public async addParts(parts: Infer<typeof vTextStreamPartV5>[]) {
     if (this.abortController.signal.aborted) {
       return;
     }

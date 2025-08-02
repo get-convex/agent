@@ -69,6 +69,7 @@ export const vReasoningPart = v.object({
   text: v.string(),
   signature: v.optional(v.string()),
   providerOptions,
+  state: v.optional(v.union(v.literal("streaming"), v.literal("done"))),
 });
 
 export const vRedactedReasoningPart = v.object({
@@ -79,6 +80,7 @@ export const vRedactedReasoningPart = v.object({
 
 export const vReasoningDetails = v.array(
   v.union(
+    vReasoningPart,
     v.object({
       type: v.literal("text"),
       text: v.string(),
@@ -97,6 +99,7 @@ export const vToolCallPart = v.object({
   toolName: v.string(),
   args: v.any(),
   providerOptions,
+  providerExecuted: v.optional(v.boolean()),
 });
 
 export const vAssistantContent = v.union(
@@ -126,17 +129,20 @@ const vToolResultContent = v.array(
   ),
 );
 
-const vToolResultPart = v.object({
+export const vToolResultPart = v.object({
   type: v.literal("tool-result"),
   toolCallId: v.string(),
   toolName: v.string(),
   result: v.any(),
+  providerOptions,
+  providerExecuted: v.optional(v.boolean()),
+
+  // Deprecated in ai v5
+  isError: v.optional(v.boolean()),
   // This is only here b/c steps include it in toolResults
-  // Normal CoreMessage doesn't have this
+  // Normal ModelMessage doesn't have this
   args: v.optional(v.any()),
   experimental_content: v.optional(vToolResultContent),
-  isError: v.optional(v.boolean()),
-  providerOptions,
 });
 export const vToolContent = v.array(vToolResultPart);
 
@@ -175,13 +181,25 @@ export const vMessage = v.union(
 );
 export type Message = Infer<typeof vMessage>;
 
-export const vSource = v.object({
-  sourceType: v.literal("url"),
-  id: v.string(),
-  url: v.string(),
-  title: v.optional(v.string()),
-  providerOptions,
-});
+export const vSource = v.union(
+  v.object({
+    type: v.optional(v.literal("source")),
+    sourceType: v.literal("url"),
+    id: v.string(),
+    url: v.optional(v.string()),
+    title: v.optional(v.string()),
+    providerOptions,
+  }),
+  v.object({
+    type: v.literal("source"),
+    sourceType: v.literal("document"),
+    id: v.string(),
+    mediaType: v.string(),
+    title: v.string(),
+    filename: v.optional(v.string()),
+    providerMetadata,
+  }),
+);
 
 export const vRequest = v.object({
   body: v.optional(v.any()),
@@ -228,10 +246,12 @@ export const vUsage = v.object({
   promptTokens: v.number(),
   completionTokens: v.number(),
   totalTokens: v.number(),
+  reasoningTokens: v.optional(v.number()),
+  cachedInputTokens: v.optional(v.number()),
 });
 export type Usage = Infer<typeof vUsage>;
 
-export const vLanguageModelV1CallWarning = v.union(
+export const vLanguageModelCallWarning = v.union(
   v.object({
     type: v.literal("unsupported-setting"),
     setting: v.string(),
@@ -262,7 +282,7 @@ export const vMessageWithMetadataInternal = v.object({
   reasoning: v.optional(v.string()),
   reasoningDetails: v.optional(vReasoningDetails),
   usage: v.optional(vUsage),
-  warnings: v.optional(v.array(vLanguageModelV1CallWarning)),
+  warnings: v.optional(v.array(vLanguageModelCallWarning)),
   error: v.optional(v.string()),
 });
 export const vMessageWithMetadata = v.object({
@@ -285,7 +305,7 @@ export const vObjectResult = v.object({
   usage: v.optional(v.any()),
   object: v.any(),
   error: v.optional(v.string()),
-  warnings: v.optional(v.array(vLanguageModelV1CallWarning)),
+  warnings: v.optional(v.array(vLanguageModelCallWarning)),
   providerMetadata,
 });
 export type ObjectResult = Infer<typeof vObjectResult>;
@@ -388,7 +408,7 @@ export function vPaginationResult<
   });
 }
 
-export const vTextStreamPart = v.union(
+export const vTextStreamPartV4 = v.union(
   v.object({
     type: v.literal("text-delta"),
     textDelta: v.string(),
@@ -399,9 +419,16 @@ export const vTextStreamPart = v.union(
   }),
   v.object({
     type: v.literal("source"),
-    source: vSource,
+    source: v.object({
+      sourceType: v.literal("url"),
+      id: v.string(),
+      url: v.optional(v.string()),
+      title: v.optional(v.string()),
+      providerOptions,
+    }),
   }),
   vToolCallPart,
+  vToolResultPart,
   v.object({
     type: v.literal("tool-call-streaming-start"),
     toolCallId: v.string(),
@@ -413,8 +440,59 @@ export const vTextStreamPart = v.union(
     toolName: v.string(),
     argsTextDelta: v.string(),
   }),
-  vToolResultPart,
 );
+export const vTextStreamPartV5 = v.union(
+  v.object({
+    type: v.literal("text-delta"),
+    id: v.string(),
+    text: v.string(),
+    providerMetadata,
+  }),
+  v.object({
+    type: v.literal("reasoning-delta"),
+    id: v.string(),
+    text: v.string(),
+    providerMetadata,
+  }),
+  vSource,
+  v.object({
+    type: v.literal("tool-call"),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    input: v.any(),
+    providerExecuted: v.optional(v.boolean()),
+    dynamic: v.optional(v.boolean()),
+    providerMetadata,
+  }),
+  v.object({
+    type: v.literal("tool-input-start"),
+    id: v.string(),
+    toolName: v.string(),
+    providerMetadata,
+    providerExecuted: v.optional(v.boolean()),
+    dynamic: v.optional(v.boolean()),
+  }),
+  v.object({
+    type: v.literal("tool-input-delta"),
+    id: v.string(),
+    delta: v.string(),
+    providerMetadata,
+  }),
+  v.object({
+    type: v.literal("tool-result"),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    input: v.optional(v.any()),
+    output: v.optional(v.any()),
+    providerExecuted: v.optional(v.boolean()),
+    dynamic: v.optional(v.boolean()),
+  }),
+  v.object({
+    type: v.literal("raw"),
+    rawValue: v.any(),
+  }),
+);
+export const vTextStreamPart = v.union(vTextStreamPartV4, vTextStreamPartV5);
 export type TextStreamPart = Infer<typeof vTextStreamPart>;
 
 export const vStreamCursor = v.object({

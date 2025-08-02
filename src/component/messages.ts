@@ -115,8 +115,8 @@ export const deleteByOrder = mutation({
     await Promise.all(messages.map((m) => deleteMessage(ctx, m)));
     return {
       isDone: messages.length < 64,
-      lastOrder: messages[messages.length - 1]?.order,
-      lastStepOrder: messages[messages.length - 1]?.stepOrder,
+      lastOrder: messages.at(-1)?.order,
+      lastStepOrder: messages.at(-1)?.stepOrder,
     };
   },
 });

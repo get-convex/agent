@@ -208,7 +208,7 @@ function Message({ message }: { message: UIMessage }) {
           isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800"
         }`}
       >
-        {message.content}
+        {message.text}
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
-import type { Schema, Tool, ToolExecutionOptions, ToolSet } from "ai";
+import type { Schema, Tool, ToolCallOptions, ToolSet } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
 import type { Agent } from "./index.js";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
+import type { ProviderOptions } from "../validators.js";
 
 export type ToolCtx<DataModel extends GenericDataModel = GenericDataModel> =
   GenericActionCtx<DataModel> & {
@@ -19,11 +20,7 @@ export type ToolCtx<DataModel extends GenericDataModel = GenericDataModel> =
  * but swap parameters for args and handler for execute.
  * @returns A tool to be used with the AI SDK.
  */
-export function createTool<
-  PARAMETERS extends ToolParameters,
-  RESULT,
-  Ctx extends ToolCtx = ToolCtx,
->(t: {
+export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
   /**
   An optional description of what the tool does.
   Will be used by the language model to decide whether to use the tool.
@@ -35,7 +32,7 @@ export function createTool<
   It is also used to validate the output of the language model.
   Use descriptions to make the input understandable for the language model.
      */
-  args: PARAMETERS;
+  args: ToolParameters<INPUT>;
   /**
   An async function that is called with the arguments from the tool call and produces a result.
   If not provided, the tool will not be executed automatically.
@@ -45,36 +42,78 @@ export function createTool<
      */
   handler: (
     ctx: Ctx,
-    args: inferParameters<PARAMETERS>,
-    options: ToolExecutionOptions,
-  ) => PromiseLike<RESULT>;
+    args: INPUT,
+    options: ToolCallOptions,
+  ) => PromiseLike<OUTPUT>;
+  /**
+   * Provide the context to use, e.g. when defining the tool at runtime.
+   */
   ctx?: Ctx;
-}): Tool<PARAMETERS, RESULT> & {
-  execute: (
-    args: inferParameters<PARAMETERS>,
-    options: ToolExecutionOptions,
-  ) => PromiseLike<RESULT>;
-} {
-  const args = {
+  /**
+   * Optional function that is called when the argument streaming starts.
+   * Only called when the tool is used in a streaming context.
+   */
+  onInputStart?: (
+    ctx: Ctx,
+    options: ToolCallOptions,
+  ) => void | PromiseLike<void>;
+  /**
+   * Optional function that is called when an argument streaming delta is available.
+   * Only called when the tool is used in a streaming context.
+   */
+  onInputDelta?: (
+    ctx: Ctx,
+    options: {
+      inputTextDelta: string;
+    } & ToolCallOptions,
+  ) => void | PromiseLike<void>;
+  /**
+   * Optional function that is called when a tool call can be started,
+   * even if the execute function is not provided.
+   */
+  onInputAvailable?: (
+    ctx: Ctx,
+    options: {
+      input: [INPUT] extends [never] ? undefined : INPUT;
+    } & ToolCallOptions,
+  ) => void | PromiseLike<void>;
+
+  // Extra AI SDK pass-through options.
+  providerOptions?: ProviderOptions;
+}): Tool<INPUT, OUTPUT> {
+  const t = tool({
+    type: "function",
     __acceptsCtx: true,
-    ctx: t.ctx,
-    description: t.description,
-    parameters: t.args,
-    async execute(
-      args: inferParameters<PARAMETERS>,
-      options: ToolExecutionOptions,
-    ) {
-      if (!this.ctx) {
+    ctx: def.ctx,
+    description: def.description,
+    inputSchema: def.args,
+    async execute(args: INPUT, options: ToolCallOptions) {
+      if (!getCtx(this)) {
         throw new Error(
           "To use a Convex tool, you must either provide the ctx" +
             " at definition time (dynamically in an action), or use the Agent to" +
             " call it (which injects the ctx, userId and threadId)",
         );
       }
-      return t.handler(this.ctx, args, options);
+      return def.handler(getCtx(this), args, options);
     },
-  };
-  return tool(args);
+    providerOptions: def.providerOptions,
+  });
+  if (def.onInputStart) {
+    t.onInputStart = def.onInputStart.bind(t, getCtx(t));
+  }
+  if (def.onInputDelta) {
+    t.onInputDelta = def.onInputDelta.bind(t, getCtx(t));
+  }
+  if (def.onInputAvailable) {
+    t.onInputAvailable = def.onInputAvailable.bind(t, getCtx(t));
+  }
+  return t;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getCtx<Ctx extends ToolCtx>(tool: any): Ctx {
+  return (tool as { ctx: Ctx }).ctx;
 }
 
 export function wrapTools(
@@ -100,12 +139,4 @@ export function wrapTools(
 }
 
 // Vendoring in from "ai" package since it wasn't exported
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ToolParameters = z.ZodTypeAny | Schema<any>;
-type inferParameters<PARAMETERS extends ToolParameters> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  PARAMETERS extends Schema<any>
-    ? PARAMETERS["_type"]
-    : PARAMETERS extends z.ZodTypeAny
-      ? z.infer<PARAMETERS>
-      : never;
+type ToolParameters<T> = z.Schema<T> | Schema<T>;

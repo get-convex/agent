@@ -72,7 +72,7 @@ export const sendMessageFromUser = mutation({
 
 export const askHuman = tool({
   description: "Ask a human a question",
-  parameters: z.object({
+  inputSchema: z.object({
     question: z.string().describe("The question to ask the human"),
   }),
 });
@@ -89,8 +89,8 @@ export const ask = action({
       },
     );
     const supportRequests = result.toolCalls
-      .filter((tc) => tc.toolName === "askHuman")
-      .map(({ toolCallId, args: { question } }) => ({
+      .filter((tc) => tc.toolName === "askHuman" && !tc.dynamic)
+      .map(({ toolCallId, input: { question } }) => ({
         toolCallId,
         question,
       }));
@@ -126,7 +126,7 @@ export const humanResponseAsToolCall = internalAction({
         content: [
           {
             type: "tool-result",
-            result: args.response,
+            output: { type: "text", value: args.response },
             toolCallId: args.toolCallId,
             toolName: "askHuman",
           },

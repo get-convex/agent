@@ -1,10 +1,7 @@
-import type { FileUIPart } from "@ai-sdk/ui-utils";
 import {
-  convertToCoreMessages,
-  coreMessageSchema,
-  type Message as AIMessage,
+  type UIMessage as AIMessage,
   type AssistantContent,
-  type CoreMessage,
+  type ModelMessage,
   type DataContent,
   type FilePart,
   type GenerateObjectResult,
@@ -13,12 +10,32 @@ import {
   type ToolContent,
   type ToolSet,
   type UserContent,
+  type FileUIPart,
+  type LanguageModelUsage,
+  type CallWarning,
+  type TextPart,
+  type ToolCallPart,
+  type ToolResultPart,
+  type ReasoningUIPart,
 } from "ai";
-import { assert } from "convex-helpers";
-import type { MessageWithMetadata } from "./validators.js";
+import type {
+  Message,
+  MessageWithMetadata,
+  Usage,
+  vContent,
+  vFilePart,
+  vImagePart,
+  vReasoningPart,
+  vRedactedReasoningPart,
+  vTextPart,
+  vToolCallPart,
+  vToolResultPart,
+} from "./validators.js";
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { RunMutationCtx } from "./client/types.js";
 import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
+import type { Infer } from "convex/values";
+import { omit } from "convex-helpers";
 
 export type AIMessageWithoutId = Omit<AIMessage, "id">;
 
@@ -34,16 +51,17 @@ export type SerializeUrlsAndUint8Arrays<T> = T extends URL
         : T;
 
 export type Content = UserContent | AssistantContent | ToolContent;
-export type SerializedContent = SerializeUrlsAndUint8Arrays<Content>;
+export type SerializedContent = Message["content"];
 
-export type SerializedMessage = SerializeUrlsAndUint8Arrays<CoreMessage>;
+export type SerializedMessage = Message;
 
 export async function serializeMessage(
   ctx: ActionCtx | RunMutationCtx,
   component: AgentComponent,
-  messageWithId: CoreMessage & { id?: string },
+  messageWithId: (ModelMessage & { id?: string }) | Message,
 ): Promise<{ message: SerializedMessage; fileIds?: string[] }> {
-  const { id: _, experimental_providerMetadata, ...message } = messageWithId;
+  const message =
+    "id" in messageWithId ? omit(messageWithId, ["id"]) : messageWithId;
   const { content, fileIds } = await serializeContent(
     ctx,
     component,
@@ -51,8 +69,6 @@ export async function serializeMessage(
   );
   return {
     message: {
-      // for backwards compatibility
-      providerOptions: experimental_providerMetadata,
       ...message,
       content,
     } as SerializedMessage,
@@ -60,11 +76,54 @@ export async function serializeMessage(
   };
 }
 
-export function deserializeMessage(message: SerializedMessage): CoreMessage {
+export function deserializeMessage(message: SerializedMessage): ModelMessage {
   return {
     ...message,
     content: deserializeContent(message.content),
-  } as CoreMessage;
+  } as ModelMessage;
+}
+
+export function serializeUsage(usage: LanguageModelUsage): Usage {
+  return {
+    promptTokens: usage.inputTokens ?? 0,
+    completionTokens: usage.outputTokens ?? 0,
+    totalTokens: usage.totalTokens ?? 0,
+    reasoningTokens: usage.reasoningTokens,
+  };
+}
+
+export function deserializeUsage(usage: Usage): LanguageModelUsage {
+  return {
+    inputTokens: usage.promptTokens,
+    outputTokens: usage.completionTokens,
+    totalTokens: usage.totalTokens,
+    reasoningTokens: usage.reasoningTokens,
+    cachedInputTokens: usage.cachedInputTokens,
+  };
+}
+
+export function serializeWarnings(
+  warnings: CallWarning[] | undefined,
+): MessageWithMetadata["warnings"] {
+  if (!warnings) {
+    return undefined;
+  }
+  return warnings.map((warning) => {
+    if (warning.type !== "unsupported-setting") {
+      return warning;
+    }
+    return {
+      ...warning,
+      setting: warning.setting.toString(),
+    };
+  });
+}
+
+export function deserializeWarnings(
+  warnings: MessageWithMetadata["warnings"],
+): CallWarning[] | undefined {
+  // We don't need to do anythign here for now
+  return warnings;
 }
 
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
@@ -79,13 +138,14 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
     model: metadata.model,
     provider: metadata.provider,
     providerMetadata: step.providerMetadata,
-    reasoning: step.reasoning,
-    reasoningDetails: step.reasoningDetails,
-    usage: step.usage,
-    warnings: step.warnings,
+    reasoning: step.reasoningText,
+    reasoningDetails: step.reasoning,
+    usage: serializeUsage(step.usage),
+    warnings: serializeWarnings(step.warnings),
     finishReason: step.finishReason,
-    sources: step.stepType === "tool-result" ? undefined : step.sources,
-  };
+    // Only store the sources on one message
+    sources: step.toolResults.length === 0 ? step.sources : undefined,
+  } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
   const toolFields = {
     sources: step.sources,
   };
@@ -135,8 +195,8 @@ export async function serializeObjectResult(
         providerMetadata: result.providerMetadata,
         finishReason: result.finishReason,
         text,
-        usage: result.usage,
-        warnings: result.warnings,
+        usage: serializeUsage(result.usage),
+        warnings: serializeWarnings(result.warnings),
         fileIds,
       },
     ],
@@ -146,16 +206,31 @@ export async function serializeObjectResult(
 export async function serializeContent(
   ctx: ActionCtx | RunMutationCtx,
   component: AgentComponent,
-  content: Content,
+  content: Content | Message["content"],
 ): Promise<{ content: SerializedContent; fileIds?: string[] }> {
   if (typeof content === "string") {
     return { content };
   }
   const fileIds: string[] = [];
+  function getMimeType(part: { mediaType?: string; mimeType?: string }) {
+    if ("mediaType" in part) {
+      return part.mediaType;
+    }
+    if ("mimeType" in part) {
+      return part.mimeType;
+    }
+    return undefined;
+  }
   const serialized = await Promise.all(
-    content.map(async ({ experimental_providerMetadata, ...rest }) => {
-      const part = { providerOptions: experimental_providerMetadata, ...rest };
+    content.map(async (part) => {
       switch (part.type) {
+        case "text": {
+          return {
+            type: part.type,
+            text: part.text,
+            providerOptions: part.providerOptions,
+          } satisfies Infer<typeof vTextPart>;
+        }
         case "image": {
           let image = serializeDataOrUrl(part.image);
           if (
@@ -166,13 +241,18 @@ export async function serializeContent(
               ctx,
               component,
               new Blob([image], {
-                type: part.mimeType || guessMimeType(image),
+                type: getMimeType(part) || guessMimeType(image),
               }),
             );
             image = file.url;
             fileIds.push(file.fileId);
           }
-          return { ...part, image };
+          return {
+            type: part.type,
+            mimeType: getMimeType(part),
+            providerOptions: part.providerOptions,
+            image,
+          } satisfies Infer<typeof vImagePart>;
         }
         case "file": {
           let data = serializeDataOrUrl(part.data);
@@ -180,18 +260,56 @@ export async function serializeContent(
             const { file } = await storeFile(
               ctx,
               component,
-              new Blob([data], { type: part.mimeType }),
+              new Blob([data], { type: getMimeType(part) }),
             );
             data = file.url;
             fileIds.push(file.fileId);
           }
-          return { ...part, data };
+          return {
+            type: part.type,
+            data,
+            filename: part.filename,
+            mimeType: getMimeType(part)!,
+            providerOptions: part.providerOptions,
+          } satisfies Infer<typeof vFilePart>;
+        }
+        case "tool-call": {
+          const args = "input" in part ? part.input : part.args;
+          return {
+            type: part.type,
+            args: args ?? null,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            providerOptions: part.providerOptions,
+            providerExecuted: part.providerExecuted,
+          } satisfies Infer<typeof vToolCallPart>;
         }
         case "tool-result": {
-          return { ...part, result: part.result ?? null };
+          const result = "output" in part ? part.output : part.result;
+          return {
+            type: part.type,
+            result: result ?? null,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            providerOptions: part.providerOptions,
+          } satisfies Infer<typeof vToolResultPart>;
+        }
+        case "reasoning": {
+          return {
+            type: part.type,
+            text: part.text,
+            providerOptions: part.providerOptions,
+          } satisfies Infer<typeof vReasoningPart>;
+        }
+        case "redacted-reasoning": {
+          return {
+            type: part.type,
+            data: part.data,
+            providerOptions: part.providerOptions,
+          } satisfies Infer<typeof vRedactedReasoningPart>;
         }
         default:
-          return part;
+          return part satisfies Infer<typeof vContent>;
       }
     }),
   );
@@ -207,12 +325,60 @@ export function deserializeContent(content: SerializedContent): Content {
   }
   return content.map((part) => {
     switch (part.type) {
+      case "text":
+        return {
+          type: part.type,
+          text: part.text,
+          providerOptions: part.providerOptions,
+        } satisfies TextPart;
       case "image":
-        return { ...part, image: deserializeUrl(part.image) };
+        return {
+          type: part.type,
+          image: deserializeUrl(part.image),
+          mediaType: part.mimeType,
+          providerOptions: part.providerOptions,
+        } satisfies ImagePart;
       case "file":
-        return { ...part, data: deserializeUrl(part.data) };
+        return {
+          type: part.type,
+          data: deserializeUrl(part.data),
+          filename: part.filename,
+          mediaType: part.mimeType,
+          providerOptions: part.providerOptions,
+        } satisfies FilePart;
+      case "tool-call":
+        return {
+          type: part.type,
+          input: part.args ?? null,
+          providerExecuted: part.providerExecuted,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          providerOptions: part.providerOptions,
+        } satisfies ToolCallPart;
+      case "tool-result":
+        return {
+          type: part.type,
+          output: part.result ?? null,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          providerOptions: part.providerOptions,
+        } satisfies ToolResultPart;
+      case "reasoning":
+        return {
+          type: part.type,
+          text: part.text,
+          providerMetadata: part.providerOptions,
+          state: part.state,
+        } satisfies ReasoningUIPart;
+      case "redacted-reasoning":
+        // TODO: should we just drop this?
+        return {
+          type: "reasoning",
+          text: part.data,
+          providerMetadata: part.providerOptions,
+        } satisfies ReasoningUIPart;
       default:
-        return part;
+        return part satisfies Content;
     }
   }) as Content;
 }
@@ -323,15 +489,18 @@ export function deserializeUrl(
 }
 
 export function toUIFilePart(part: ImagePart | FilePart): FileUIPart {
-  const dataOrUrl = serializeDataOrUrl(
-    part.type === "image" ? part.image : part.data,
-  );
+  const dataOrUrl = part.type === "image" ? part.image : part.data;
+  const url =
+    dataOrUrl instanceof ArrayBuffer
+      ? encodeBase64(dataOrUrl)
+      : dataOrUrl.toString();
 
   return {
     type: "file",
-    data:
-      dataOrUrl instanceof ArrayBuffer ? encodeBase64(dataOrUrl) : dataOrUrl,
-    mimeType: part.mimeType ?? guessMimeType(dataOrUrl),
+    mediaType: part.mediaType!,
+    filename: part.type === "file" ? part.filename : undefined,
+    url,
+    providerMetadata: part.providerOptions,
   };
 }
 
@@ -339,37 +508,21 @@ function encodeBase64(data: ArrayBuffer): string {
   return Buffer.from(data).toString("base64");
 }
 
-export function promptOrMessagesToCoreMessages(args: {
-  prompt?: string;
-  messages?: CoreMessage[] | AIMessageWithoutId[];
-  promptMessageId?: string;
-}): CoreMessage[] {
-  const messages: CoreMessage[] = [];
-  assert(
-    args.prompt || args.messages || args.promptMessageId,
-    "messages or prompt or promptMessageId is required",
-  );
-  if (args.messages) {
-    if (
-      args.messages.some(
-        (m) =>
-          typeof m === "object" &&
-          m !== null &&
-          (m.role === "data" || // UI-only role
-            "toolInvocations" in m || // UI-specific field
-            "parts" in m || // UI-specific field
-            "experimental_attachments" in m),
-      )
-    ) {
-      messages.push(...convertToCoreMessages(args.messages as AIMessage[]));
-    } else {
-      messages.push(...coreMessageSchema.array().parse(args.messages));
-    }
-  }
-  // If they specify both a promptMessageId and a prompt, we will replace the
-  // promptMessageId message with the prompt later.
-  if (args.prompt && !args.promptMessageId) {
-    messages.push({ role: "user", content: args.prompt });
-  }
-  return messages;
-}
+// Currently unused
+// export function toModelMessages(args: {
+//   messages?: ModelMessage[] | AIMessageWithoutId[];
+// }): ModelMessage[] {
+//   const messages: ModelMessage[] = [];
+//   if (args.messages) {
+//     if (
+//       args.messages.every(
+//         (m) => typeof m === "object" && m !== null && "parts" in m,
+//       )
+//     ) {
+//       messages.push(...convertToModelMessages(args.messages));
+//     } else {
+//       messages.push(...modelMessageSchema.array().parse(args.messages));
+//     }
+//   }
+//   return messages;
+// }

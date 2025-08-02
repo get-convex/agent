@@ -173,7 +173,7 @@ function Story({ threadId, reset }: { threadId: string; reset: () => void }) {
 
 function Message({ message }: { message: UIMessage }) {
   const isUser = message.role === "user";
-  const [visibleText] = useSmoothText(message.content, {
+  const [visibleText] = useSmoothText(message.text, {
     // This tells the hook that it's ok to start streaming immediately.
     // If this was always passed as true, messages that are already done would
     // also stream in.

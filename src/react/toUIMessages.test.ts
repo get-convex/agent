@@ -31,7 +31,7 @@ describe("toUIMessages", () => {
     const uiMessages = toUIMessages(messages);
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("user");
-    expect(uiMessages[0].content).toBe("Hello!");
+    expect(uiMessages[0].text).toBe("Hello!");
     expect(uiMessages[0].parts[0]).toEqual({ type: "text", text: "Hello!" });
   });
 
@@ -48,10 +48,11 @@ describe("toUIMessages", () => {
     const uiMessages = toUIMessages(messages);
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("assistant");
-    expect(uiMessages[0].content).toBe("Hi, how can I help?");
+    expect(uiMessages[0].text).toBe("Hi, how can I help?");
     expect(uiMessages[0].parts[0]).toEqual({
       type: "text",
       text: "Hi, how can I help?",
+      state: "done",
     });
   });
 
@@ -83,13 +84,13 @@ describe("toUIMessages", () => {
             {
               type: "file",
               mimeType: "text/plain",
-              data: "asdfasdfasdf",
+              data: "https://example.com/file.txt",
             },
             {
               type: "tool-call",
               toolName: "myTool",
               toolCallId: "call1",
-              args: "",
+              args: "an arg",
             },
           ],
         },
@@ -109,7 +110,6 @@ describe("toUIMessages", () => {
             },
           ],
         },
-        text: "42",
         tool: true,
       }),
     ];
@@ -121,18 +121,15 @@ describe("toUIMessages", () => {
     );
     expect(uiMessages[1].role).toBe("assistant");
     expect(
-      uiMessages[1].parts.filter((p) => p.type === "tool-invocation"),
+      uiMessages[1].parts.filter((p) => p.type === "tool-myTool"),
     ).toHaveLength(1);
     expect(
-      uiMessages[1].parts.filter((p) => p.type === "tool-invocation")[0]
-        .toolInvocation,
-    ).toEqual({
-      toolName: "myTool",
+      uiMessages[1].parts.filter((p) => p.type === "tool-myTool")[0],
+    ).toMatchObject({
+      type: "tool-myTool",
       toolCallId: "call1",
-      args: "",
-      state: "result",
-      result: "42",
-      step: 0,
+      state: "output-available",
+      output: "42",
     });
   });
 
@@ -167,21 +164,39 @@ describe("toUIMessages", () => {
     const uiMessages = toUIMessages(messages);
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("assistant");
-    expect(uiMessages[0].content).toBe("Here's one idea. Here's another idea.");
-    expect(
-      uiMessages[0].parts.filter((p) => p.type === "reasoning"),
-    ).toHaveLength(1);
+    expect(uiMessages[0].text).toBe("Here's one idea. Here's another idea.");
+    expect(uiMessages[0].parts.filter((p) => p.type === "reasoning")).toEqual([
+      {
+        providerMetadata: undefined,
+        state: undefined,
+        text: "I'm thinking...",
+        type: "reasoning",
+      },
+      {
+        providerMetadata: undefined,
+        state: undefined,
+        text: "I'm thinking...",
+        type: "reasoning",
+      },
+    ]);
     expect(uiMessages[0].parts[0].type).toBe("reasoning");
     assert(uiMessages[0].parts[0].type === "reasoning");
-    expect(uiMessages[0].parts[0].reasoning).toBe(
-      "I'm thinking...I'm thinking...",
-    );
+    expect(uiMessages[0].parts[0].text).toBe("I'm thinking...");
+    expect(uiMessages[0].parts[1].type).toBe("text");
+    assert(uiMessages[0].parts[1].type === "text");
+    expect(uiMessages[0].parts[1].text).toBe("Here's one idea.");
+    expect(uiMessages[0].parts[2].type).toBe("reasoning");
+    assert(uiMessages[0].parts[2].type === "reasoning");
+    expect(uiMessages[0].parts[2].text).toBe("I'm thinking...");
 
     expect(uiMessages[0].parts.filter((p) => p.type === "text")).toHaveLength(
-      1,
+      2,
     );
     expect(uiMessages[0].parts.filter((p) => p.type === "text")[0].text).toBe(
-      "Here's one idea. Here's another idea.",
+      "Here's one idea.",
+    );
+    expect(uiMessages[0].parts.filter((p) => p.type === "text")[1].text).toBe(
+      "Here's another idea.",
     );
   });
 
@@ -198,10 +213,12 @@ describe("toUIMessages", () => {
     const uiMessages = toUIMessages(messages);
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("system");
-    expect(uiMessages[0].content).toBe("System message here");
+    expect(uiMessages[0].text).toBe("System message here");
     expect(uiMessages[0].parts[0]).toEqual({
       type: "text",
       text: "System message here",
+      state: "done",
+      providerMetadata: undefined,
     });
   });
 
@@ -215,7 +232,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "myTool",
               toolCallId: "call1",
-              args: "",
+              args: "hi",
             },
           ],
         },
@@ -226,17 +243,13 @@ describe("toUIMessages", () => {
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("assistant");
     expect(
-      uiMessages[0].parts.filter((p) => p.type === "tool-invocation"),
-    ).toHaveLength(1);
-    expect(
-      uiMessages[0].parts.filter((p) => p.type === "tool-invocation")[0]
-        .toolInvocation,
-    ).toEqual({
+      uiMessages[0].parts.filter((p) => p.type === "tool-call")[0],
+    ).toMatchObject({
+      type: "tool-call",
       toolName: "myTool",
       toolCallId: "call1",
-      args: "",
-      state: "call",
-      step: 0,
+      input: "hi",
+      state: "input-available",
     });
   });
 
@@ -276,7 +289,7 @@ describe("toUIMessages", () => {
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("assistant");
     // Should have a tool-invocation part
-    expect(uiMessages[0].parts.some((p) => p.type === "tool-invocation")).toBe(
+    expect(uiMessages[0].parts.some((p) => p.type === "tool-myTool")).toBe(
       true,
     );
   });

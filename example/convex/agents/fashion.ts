@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/getting-started
-import { Agent, createTool } from "@convex-dev/agent";
+import { Agent, createTool, stepCountIs } from "@convex-dev/agent";
 import { components } from "../_generated/api";
 import { z } from "zod";
 import { usageHandler } from "../usage_tracking/usageHandler";
@@ -27,7 +27,7 @@ export const fashionAgent = new Agent(components.agent, {
       },
     }),
   },
-  maxSteps: 5,
+  stopWhen: stepCountIs(5),
   // optional:
   textEmbedding,
   usageHandler,

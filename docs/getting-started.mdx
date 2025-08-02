@@ -80,7 +80,7 @@ attribute each message to a specific agent. Other options are defaults that can
 be over-ridden at each LLM call-site.
 
 ```ts
-import { tool } from "ai";
+import { tool, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { Agent, createTool } from "@convex-dev/agent";
@@ -114,7 +114,7 @@ const supportAgent = new Agent(components.agent, {
   // Used for limiting the number of steps when tool calls are involved.
   // NOTE: if you want tool calls to happen automatically with a single call,
   // you need to set this to something greater than 1 (the default).
-  maxSteps: 1,
+  stopWhen: stepCountIs(5),
   // Used for limiting the number of retries when a tool call fails. Default: 3.
   maxRetries: 3,
   // Used for tracking token usage. See https://docs.convex.dev/agents/usage-tracking

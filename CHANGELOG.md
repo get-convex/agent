@@ -3,6 +3,7 @@
 ## 0.1.18 alpha
 
 - Allow specifying a custom `ctx` type for use in tools created with `createTool`
+- Fix resolution of `definePlaygroundApi`
 
 ## 0.1.17
 
