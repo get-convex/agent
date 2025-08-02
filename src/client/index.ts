@@ -524,27 +524,28 @@ export class Agent<
       result.messageId = messageId;
       result.order = order;
       return result;
-    } catch (error) {
+    } catch (err) {
       if (threadId && messageId) {
         console.error("RollbackMessage", messageId);
+        const error = err instanceof Error ? err.message : String(err);
         await ctx.runMutation(this.component.messages.rollbackMessage, {
           messageId,
-          error: (error as Error).message,
+          error,
         });
-        
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
-          threadId,
-          userId,
-          order,
-          promptMessageId: messageId,
-          agentName: this.options.name,
-          model: aiArgs.model.modelId,
-          provider: aiArgs.model.provider,
-          error: (error as Error).message,
-        });
+        if (saveOutput) {
+          await ctx.runMutation(this.component.messages.addFailedMessage, {
+            promptMessageId: messageId,
+            threadId,
+            userId,
+            agentName: this.options.name,
+            model: aiArgs.model.modelId,
+            provider: aiArgs.model.provider,
+            error,
+            providerOptions: aiArgs.providerOptions,
+          });
+        }
       }
-      throw error;
+      throw err;
     }
   }
 
@@ -625,6 +626,7 @@ export class Agent<
         ? new DeltaStreamer(this.component, ctx, opts.saveStreamDeltas, {
             threadId,
             userId,
+            promptMessageId: saveOutput ? messageId : undefined,
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
@@ -650,32 +652,32 @@ export class Agent<
         // console.log("onChunk", chunk);
         return args.onChunk?.(event);
       },
-      onError: async (error) => {
-        console.error("onError", error);
+      onError: async (err) => {
+        console.error("onError", err);
         if (threadId && messageId && saveOutput) {
+          const error =
+            err.error instanceof Error ? err.error.message : String(err.error);
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error: (error.error as any)?.message || String(error.error),
+            error,
           });
-          
-          const partialText = streamer ? await this.getStreamedText(streamer) : undefined;
-          
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
-            threadId,
-            userId,
-            order,
-            promptMessageId: messageId,
-            agentName: this.options.name,
-            model: aiArgs.model.modelId,
-            provider: aiArgs.model.provider,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error: (error.error as any)?.message || String(error.error),
-            partialText,
-          });
+          if (streamer) {
+            await streamer.fail(error);
+          } else {
+            // TODO: capture the parts that were generated so far for the failed message
+            await ctx.runMutation(this.component.messages.addFailedMessage, {
+              threadId,
+              userId,
+              promptMessageId: messageId,
+              agentName: this.options.name,
+              model: aiArgs.model.modelId,
+              provider: aiArgs.model.provider,
+              providerOptions: aiArgs.providerOptions,
+              error,
+            });
+          }
         }
-        return args.onError?.(error);
+        return args.onError?.(err);
       },
       onStepFinish: async (step) => {
         // console.log("onStepFinish", step);
@@ -803,16 +805,15 @@ export class Agent<
           messageId,
           error: (error as Error).message,
         });
-        
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
+
+        await ctx.runMutation(this.component.messages.addFailedMessage, {
           threadId,
           userId,
-          order,
           promptMessageId: messageId,
           agentName: this.options.name,
           model: aiArgs.model.modelId,
           provider: aiArgs.model.provider,
+          providerOptions: aiArgs.providerOptions,
           error: (error as Error).message,
         });
       }
@@ -862,29 +863,28 @@ export class Agent<
     const stream = streamObject<T>({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(aiArgs as any),
-      onError: async (error) => {
-        console.error("onError", error);
-        if (threadId && messageId && saveOutputMessages) {
+      onError: async (err) => {
+        console.error("onError", err);
+        if (threadId && messageId && saveOutput) {
+          const error =
+            err.error instanceof Error ? err.error.message : String(err.error);
           await ctx.runMutation(this.component.messages.rollbackMessage, {
             messageId,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error: (error as any)?.message || String(error),
+            error,
           });
-          
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
+
+          await ctx.runMutation(this.component.messages.addFailedMessage, {
             threadId,
             userId,
-            order,
             promptMessageId: messageId,
             agentName: this.options.name,
             model: aiArgs.model.modelId,
             provider: aiArgs.model.provider,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            error: (error as any)?.message || String(error),
+            providerOptions: aiArgs.providerOptions,
+            error,
           });
         }
-        return args.onError?.(error);
+        return args.onError?.(err);
       },
       onFinish: async (result) => {
         if (threadId && messageId && saveOutput) {
@@ -1437,24 +1437,6 @@ export class Agent<
         messageId: args.messageId,
         error: result.error,
       });
-      
-      const message = await ctx.runQuery(this.component.messages.getMessagesByIds, {
-        messageIds: [args.messageId],
-      });
-      const messageDoc = message[0];
-      if (messageDoc) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await ctx.runMutation((this.component.messages as any).saveFailedMessage, {
-          threadId: messageDoc.threadId,
-          userId: messageDoc.userId,
-          order: messageDoc.order,
-          promptMessageId: args.messageId,
-          agentName: messageDoc.agentName,
-          model: messageDoc.model,
-          provider: messageDoc.provider,
-          error: result.error,
-        });
-      }
     }
   }
 
@@ -2064,19 +2046,6 @@ export class Agent<
       },
     });
   }
-
-  private async getStreamedText(streamer: DeltaStreamer): Promise<string | undefined> {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const parts = (streamer as any)['#nextParts'] || [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return parts.map((part: any) => part.text || '').join('');
-    } catch (e) {
-      console.warn("Could not extract streamed text:", e);
-      return undefined;
-    }
-  }
-
 
   /**
    * Save messages to the thread.

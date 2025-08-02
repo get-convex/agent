@@ -303,40 +303,42 @@ export const rollbackMessage = mutation({
   },
 });
 
-export const saveFailedMessage = mutation({
+export const addFailedMessage = mutation({
   args: {
-    threadId: v.id("threads"),
-    userId: v.optional(v.string()),
-    order: v.number(),
     promptMessageId: v.id("messages"),
-    agentName: v.optional(v.string()),
-    model: v.optional(v.string()),
-    provider: v.optional(v.string()),
-    error: v.string(),
-    partialText: v.optional(v.string()),
-    abortReason: v.optional(v.string()),
+    ...omit(schema.tables.messages.validator.fields, [
+      "status",
+      "order",
+      "stepOrder",
+      "tool",
+      "text",
+      "finishReason",
+      "embeddingId", // shouldn't embed failed messages - spoils search?
+      "fileIds", // failed messages don't (yet) save files
+      // deprecated
+      "parentMessageId",
+      "stepId",
+      "files",
+    ]),
+    // order: v.optional(v.number()),
+    // stepOrder: v.optional(v.number()),
   },
   returns: v.id("messages"),
   handler: async (ctx, args) => {
-    const message = {
-      userId: args.userId,
-      threadId: args.threadId,
-      order: args.order,
-      stepOrder: 0,
-      agentName: args.agentName,
-      model: args.model,
-      provider: args.provider,
+    const promptMessage = await ctx.db.get(args.promptMessageId);
+    assert(promptMessage, `Prompt message ${args.promptMessageId} not found`);
+    const order = promptMessage.order;
+    const maxMessage = await getMaxMessage(ctx, promptMessage.threadId, order);
+    const stepOrder = (maxMessage?.stepOrder ?? promptMessage.stepOrder) + 1;
+    return await ctx.db.insert("messages", {
+      ...omit(args, ["promptMessageId"]),
+      order,
+      stepOrder,
       status: "failed" as const,
-      error: args.error,
-      tool: false,
-      text: args.partialText,
-      message: args.partialText ? {
-        role: "assistant" as const,
-        content: args.partialText,
-      } : undefined,
-    };
-    
-    return await ctx.db.insert("messages", message);
+      tool: !!args.message && isTool(args.message),
+      text: args.message && extractText(args.message),
+      finishReason: "error",
+    });
   },
 });
 
