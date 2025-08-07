@@ -129,7 +129,7 @@ For an action that generates text in a thread, similar to `thread.generateText`:
 
 ```ts
 export const getSupport = supportAgent.asTextAction({
-  maxSteps: 10,
+  stopWhen: stepCountIs(10),
 });
 ```
 

@@ -19,9 +19,12 @@ import type {
 } from "convex/server";
 import { v } from "convex/values";
 import { defineSchema } from "convex/server";
-import { MockLanguageModelV1 } from "ai/test";
-import type { LanguageModelV1, LanguageModelV1StreamPart } from "ai";
-import { simulateReadableStream } from "ai";
+import { MockLanguageModelV2 } from "ai/test";
+import type {
+  LanguageModelV2,
+  LanguageModelV2StreamPart,
+} from "@ai-sdk/provider";
+import { simulateReadableStream, stepCountIs } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { z } from "zod";
 
@@ -252,16 +255,16 @@ describe("filterOutOrphanedToolMessages", () => {
   });
 });
 
-function mockModel(): LanguageModelV1 {
-  return new MockLanguageModelV1({
+function mockModel(): LanguageModelV2 {
+  return new MockLanguageModelV2({
     provider: "mock",
     modelId: "mock",
-    defaultObjectGenerationMode: "json",
     // supportsStructuredOutputs: true,
     doGenerate: async ({ prompt }) => ({
       finishReason: "stop",
-      usage: { completionTokens: 10, promptTokens: 3 },
-      logprobs: undefined,
+      content: [{ type: "text", text: JSON.stringify({ prompt }) }],
+      warnings: [],
+      usage: { outputTokens: 10, inputTokens: 3, totalTokens: 13 },
       rawCall: { rawPrompt: null, rawSettings: {} },
       text: JSON.stringify({ prompt }),
     }),
@@ -277,10 +280,9 @@ function mockModel(): LanguageModelV1 {
           {
             type: "finish",
             finishReason: "stop",
-            logprobs: undefined,
-            usage: { completionTokens: 10, promptTokens: 3 },
+            usage: { outputTokens: 10, inputTokens: 3, totalTokens: 13 },
           },
-        ] as LanguageModelV1StreamPart[],
+        ] as LanguageModelV2StreamPart[],
       }),
       rawCall: { rawPrompt: null, rawSettings: {} },
     }),
@@ -300,7 +302,7 @@ describe("Agent option variations and normal behavior", () => {
       instructions: "Test instructions",
       contextOptions: { recentMessages: 5 },
       storageOptions: { saveMessages: "all" },
-      maxSteps: 2,
+      stopWhen: stepCountIs(2),
       maxRetries: 1,
       usageHandler: async () => {},
       rawRequestResponseHandler: async () => {},

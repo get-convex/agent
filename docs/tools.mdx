@@ -30,8 +30,9 @@ tools in a context that is convenient.
 
 ## Using tools
 
-The Agent component will automatically handle tool calls if you pass `maxSteps`
-to the `generateText` or `streamText` functions.
+The Agent component will automatically handle passing tool call results back in
+and re-generating if you pass `stopWhen: stepCountIs(num)` where `num > 1` to
+`generateText` or `streamText`.
 
 The tool call and result will be stored as messages in the thread associated
 with the source message. See [Messages](./messages.mdx) for more details.
@@ -90,8 +91,8 @@ By default, the context passed to a tool is a `ToolCtx` with:
 - `userId` - the user ID associated with the call, if any
 - `threadId` - the thread ID, if any
 - `messageId` - the message ID of the prompt message passed to generate/stream.
-- Everything in `ActionCtx`, such as `auth`, `storage`, `runQuery`, etc.
-  Note: in scheduled functions, workflows, etc, the auth user will be `null`.
+- Everything in `ActionCtx`, such as `auth`, `storage`, `runQuery`, etc. Note:
+  in scheduled functions, workflows, etc, the auth user will be `null`.
 
 To add more fields to the context, you can pass a custom context to the call,
 such as `agent.generateText({ ...ctx, orgId: "123" })`.

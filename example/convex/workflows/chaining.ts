@@ -1,6 +1,6 @@
 // See the docs at https://docs.convex.dev/agents/workflows
 import { WorkflowId, WorkflowManager } from "@convex-dev/workflow";
-import { createThread, saveMessage } from "@convex-dev/agent";
+import { createThread, saveMessage, stepCountIs } from "@convex-dev/agent";
 import { components, internal } from "../_generated/api";
 import { action, mutation } from "../_generated/server";
 import { v } from "convex/values";
@@ -112,7 +112,7 @@ export const startWorkflow = mutation({
  * This is a convenient shorthand.
  */
 export const getForecast = weatherAgent.asTextAction({
-  maxSteps: 3,
+  stopWhen: stepCountIs(3),
 });
 export const getFashionAdvice = fashionAgent.asObjectAction({
   schema: z.object({

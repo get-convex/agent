@@ -4,7 +4,7 @@ import { z } from "zod";
 
 export const getGeocoding = tool({
   description: "Get the latitude and longitude of a location",
-  parameters: z.object({
+  inputSchema: z.object({
     location: z
       .string()
       .describe("The location to get the geocoding for, e.g. 'San Francisco'"),
@@ -33,7 +33,7 @@ export const getGeocoding = tool({
 
 export const getWeather = tool({
   description: "Get the weather for a location",
-  parameters: z.object({
+  inputSchema: z.object({
     latitude: z.number(),
     longitude: z.number(),
   }),

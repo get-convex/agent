@@ -148,7 +148,7 @@ export async function getFile(
 
 function getParts(
   url: string,
-  mimeType: string,
+  mediaType: string,
   filename: string | undefined,
 ): {
   filePart: FilePart;
@@ -157,14 +157,14 @@ function getParts(
   const filePart: FilePart = {
     type: "file",
     data: new URL(url),
-    mimeType,
+    mediaType,
     filename,
   };
-  const imagePart: ImagePart | undefined = mimeType.startsWith("image/")
+  const imagePart: ImagePart | undefined = mediaType.startsWith("image/")
     ? {
         type: "image",
         image: new URL(url),
-        mimeType,
+        mediaType,
       }
     : undefined;
   return { filePart, imagePart };
