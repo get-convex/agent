@@ -5,19 +5,20 @@ import type {
   RunQueryCtx,
 } from "./types.js";
 import type { MessageDoc } from "../component/schema.js";
-import type { CoreMessage } from "ai";
+import type { EmbeddingModel, LanguageModel, ModelMessage } from "ai";
 import { assert } from "convex-helpers";
 import {
   DEFAULT_MESSAGE_RANGE,
   DEFAULT_RECENT_MESSAGES,
   extractText,
 } from "../shared.js";
+import type { Message } from "../validators.js";
 
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 
 export type GetEmbedding = (text: string) => Promise<{
   embedding: number[];
-  embeddingModel: string;
+  embeddingModel: string | EmbeddingModel<string>;
 }>;
 
 /**
@@ -34,7 +35,7 @@ export async function fetchContextMessages(
   args: {
     userId: string | undefined;
     threadId: string | undefined;
-    messages: CoreMessage[];
+    messages: (ModelMessage | Message)[];
     /**
      * If provided, it will search for messages up to and including this message.
      * Note: if this is far in the past, text and vector search results may be more
@@ -102,13 +103,13 @@ export async function fetchContextMessages(
       component.messages.searchMessages,
       {
         searchAllMessagesForUserId: opts?.searchOtherThreads
-          ? args.userId ??
+          ? (args.userId ??
             (args.threadId &&
               (
                 await ctx.runQuery(component.threads.getThread, {
                   threadId: args.threadId,
                 })
-              )?.userId)
+              )?.userId))
           : undefined,
         threadId: args.threadId,
         beforeMessageId: args.upToAndIncludingMessageId,
@@ -122,7 +123,9 @@ export async function fetchContextMessages(
           opts.searchOptions?.vectorScoreThreshold ??
           DEFAULT_VECTOR_SCORE_THRESHOLD,
         embedding: embeddingFields?.embedding,
-        embeddingModel: embeddingFields?.embeddingModel,
+        embeddingModel: embeddingFields?.embeddingModel
+          ? getModelName(embeddingFields.embeddingModel)
+          : undefined,
       },
     );
     // TODO: track what messages we used for context
@@ -169,4 +172,25 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
     }
   }
   return result;
+}
+
+export function getModelName(
+  embeddingModel: string | EmbeddingModel<string> | LanguageModel,
+): string {
+  if (typeof embeddingModel === "string") {
+    if (embeddingModel.includes("/")) {
+      return embeddingModel.split("/").slice(1).join("/");
+    }
+    return embeddingModel;
+  }
+  return embeddingModel.modelId;
+}
+
+export function getProviderName(
+  embeddingModel: string | EmbeddingModel<string> | LanguageModel,
+): string {
+  if (typeof embeddingModel === "string") {
+    return embeddingModel.split("/").at(0)!;
+  }
+  return embeddingModel.provider;
 }

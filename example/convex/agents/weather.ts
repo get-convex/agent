@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/getting-started
-import { Agent } from "@convex-dev/agent";
+import { Agent, stepCountIs } from "@convex-dev/agent";
 import { components } from "../_generated/api";
 import { getGeocoding, getWeather } from "../tools/weather";
 import { usageHandler } from "../usage_tracking/usageHandler";
@@ -16,6 +16,6 @@ export const weatherAgent = new Agent(components.agent, {
     getWeather,
     getGeocoding,
   },
-  maxSteps: 3,
+  stopWhen: stepCountIs(3),
   usageHandler,
 });

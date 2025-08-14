@@ -1,7 +1,7 @@
 // See the docs at https://docs.convex.dev/agents/tools
 import { createTool } from "@convex-dev/agent";
 import { components } from "../_generated/api";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 export const updateThreadTitle = createTool({
   args: z.object({

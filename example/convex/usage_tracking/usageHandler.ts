@@ -1,7 +1,7 @@
 // See the docs at https://docs.convex.dev/agents/usage-tracking
 import { internalMutation } from "../_generated/server";
 import { v } from "convex/values";
-import { UsageHandler, vProviderMetadata, vUsage } from "@convex-dev/agent";
+import { UsageHandler, vProviderMetadata } from "@convex-dev/agent";
 import { internal } from "../_generated/api";
 
 export function getBillingPeriod(at: number) {
@@ -31,14 +31,26 @@ export const insertRawUsage = internalMutation({
     agentName: v.optional(v.string()),
     model: v.string(),
     provider: v.string(),
-    usage: vUsage,
+    usage: v.object({
+      totalTokens: v.optional(v.number()),
+      inputTokens: v.optional(v.number()),
+      outputTokens: v.optional(v.number()),
+      reasoningTokens: v.optional(v.number()),
+      cachedInputTokens: v.optional(v.number()),
+    }),
     providerMetadata: v.optional(vProviderMetadata),
   },
   handler: async (ctx, args) => {
-    const billingPeriod = getBillingPeriod(Date.now());
     return await ctx.db.insert("rawUsage", {
       ...args,
-      billingPeriod,
+      billingPeriod: getBillingPeriod(Date.now()),
+      usage: {
+        promptTokens: args.usage.inputTokens ?? 0,
+        completionTokens: args.usage.outputTokens ?? 0,
+        totalTokens: args.usage.totalTokens ?? 0,
+        reasoningTokens: args.usage.reasoningTokens,
+        cachedInputTokens: args.usage.cachedInputTokens,
+      },
     });
   },
 });

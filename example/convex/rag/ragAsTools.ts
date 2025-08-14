@@ -1,16 +1,16 @@
 // See the docs at https://docs.convex.dev/agents/rag
-import { openai } from "@ai-sdk/openai";
 import { createTool } from "@convex-dev/agent";
 import { RAG } from "@convex-dev/rag";
 import { v } from "convex/values";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { components, internal } from "../_generated/api";
 import { action } from "../_generated/server";
 import { agent } from "../agents/simple";
 import { getAuthUserId } from "../utils";
+import { textEmbedding } from "../modelsForDemo";
 
 const rag = new RAG(components.rag, {
-  textEmbeddingModel: openai.embedding("text-embedding-3-small"),
+  textEmbeddingModel: textEmbedding,
   embeddingDimension: 1536,
 });
 

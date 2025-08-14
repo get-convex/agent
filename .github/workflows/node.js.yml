@@ -1,11 +1,11 @@
 name: Run tests
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "ai-sdk-v5"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "ai-sdk-v5"]
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
@@ -18,6 +18,7 @@ jobs:
           node-version: "20.x"
           cache: "npm"
       - run: node setup.cjs
+      - run: cd playground && npm run build && cd ..
       - run: npx pkg-pr-new publish ./ ./playground
       - run: npm test
       - run: npm run typecheck

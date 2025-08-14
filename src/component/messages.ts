@@ -9,7 +9,7 @@ import {
   isTool,
 } from "../shared.js";
 import {
-  vMessageEmbeddings,
+  vMessageEmbeddingsWithDimension,
   vMessageStatus,
   vMessageWithMetadataInternal,
   vPaginationResult,
@@ -58,9 +58,7 @@ export async function deleteMessage(
 }
 
 export const deleteByIds = mutation({
-  args: {
-    messageIds: v.array(v.id("messages")),
-  },
+  args: { messageIds: v.array(v.id("messages")) },
   returns: v.array(v.id("messages")),
   handler: async (ctx, args) => {
     const deletedMessageIds = await Promise.all(
@@ -115,8 +113,8 @@ export const deleteByOrder = mutation({
     await Promise.all(messages.map((m) => deleteMessage(ctx, m)));
     return {
       isDone: messages.length < 64,
-      lastOrder: messages[messages.length - 1]?.order,
-      lastStepOrder: messages[messages.length - 1]?.stepOrder,
+      lastOrder: messages.at(-1)?.order,
+      lastStepOrder: messages.at(-1)?.stepOrder,
     };
   },
 });
@@ -127,16 +125,13 @@ const addMessagesArgs = {
   promptMessageId: v.optional(v.id("messages")),
   agentName: v.optional(v.string()),
   messages: v.array(vMessageWithMetadataInternal),
-  embeddings: v.optional(vMessageEmbeddings),
-  pending: v.optional(v.boolean()),
+  embeddings: v.optional(vMessageEmbeddingsWithDimension),
   failPendingSteps: v.optional(v.boolean()),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
   handler: addMessagesHandler,
-  returns: v.object({
-    messages: v.array(vMessageDoc),
-  }),
+  returns: v.object({ messages: v.array(vMessageDoc) }),
 });
 async function addMessagesHandler(
   ctx: MutationCtx,
@@ -149,14 +144,8 @@ async function addMessagesHandler(
     assert(thread, `Thread ${args.threadId} not found`);
     userId = thread.userId;
   }
-  const {
-    embeddings,
-    failPendingSteps,
-    pending,
-    messages,
-    promptMessageId,
-    ...rest
-  } = args;
+  const { embeddings, failPendingSteps, messages, promptMessageId, ...rest } =
+    args;
   const parentMessage = promptMessageId && (await ctx.db.get(promptMessageId));
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
@@ -187,8 +176,8 @@ async function addMessagesHandler(
     stepOrder = maxMessage?.stepOrder ?? parentMessage.stepOrder;
   } else {
     const maxMessage = await getMaxMessage(ctx, threadId);
-    order = maxMessage ? maxMessage.order + 1 : 0;
-    stepOrder = -1;
+    order = maxMessage?.order ?? -1;
+    stepOrder = maxMessage?.stepOrder ?? -1;
   }
   const toReturn: Doc<"messages">[] = [];
   if (embeddings) {
@@ -209,7 +198,18 @@ async function addMessagesHandler(
         threadId,
       });
     }
-    stepOrder++;
+    if (message.message.role === "user") {
+      if (parentMessage && parentMessage.order === order) {
+        // see if there's a later message than the parent message order
+        const maxMessage = await getMaxMessage(ctx, threadId);
+        order = (maxMessage?.order ?? order) + 1;
+      } else {
+        order++;
+      }
+      stepOrder = 0;
+    } else {
+      stepOrder++;
+    }
     const messageId = await ctx.db.insert("messages", {
       ...rest,
       ...message,
@@ -219,16 +219,12 @@ async function addMessagesHandler(
       order,
       tool: isTool(message.message),
       text: extractText(message.message),
-      status: fail ? "failed" : pending ? "pending" : "success",
-      error: fail ? "Parent message failed" : undefined,
+      status: fail ? "failed" : (message.status ?? "success"),
+      error: fail
+        ? (parentMessage?.error ?? "Parent message failed")
+        : undefined,
       stepOrder,
     });
-    // Let's just not set the id field and have it set only in explicit cases.
-    // if (!message.id) {
-    //   await ctx.db.patch(messageId, {
-    //     id: messageId,
-    //   });
-    // }
     if (message.fileIds) {
       await changeRefcount(ctx, [], message.fileIds);
     }
@@ -263,7 +259,7 @@ function orderedMessagesStream(
               .eq("threadId", threadId)
               .eq("status", status)
               .eq("tool", tool);
-            if (order) {
+            if (order !== undefined) {
               return qq.eq("order", order);
             }
             return qq;

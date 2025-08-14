@@ -172,7 +172,7 @@ apply, except you don't have to provide a model. It will use the agent's default
 chat model.
 
 ```ts
-import { z } from "zod";
+import { z } from "zod/v3";
 
 const result = await thread.generateObject({
   prompt: "Generate a plan based on the conversation so far",
@@ -280,7 +280,7 @@ function MyComponent({ threadId }: { threadId: string }) {
   return (
     <div>
       {toUIMessages(messages.results ?? []).map((message) => (
-        <div key={message.key}>{message.content}</div>
+        <div key={message.key}>{message.text}</div>
       ))}
     </div>
   );
@@ -321,7 +321,7 @@ It can work with any text, but is especially handy for streaming text.
 import { useSmoothText } from "@convex-dev/agent/react";
 
 // in the component
-const [visibleText] = useSmoothText(message.content);
+const [visibleText] = useSmoothText(message.text);
 ```
 
 You can configure the initial characters per second. It will adapt over time to
@@ -335,7 +335,7 @@ streaming and non-streaming messages, do:
 import { useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 
 function Message({ message }: { message: UIMessage }) {
-  const [visibleText] = useSmoothText(message.content, {
+  const [visibleText] = useSmoothText(message.text, {
     startStreaming: message.status === "streaming",
   });
   return <div>{visibleText}</div>;
@@ -385,6 +385,44 @@ provide them as a prompt, as well as all generated messages.
 You can save messages to the database manually using `saveMessage` or
 `saveMessages`.
 
+- You can pass a `prompt` or a full `message` (`CoreMessage` type)
+- The `metadata` argument is optional and allows you to provide more details,
+  such as `sources`, `reasoningDetails`, `usage`, `warnings`, `error`, etc.
+
+### Without the Agent class:
+
+Note: If you aren't using the Agent class with a text embedding model set, you
+need to pass an `embedding` if you want to save it at the same time.
+
+```ts
+import { saveMessage } from "@convex-dev/agent";
+
+const { messageId } = await saveMessage(ctx, components.agent, {
+  threadId,
+  userId,
+  message: { role: "assistant", content: result },
+  metadata: [{ reasoning, usage, ... }] // See MessageWithMetadata type
+  agentName: "my-agent",
+  embedding: { vector: [0.1, 0.2, ...], model: "text-embedding-3-small" },
+});
+```
+
+```ts
+import { saveMessages } from "@convex-dev/agent";
+
+const { messages } = await saveMessages(ctx, components.agent, {
+  threadId,
+  userId,
+  messages: [{ role, content }, ...],
+  metadata: [{ reasoning, usage, ... }, ...] // See MessageWithMetadata type
+  agentName: "my-agent",
+  embeddings: { model: "text-embedding-3-small", vectors: [[0.1...], ...] },
+});
+```
+
+
+### Using the Agent class:
+
 ```ts
 const { messageId } = await agent.saveMessage(ctx, {
   threadId,
@@ -394,10 +432,9 @@ const { messageId } = await agent.saveMessage(ctx, {
 });
 ```
 
-You can pass a `prompt` or a full `message` (`CoreMessage` type)
 
 ```ts
-const { lastMessageId, messageIds} = await agent.saveMessages(ctx, {
+const { messages } = await agent.saveMessages(ctx, {
   threadId, userId,
   messages: [{ role, content }],
   metadata: [{ reasoning, usage, ... }] // See MessageWithMetadata type
@@ -409,9 +446,6 @@ set, pass `skipEmbeddings: true`. The embeddings for the message will be
 generated lazily if the message is used as a prompt. Or you can provide an
 embedding upfront if it's available, or later explicitly generate them using
 `agent.generateEmbeddings`.
-
-The `metadata` argument is optional and allows you to provide more details, such
-as `sources`, `reasoningDetails`, `usage`, `warnings`, `error`, etc.
 
 ## Configuring the storage of messages
 

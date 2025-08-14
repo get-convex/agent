@@ -25,7 +25,7 @@ export default function Example() {
     api.files.addFile.submitFileQuestion,
   ).withOptimisticUpdate((store, args) => {
     if (!threadId) return;
-    optimisticallySendMessage(api.chat.basic.listMessages)(store, {
+    optimisticallySendMessage(api.chat.basic.listThreadMessages)(store, {
       prompt: args.question,
       threadId,
     });
@@ -34,7 +34,7 @@ export default function Example() {
     undefined,
   );
   const messages = useThreadMessages(
-    api.chat.basic.listMessages,
+    api.chat.basic.listThreadMessages,
     threadId ? { threadId } : "skip",
     { initialNumItems: 10 },
   );
@@ -186,11 +186,11 @@ function Message({ message }: { message: UIMessage }) {
             case "text":
               return <div key={key}>{part.text}</div>;
             case "file":
-              if (part.mimeType.startsWith("image/")) {
+              if (part.mediaType?.startsWith("image/")) {
                 return (
                   <img
                     key={key}
-                    src={part.data}
+                    src={part.url}
                     className="max-h-40 rounded-lg mt-2 border border-gray-300 shadow"
                   />
                 );
@@ -198,7 +198,7 @@ function Message({ message }: { message: UIMessage }) {
               return (
                 <a
                   key={key}
-                  href={part.data}
+                  href={part.url}
                   className="text-blue-600 underline"
                 >
                   {"📎"}File
@@ -207,25 +207,39 @@ function Message({ message }: { message: UIMessage }) {
             case "reasoning":
               return (
                 <div key={key} className="italic text-gray-500">
-                  {part.reasoning}
+                  {part.text}
                 </div>
               );
-            case "tool-invocation":
+            case "dynamic-tool":
               return (
                 <div key={key} className="text-xs text-gray-400">
-                  {part.toolInvocation.toolName}
+                  {part.toolName}
                 </div>
               );
-            case "source":
+            case "source-url":
               return (
                 <a
                   key={key}
-                  href={part.source.url}
+                  href={part.url}
                   className="text-blue-500 underline"
                 >
-                  {part.source.title ?? part.source.url}
+                  {part.title ?? part.url}
                 </a>
               );
+            case "source-document":
+              return (
+                <div key={key} className="text-xs text-gray-400">
+                  {part.title}
+                </div>
+              );
+            default:
+              if (part.type.startsWith("tool-")) {
+                return (
+                  <div key={key} className="text-xs text-gray-400">
+                    {part.type.slice("tool-".length)}
+                  </div>
+                );
+              }
           }
         })}
       </div>

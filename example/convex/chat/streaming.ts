@@ -1,7 +1,7 @@
 // See the docs at https://docs.convex.dev/agents/messages
 import { paginationOptsValidator } from "convex/server";
-import { vStreamArgs } from "@convex-dev/agent";
-import { internal } from "../_generated/api";
+import { listMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
+import { components, internal } from "../_generated/api";
 import {
   action,
   httpAction,
@@ -79,7 +79,7 @@ export const streamAsync = internalAction({
  * Query & subscribe to messages & threads
  */
 
-export const listMessages = query({
+export const listThreadMessages = query({
   args: {
     // These arguments are required:
     threadId: v.string(),
@@ -89,7 +89,7 @@ export const listMessages = query({
   handler: async (ctx, args) => {
     const { threadId, paginationOpts, streamArgs } = args;
     await authorizeThreadAccess(ctx, threadId);
-    const streams = await storyAgent.syncStreams(ctx, {
+    const streams = await syncStreams(ctx, components.agent, {
       threadId,
       streamArgs,
       includeStatuses: ["aborted", "streaming"],
@@ -97,7 +97,7 @@ export const listMessages = query({
     // Here you could filter out / modify the stream of deltas / filter out
     // deltas.
 
-    const paginated = await storyAgent.listMessages(ctx, {
+    const paginated = await listMessages(ctx, components.agent, {
       threadId,
       paginationOpts,
     });

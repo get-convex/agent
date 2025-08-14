@@ -49,14 +49,6 @@ npm run alpha
 - Convenience function to create a thread by copying an existing thread (fork)
 - Add a "failed" message when an error is thrown in generate/stream call.
 - Add a "failed" message when a stream is aborted.
-- Enable saving a message as part of the same `order` as a given message.
-  - Validate that you can save a tool response, and use that as promptMessageId
-    and have the response assistant message be on the same order & after the
-    tool call message stepOrder.
-  - Return the order from `saveMessage` so it can be used for idempotency &
-    appending, if not already returned
-  - Return more message metadata from `generateText` & `streamText` - all
-    message info, not just prompt id
 - Support new AI SDK version (and LanguageModelProviderV2)
 - Add a `contextHandler` option to the Agent component, that can be used to see
   and modify the context passed to the LLM before it's called.
@@ -71,16 +63,11 @@ npm run alpha
 - Improve the demo to show more of the features & have nicer UI
   - Add an example of aborting a stream.
   - Add an example of using tracing / telemetry.
-- When adding messages, increment order for each user message
 - Refactor agent code to more helper functions, and break up `client/index.ts`
   into more files.
-- Add a `deleteMessageOrder` function that takes a message id, and deletes all
-  messages at that message's order.
 - Add an example of using MCP with the Agent.
 - Automatically turn big text content into a file when saving a message and keep
   as a fileId. Re-hydrate it when reading out for generation.
-- Finish deprecating save{All,Any}InputMessages in favor of saveInputMessages &
-  other changes
 - When a generateText finishes with a tool call, return a `continue` fn that can
   be used to save the tool call response(s) and continue the generation at the
   same order.

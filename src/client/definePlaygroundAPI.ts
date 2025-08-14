@@ -1,27 +1,27 @@
 import {
+  actionGeneric,
+  mutationGeneric,
   paginationOptsValidator,
   queryGeneric,
-  mutationGeneric,
-  actionGeneric,
-  type GenericDataModel,
-  type GenericQueryCtx,
   type ApiFromModules,
   type GenericActionCtx,
+  type GenericDataModel,
+  type GenericQueryCtx,
 } from "convex/server";
-import {
-  vMessageDoc,
-  vThreadDoc,
-  vPaginationResult,
-  vMessage,
-  vContextOptions,
-  vStorageOptions,
-  type AgentComponent,
-  type Agent,
-  listMessages as listMessages_,
-  createThread as createThread_,
-} from "./index.js";
 import { v } from "convex/values";
-import { deserializeMessage } from "../mapping.js";
+import {
+  createThread as createThread_,
+  listMessages as listMessages_,
+  deserializeMessage,
+  vContextOptions,
+  vMessage,
+  vMessageDoc,
+  vPaginationResult,
+  vStorageOptions,
+  vThreadDoc,
+  type Agent,
+  type AgentComponent,
+} from "./index.js";
 
 export type PlaygroundAPI = ApiFromModules<{
   playground: ReturnType<typeof definePlaygroundAPI>;
@@ -61,9 +61,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
   }
 
   const isApiKeyValid = queryGeneric({
-    args: {
-      apiKey: v.string(),
-    },
+    args: { apiKey: v.string() },
     handler: async (ctx, args) => {
       try {
         await validateApiKey(ctx, args.apiKey);
@@ -107,18 +105,14 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         instructions: agent.options.instructions,
         contextOptions: agent.options.contextOptions,
         storageOptions: agent.options.storageOptions,
-        maxSteps: agent.options.maxSteps,
-        maxRetries: agent.options.maxRetries,
+        maxRetries: agent.options.callSettings?.maxRetries,
         tools: agent.options.tools ? Object.keys(agent.options.tools) : [],
       }));
     },
   });
 
   const listUsers = queryGeneric({
-    args: {
-      apiKey: v.string(),
-      paginationOpts: paginationOptsValidator,
-    },
+    args: { apiKey: v.string(), paginationOpts: paginationOptsValidator },
     handler: async (ctx, args) => {
       await validateApiKey(ctx, args.apiKey);
       const users = await ctx.runQuery(component.users.listUsersWithThreads, {
@@ -134,12 +128,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         ),
       };
     },
-    returns: vPaginationResult(
-      v.object({
-        _id: v.string(),
-        name: v.string(),
-      }),
-    ),
+    returns: vPaginationResult(v.object({ _id: v.string(), name: v.string() })),
   });
 
   // List threads for a user (query)
@@ -168,10 +157,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
             } = await ctx.runQuery(component.messages.listMessagesByThreadId, {
               threadId: thread._id,
               order: "desc",
-              paginationOpts: {
-                numItems: 1,
-                cursor: null,
-              },
+              paginationOpts: { numItems: 1, cursor: null },
             });
             return {
               ...thread,

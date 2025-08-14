@@ -1,5 +1,5 @@
+import type { FlexibleSchema } from "@ai-sdk/provider-utils";
 import type {
-  CoreMessage,
   DeepPartial,
   generateObject,
   GenerateObjectResult,
@@ -8,7 +8,9 @@ import type {
   JSONValue,
   LanguageModelRequestMetadata,
   LanguageModelResponseMetadata,
-  LanguageModelV1,
+  LanguageModelUsage,
+  ModelMessage,
+  LanguageModel,
   RepairTextFunction,
   streamObject,
   StreamObjectResult,
@@ -21,26 +23,24 @@ import type {
 import type {
   Auth,
   Expand,
-  FunctionReference,
-  StorageActionWriter,
-  StorageReader,
-  WithoutSystemFields,
   FunctionArgs,
+  FunctionReference,
   FunctionReturnType,
   GenericActionCtx,
   GenericDataModel,
+  StorageActionWriter,
+  StorageReader,
+  WithoutSystemFields,
 } from "convex/server";
 import type { GenericId } from "convex/values";
-import type { Schema } from "zod";
 import type { Mounts } from "../component/_generated/api.js";
-import type { ThreadDoc } from "../component/schema.js";
+import type { MessageDoc, ThreadDoc } from "../component/schema.js";
 import type {
   CallSettings,
   ProviderMetadata,
   ProviderOptions,
   StreamDelta,
   StreamMessage,
-  Usage,
 } from "../validators.js";
 import type { StreamingOptions } from "./streaming.js";
 
@@ -114,7 +114,21 @@ export type StorageOptions = {
   saveMessages?: "all" | "none" | "promptAndOutput";
 };
 
-export type GenerationOutputMetadata = { messageId?: string; order?: number };
+export type GenerationOutputMetadata = {
+  /**
+   * The ID of the prompt message for the generation.
+   */
+  messageId?: string;
+  /**
+   * The order of the prompt message for the generation.
+   */
+  order?: number;
+  /**
+   * The messages saved for the generation - both saved input and output.
+   * If you passed promptMessageId, it will not include that message.
+   */
+  messages?: MessageDoc[];
+};
 
 export type UsageHandler = (
   ctx: RunActionCtx,
@@ -122,7 +136,7 @@ export type UsageHandler = (
     userId: string | undefined;
     threadId: string | undefined;
     agentName: string | undefined;
-    usage: Usage;
+    usage: LanguageModelUsage;
     // Often has more information, like cached token usage in the case of openai.
     providerMetadata: ProviderMetadata | undefined;
     model: string;
@@ -169,7 +183,7 @@ export type TextArgs<
    * The model to use for the LLM calls. This will override the model specified
    * in the Agent constructor.
    */
-  model?: LanguageModelV1;
+  model?: LanguageModel;
   /**
    * The tools to use for the tool calls. This will override tools specified
    * in the Agent constructor or createThread / continueThread.
@@ -208,7 +222,7 @@ export type StreamingTextArgs<
    * The model to use for the tool calls. This will override the model specified
    * in the Agent constructor.
    */
-  model?: LanguageModelV1;
+  model?: LanguageModel;
   /**
    * The tools to use for the tool calls. This will override tools specified
    * in the Agent constructor or createThread / continueThread.
@@ -226,7 +240,7 @@ type BaseGenerateObjectOptions = CallSettings & {
    * The model to use for the object generation. This will override the model
    * specified in the Agent constructor.
    */
-  model?: LanguageModelV1;
+  model?: LanguageModel;
   /**
    * The system prompt to use for the object generation. This will override the
    * system prompt specified in the Agent constructor.
@@ -236,13 +250,13 @@ type BaseGenerateObjectOptions = CallSettings & {
    * The prompt to the LLM to use for the object generation.
    * Specify this or messages, but not both.
    */
-  prompt?: string;
+  prompt?: string | Array<ModelMessage>;
   /**
    * The messages to use for the object generation.
    * Note: recent messages are automatically added based on the thread it's
    * associated with and your contextOptions.
    */
-  messages?: CoreMessage[];
+  messages?: Array<ModelMessage>;
   /**
    * The message to use as the "prompt" for the object generation.
    * If this is provided, it will be used instead of the prompt or messages.
@@ -256,52 +270,28 @@ type BaseGenerateObjectOptions = CallSettings & {
   experimental_providerMetadata?: ProviderMetadata;
 };
 
-type GenerateObjectObjectOptions<T extends Record<string, unknown>> =
-  BaseGenerateObjectOptions & {
-    output?: "object";
-    mode?: "auto" | "json" | "tool";
-    schema: Schema<T>;
-    schemaName?: string;
-    schemaDescription?: string;
-  };
-
-type GenerateObjectArrayOptions<T> = BaseGenerateObjectOptions & {
-  output: "array";
-  mode?: "auto" | "json" | "tool";
-  schema: Schema<T>;
+type StandardGenerateObjectOptions<T> = {
+  schema: FlexibleSchema<T>;
   schemaName?: string;
   schemaDescription?: string;
-};
-
-type GenerateObjectWithEnumOptions<T extends string> =
-  BaseGenerateObjectOptions & {
-    output: "enum";
-    enum: Array<T>;
-    mode?: "auto" | "json" | "tool";
-  };
-
-type GenerateObjectNoSchemaOptions = BaseGenerateObjectOptions & {
-  schema?: undefined;
-  mode?: "json";
+  output?: "object" | "array";
+  mode?: "auto" | "json" | "tool";
 };
 
 // TODO: simplify this to just use the generateObject args, with an optional
 // model and tool/toolChoice types
-type GenerateObjectArgs<T> =
-  T extends Record<string, unknown>
-    ? GenerateObjectObjectOptions<T>
-    : T extends Array<unknown>
-      ? GenerateObjectArrayOptions<T>
-      : T extends string
-        ? GenerateObjectWithEnumOptions<T>
-        : GenerateObjectNoSchemaOptions;
+type GenerateObjectArgs<T> = BaseGenerateObjectOptions &
+  (
+    | StandardGenerateObjectOptions<T>
+    | { output: "enum"; enum: Array<T>; mode?: "auto" | "json" | "tool" }
+    | { output: "any"; schema: undefined; mode: "json" }
+  );
 
-type StreamObjectArgs<T> =
-  T extends Record<string, unknown>
-    ? GenerateObjectObjectOptions<T>
-    : T extends Array<unknown>
-      ? GenerateObjectArrayOptions<T>
-      : GenerateObjectNoSchemaOptions;
+type StreamObjectArgs<T> = BaseGenerateObjectOptions &
+  (
+    | StandardGenerateObjectOptions<T>
+    | { output: "any"; schema: undefined; mode: "json" }
+  );
 
 export type OurObjectArgs<T> = GenerateObjectArgs<T> &
   Pick<
@@ -310,11 +300,12 @@ export type OurObjectArgs<T> = GenerateObjectArgs<T> &
     "experimental_repairText" | "abortSignal"
   >;
 
-export type OurStreamObjectArgs<T> = StreamObjectArgs<T> &
-  Pick<
-    Parameters<typeof streamObject<T>>[0],
-    "onError" | "onFinish" | "abortSignal"
-  >;
+export type OurStreamObjectArgs<T extends FlexibleSchema<T>> =
+  StreamObjectArgs<T> &
+    Pick<
+      Parameters<typeof streamObject<T>>[0],
+      "onError" | "onFinish" | "abortSignal"
+    >;
 
 type ThreadOutputMetadata = Required<GenerationOutputMetadata>;
 
@@ -415,24 +406,10 @@ export interface Thread<DefaultTools extends ToolSet> {
    * for the {@link ContextOptions} and {@link StorageOptions}.
    * @returns The result of the generateObject function.
    */
-  generateObject<T>(
+  generateObject<T = JSONValue>(
     args: OurObjectArgs<T>,
     options?: Options,
   ): Promise<GenerateObjectResult<T> & ThreadOutputMetadata>;
-  /**
-   * This behaves like {@link generateObject} from the "ai" package except that
-   * it add context based on the userId and threadId and saves the input and
-   * resulting messages to the thread, if specified. This overload is for when there's no schema.
-   * Use {@link continueThread} to get a version of this function already scoped
-   * to a thread (and optionally userId).
-   * @param args The arguments to the generateObject function, along with extra controls
-   * for the {@link ContextOptions} and {@link StorageOptions}.
-   * @returns The result of the generateObject function.
-   */
-  generateObject(
-    args: GenerateObjectNoSchemaOptions,
-    options?: Options,
-  ): Promise<GenerateObjectResult<JSONValue> & ThreadOutputMetadata>;
   /**
    * This behaves like {@link streamObject} from the "ai" package except that
    * it add context based on the userId and threadId and saves the input and
@@ -443,7 +420,7 @@ export interface Thread<DefaultTools extends ToolSet> {
    * for the {@link ContextOptions} and {@link StorageOptions}.
    * @returns The result of the streamObject function.
    */
-  streamObject<T>(
+  streamObject<T extends FlexibleSchema<T>>(
     args: OurStreamObjectArgs<T>,
     options?: Options,
   ): Promise<

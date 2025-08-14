@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.0 AI SDK v5 support (alpha)
+
+- Supports LanguageModel: a string for gateway or LanguageModelV2.
+- Add a `.text` field to the toUIMessages return value (this is the
+  UIMessage exported by the Agent library.
+  Note: this is somewhat different, so your UIs will have to adjust.
+- No longer returns lastMessageId when saving message, instead it
+  returns all the messages it saved with all metadata.
+- All messages are returned when generating / streaming text / objects.
+  Not just the prompt message ID / order.
+- More functions are supported without using an Agent class.
+- The UIMessage is now based on the v5 UIMessage, and the MessageDoc is
+  based on the ModelMessage. The data at rest has not changed - backwards
+  compatible.
+- The `id` is no longer used / configurable when saving messages.
+  Reach out if you were using it - the normal message ID should suffice.
+- `maxRetries` option has been moved into a general `callSettings` config on Agent
+- The `maxSteps` option has been changed to the v5 `stopWhen` alternative.
+- saving pending messages now requires passing status: "pending" instead of
+  a top-level pending: true. Most people don't use this feature currently.
+
 ## 0.1.18
 
 - definePlaygroundAPI uses the new interface functions

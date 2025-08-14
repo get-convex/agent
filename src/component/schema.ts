@@ -6,7 +6,7 @@ import {
   vMessageStatus,
   vUsage,
   vSource,
-  vLanguageModelV1CallWarning,
+  vLanguageModelCallWarning,
   vFinishReason,
   vProviderOptions,
   vProviderMetadata,
@@ -29,12 +29,8 @@ export const schema = defineSchema({
     order: /*DEPRECATED*/ v.optional(v.number()),
   })
     .index("userId", ["userId"])
-    .searchIndex("title", {
-      searchField: "title",
-      filterFields: ["userId"],
-    }),
+    .searchIndex("title", { searchField: "title", filterFields: ["userId"] }),
   messages: defineTable({
-    id: v.optional(v.string()), // external id, e.g. from Vercel AI SDK
     userId: v.optional(v.string()), // useful for searching across threads
     threadId: v.id("threads"),
     order: v.number(),
@@ -62,9 +58,10 @@ export const schema = defineSchema({
     sources: v.optional(v.array(vSource)),
     reasoning: v.optional(v.string()),
     reasoningDetails: v.optional(vReasoningDetails),
-    warnings: v.optional(v.array(vLanguageModelV1CallWarning)),
+    warnings: v.optional(v.array(vLanguageModelCallWarning)),
     finishReason: v.optional(vFinishReason),
     // DEPRECATED
+    id: v.optional(v.string()), // external id, e.g. from Vercel AI SDK
     parentMessageId: v.optional(v.id("messages")),
     stepId: v.optional(v.string()),
     files: v.optional(v.array(v.any())),
@@ -115,10 +112,7 @@ export const schema = defineSchema({
         endedAt: v.number(),
         cleanupFnId: v.optional(v.id("_scheduled_functions")),
       }),
-      v.object({
-        kind: v.literal("aborted"),
-        reason: v.string(),
-      }),
+      v.object({ kind: v.literal("aborted"), reason: v.string() }),
     ),
   })
     // There should only be one per "order" index
@@ -162,9 +156,9 @@ export const schema = defineSchema({
   // To authenticate playground usage
   // Delete a key to invalidate it
   // Provide a name to easily identify it / invalidate by name
-  apiKeys: defineTable({
-    name: v.optional(v.string()),
-  }).index("name", ["name"]),
+  apiKeys: defineTable({ name: v.optional(v.string()) }).index("name", [
+    "name",
+  ]),
 });
 
 export const vv = typedV(schema);

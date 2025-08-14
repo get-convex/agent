@@ -131,14 +131,14 @@ export default function ChatBasic() {
 
 function Chat({ threadId }: { threadId: string }) {
   const messages = useThreadMessages(
-    api.chat.basic.listMessages,
+    api.chat.basic.listThreadMessages,
     { threadId },
     { initialNumItems: 10 },
   );
   const sendMessage = useMutation(
     api.chat.basic.sendMessage,
   ).withOptimisticUpdate(
-    optimisticallySendMessage(api.chat.basic.listMessages),
+    optimisticallySendMessage(api.chat.basic.listThreadMessages),
   );
   const [prompt, setPrompt] = useState("Yo yo yo");
 
@@ -208,7 +208,7 @@ function Message({ message }: { message: UIMessage }) {
           isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800"
         }`}
       >
-        {message.content}
+        {message.text}
       </div>
     </div>
   );

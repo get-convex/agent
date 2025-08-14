@@ -1,7 +1,7 @@
 // See the docs at https://docs.convex.dev/agents/messages
 import { components, internal } from "../_generated/api";
 import { action, internalAction, mutation, query } from "../_generated/server";
-import { saveMessage } from "@convex-dev/agent";
+import { listMessages, saveMessage } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { agent } from "../agents/simple";
 import { authorizeThreadAccess } from "../threads";
@@ -59,7 +59,7 @@ export const generateResponse = internalAction({
  * Query & subscribe to messages & threads
  */
 
-export const listMessages = query({
+export const listThreadMessages = query({
   args: {
     threadId: v.string(),
     paginationOpts: paginationOptsValidator,
@@ -67,7 +67,7 @@ export const listMessages = query({
   handler: async (ctx, args) => {
     const { threadId, paginationOpts } = args;
     await authorizeThreadAccess(ctx, threadId);
-    const messages = await agent.listMessages(ctx, {
+    const messages = await listMessages(ctx, components.agent, {
       threadId,
       paginationOpts,
     });

@@ -1,6 +1,6 @@
 import { useState, useEffect, ReactNode, useMemo } from "react";
 import { useConvex } from "convex/react";
-import type { PlaygroundAPI } from "../definePlaygroundAPI";
+import type { PlaygroundAPI } from "@convex-dev/agent";
 import { anyApi } from "convex/server";
 import { Button } from "./ui/button";
 import { useParams } from "react-router-dom";

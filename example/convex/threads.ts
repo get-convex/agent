@@ -19,7 +19,7 @@ import {
 } from "@convex-dev/agent";
 import { getAuthUserId } from "./utils";
 import { agent } from "./agents/simple";
-import z from "zod";
+import z from "zod/v3";
 
 export const listThreads = query({
   args: {

@@ -73,14 +73,14 @@ export default function ChatStreaming() {
 
 function Story({ threadId, reset }: { threadId: string; reset: () => void }) {
   const messages = useThreadMessages(
-    api.chat.streaming.listMessages,
+    api.chat.streaming.listThreadMessages,
     { threadId },
     { initialNumItems: 10, stream: true },
   );
   const sendMessage = useMutation(
     api.chat.streaming.initiateAsyncStreaming,
   ).withOptimisticUpdate(
-    optimisticallySendMessage(api.chat.streaming.listMessages),
+    optimisticallySendMessage(api.chat.streaming.listThreadMessages),
   );
   const abortStreamByOrder = useMutation(
     api.chat.streamAbort.abortStreamByOrder,
@@ -173,7 +173,7 @@ function Story({ threadId, reset }: { threadId: string; reset: () => void }) {
 
 function Message({ message }: { message: UIMessage }) {
   const isUser = message.role === "user";
-  const [visibleText] = useSmoothText(message.content, {
+  const [visibleText] = useSmoothText(message.text, {
     // This tells the hook that it's ok to start streaming immediately.
     // If this was always passed as true, messages that are already done would
     // also stream in.

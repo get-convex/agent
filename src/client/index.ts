@@ -1,22 +1,28 @@
-import type { EmbeddingModelV1, LanguageModelV1 } from "@ai-sdk/provider";
+import type { FlexibleSchema } from "@ai-sdk/provider-utils";
 import type {
   AssistantContent,
-  CoreMessage,
   DeepPartial,
+  EmbeddingModel,
   FilePart,
   GenerateObjectResult,
   GenerateTextResult,
   ImagePart,
+  LanguageModel,
+  ModelMessage,
   StepResult,
+  StopCondition,
   StreamObjectResult,
   StreamTextResult,
+  ToolChoice,
   ToolSet,
   UserContent,
+  CallSettings,
 } from "ai";
 import {
   embedMany,
   generateObject,
   generateText,
+  stepCountIs,
   streamObject,
   streamText,
 } from "ai";
@@ -38,33 +44,42 @@ import {
   type VectorDimension,
 } from "../component/vector/tables.js";
 import {
-  type AIMessageWithoutId,
   deserializeMessage,
-  promptOrMessagesToCoreMessages,
   serializeMessage,
   serializeNewMessagesInStep,
   serializeObjectResult,
 } from "../mapping.js";
 import { extractText, isTool } from "../shared.js";
 import {
-  type MessageEmbeddings,
+  vMessageWithMetadata,
+  vSafeObjectArgs,
+  vTextArgs,
+  vMessageEmbeddings,
+  type Message,
   type MessageStatus,
   type MessageWithMetadata,
   type ProviderMetadata,
   type StreamArgs,
   type Usage,
-  vMessageWithMetadata,
-  vSafeObjectArgs,
-  vTextArgs,
 } from "../validators.js";
-import { createTool, wrapTools } from "./createTool.js";
-import { listMessages } from "./listMessages.js";
-import { fetchContextMessages } from "./search.js";
+import { createTool, wrapTools, type ToolCtx } from "./createTool.js";
+import {
+  listMessages,
+  saveMessages,
+  type SaveMessageArgs,
+  type SaveMessagesArgs,
+} from "./messages.js";
+import { createThread, getThreadMetadata } from "./threads.js";
+import {
+  fetchContextMessages,
+  getModelName,
+  getProviderName,
+} from "./search.js";
 import {
   DeltaStreamer,
   mergeTransforms,
-  type StreamingOptions,
   syncStreams,
+  type StreamingOptions,
 } from "./streaming.js";
 import type {
   ActionCtx,
@@ -87,8 +102,13 @@ import type {
   UserActionCtx,
 } from "./types.js";
 
+export { stepCountIs } from "ai";
 export { vMessageDoc, vThreadDoc } from "../component/schema.js";
-export { serializeDataOrUrl } from "../mapping.js";
+export {
+  deserializeMessage,
+  serializeDataOrUrl,
+  serializeMessage,
+} from "../mapping.js";
 // NOTE: these are also exported via @convex-dev/agent/validators
 // a future version may put them all here or move these over there
 export {
@@ -106,16 +126,20 @@ export {
 } from "../validators.js";
 export type { ToolCtx } from "./createTool.js";
 export { getFile, storeFile } from "./files.js";
-export { filterOutOrphanedToolMessages } from "./search.js";
-export { abortStream, listStreams } from "./streaming.js";
 export {
-  createTool,
-  extractText,
   fetchContextMessages,
-  isTool,
+  filterOutOrphanedToolMessages,
+} from "./search.js";
+export { abortStream, listStreams, syncStreams } from "./streaming.js";
+export {
   listMessages,
-  syncStreams,
-};
+  saveMessage,
+  saveMessages,
+  type SaveMessageArgs,
+  type SaveMessagesArgs,
+} from "./messages.js";
+export { createThread, getThreadMetadata } from "./threads.js";
+export { createTool, extractText, isTool };
 export {
   definePlaygroundAPI,
   type PlaygroundAPI,
@@ -175,7 +199,7 @@ export class Agent<
        * const myAgent = new Agent(components.agent, {
        *   chat: openai.chat("gpt-4o-mini"),
        */
-      chat: LanguageModelV1;
+      chat: LanguageModel;
       /**
        * The model to use for text embeddings. Optional.
        * If specified, it will use this for generating vector embeddings
@@ -186,7 +210,7 @@ export class Agent<
        * const myAgent = new Agent(components.agent, {
        *   textEmbedding: openai.embedding("text-embedding-3-small")
        */
-      textEmbedding?: EmbeddingModelV1<string>;
+      textEmbedding?: EmbeddingModel<string>;
       /**
        * The default system prompt to put in each request.
        * Override per-prompt by passing the "system" parameter.
@@ -212,14 +236,15 @@ export class Agent<
       storageOptions?: StorageOptions;
       /**
        * When generating or streaming text with tools available, this
-       * determines the default max number of iterations.
+       * determines when to stop. Defaults to stepCountIs(1).
        */
-      maxSteps?: number;
+      stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
       /**
-       * The maximum number of calls to make to an LLM in case it fails.
-       * This can be overridden at each generate/stream callsite.
+       * The default settings to use for the LLM calls.
+       * This can be overridden at each generate/stream callsite on a per-field
+       * basis. To clear a default setting, you'll need to pass `undefined`.
        */
-      maxRetries?: number;
+      callSettings?: CallSettings;
       /**
        * The usage handler to use for this agent.
        */
@@ -309,9 +334,7 @@ export class Agent<
        */
       tools?: ThreadTools;
     },
-  ): Promise<{
-    threadId: string;
-  }>;
+  ): Promise<{ threadId: string }>;
   async createThread<ThreadTools extends ToolSet | undefined = undefined>(
     ctx: (ActionCtx & CustomCtx) | RunMutationCtx,
     args?: {
@@ -335,10 +358,7 @@ export class Agent<
       usageHandler: args?.usageHandler,
       tools: args?.tools,
     });
-    return {
-      threadId,
-      thread,
-    };
+    return { threadId, thread };
   }
 
   /**
@@ -395,30 +415,6 @@ export class Agent<
   }
 
   /**
-   * Search for threads by title, paginated.
-   * @param ctx The context passed from the query/mutation/action.
-   * @returns The threads matching the search, paginated.
-   */
-  async searchThreadTitles(
-    ctx: RunQueryCtx,
-    {
-      userId,
-      query,
-      limit,
-    }: {
-      userId?: string | undefined;
-      query: string;
-      limit?: number;
-    },
-  ): Promise<ThreadDoc[]> {
-    return ctx.runQuery(this.component.threads.searchThreadTitles, {
-      userId,
-      query,
-      limit: limit ?? 10,
-    });
-  }
-
-  /**
    * This behaves like {@link generateText} from the "ai" package except that
    * it add context based on the userId and threadId and saves the input and
    * resulting messages to the thread, if specified.
@@ -465,34 +461,37 @@ export class Agent<
       ...opts,
     });
     const { args: aiArgs, messageId, order, userId } = context;
+    const messages = context.savedMessages ?? [];
     const toolCtx = {
       ...(ctx as UserActionCtx & CustomCtx),
       userId,
       threadId,
       messageId,
       agent: this,
-    };
+    } satisfies ToolCtx;
+    type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
     const tools = wrapTools(
       toolCtx,
       args.tools ?? threadTools ?? this.options.tools,
-    ) as TOOLS extends undefined ? AgentTools : TOOLS;
+    ) as Tools;
     const saveOutput = opts.storageOptions?.saveMessages !== "none";
     try {
-      const result = (await generateText({
+      const result = (await generateText<Tools, OUTPUT, OUTPUT_PARTIAL>({
         // Can be overridden
-        maxSteps: this.options.maxSteps,
+        stopWhen: this.options.stopWhen as StopCondition<Tools> | undefined,
         ...aiArgs,
         tools,
         onStepFinish: async (step) => {
           if (threadId && messageId && saveOutput) {
-            await this.saveStep(ctx, {
+            const saved = await this.saveStep(ctx, {
               userId,
               threadId,
               promptMessageId: messageId,
-              model: aiArgs.model.modelId,
-              provider: aiArgs.model.provider,
+              model: getModelName(aiArgs.model),
+              provider: getProviderName(aiArgs.model),
               step,
             });
+            messages.push(...saved.messages);
           }
           if (this.options.rawRequestResponseHandler) {
             await this.options.rawRequestResponseHandler(ctx, {
@@ -508,21 +507,18 @@ export class Agent<
               userId,
               threadId,
               agentName: this.options.name,
-              model: aiArgs.model.modelId,
-              provider: aiArgs.model.provider,
+              model: getModelName(aiArgs.model),
+              provider: getProviderName(aiArgs.model),
               usage: step.usage,
               providerMetadata: step.providerMetadata,
             });
           }
           return args.onStepFinish?.(step);
         },
-      })) as GenerateTextResult<
-        TOOLS extends undefined ? AgentTools : TOOLS,
-        OUTPUT
-      > &
-        GenerationOutputMetadata;
+      })) as GenerateTextResult<Tools, OUTPUT> & GenerationOutputMetadata;
       result.messageId = messageId;
       result.order = order;
+      result.messages = messages;
       return result;
     } catch (error) {
       if (threadId && messageId) {
@@ -596,6 +592,7 @@ export class Agent<
       ...opts,
     });
     const { args: aiArgs, messageId, order, stepOrder, userId } = context;
+    const messages = context.savedMessages ?? [];
     const toolCtx = {
       ...(ctx as UserActionCtx & CustomCtx),
       userId,
@@ -614,8 +611,8 @@ export class Agent<
             threadId,
             userId,
             agentName: this.options.name,
-            model: aiArgs.model.modelId,
-            provider: aiArgs.model.provider,
+            model: getModelName(aiArgs.model),
+            provider: getProviderName(aiArgs.model),
             providerOptions: aiArgs.providerOptions,
             order,
             stepOrder,
@@ -624,8 +621,8 @@ export class Agent<
         : undefined;
 
     const result = streamText({
-      // Can be overridden
-      maxSteps: this.options.maxSteps,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      stopWhen: this.options.stopWhen as any, // Can be overridden
       ...aiArgs,
       tools,
       abortSignal: streamer?.abortController.signal ?? aiArgs.abortSignal,
@@ -655,12 +652,13 @@ export class Agent<
           const saved = await this.saveStep(ctx, {
             userId,
             threadId,
-            model: aiArgs.model.modelId,
-            provider: aiArgs.model.provider,
+            model: getModelName(aiArgs.model),
+            provider: getProviderName(aiArgs.model),
             promptMessageId: messageId,
             step,
           });
           await streamer?.finish(saved.messages);
+          messages.push(...saved.messages);
         }
         if (this.options.rawRequestResponseHandler) {
           await this.options.rawRequestResponseHandler(ctx, {
@@ -676,8 +674,8 @@ export class Agent<
             userId,
             threadId,
             agentName: this.options.name,
-            model: aiArgs.model.modelId,
-            provider: aiArgs.model.provider,
+            model: getModelName(aiArgs.model),
+            provider: getProviderName(aiArgs.model),
             usage: step.usage,
             providerMetadata: step.providerMetadata,
           });
@@ -691,6 +689,7 @@ export class Agent<
       GenerationOutputMetadata;
     result.messageId = messageId;
     result.order = order;
+    result.messages = messages;
     return result;
   }
 
@@ -729,6 +728,7 @@ export class Agent<
       ...opts,
     });
     const { args: aiArgs, messageId, order, userId } = context;
+    const messages = context.savedMessages ?? [];
     const saveOutput = opts.storageOptions?.saveMessages !== "none";
     try {
       const result = (await generateObject(
@@ -737,17 +737,19 @@ export class Agent<
       )) as GenerateObjectResult<T> & GenerationOutputMetadata;
 
       if (threadId && messageId && saveOutput) {
-        await this.saveObject(ctx, {
+        const saved = await this.saveObject(ctx, {
           threadId,
           promptMessageId: messageId,
           result,
           userId,
-          model: aiArgs.model.modelId,
-          provider: aiArgs.model.provider,
+          model: getModelName(aiArgs.model),
+          provider: getProviderName(aiArgs.model),
         });
+        messages.push(...saved.messages);
       }
       result.messageId = messageId;
       result.order = order;
+      result.messages = messages;
       if (this.options.rawRequestResponseHandler) {
         await this.options.rawRequestResponseHandler(ctx, {
           userId,
@@ -762,8 +764,8 @@ export class Agent<
           userId,
           threadId,
           agentName: this.options.name,
-          model: aiArgs.model.modelId,
-          provider: aiArgs.model.provider,
+          model: getModelName(aiArgs.model),
+          provider: getProviderName(aiArgs.model),
           usage: result.usage,
           providerMetadata: result.providerMetadata,
         });
@@ -787,7 +789,7 @@ export class Agent<
    * Use {@link continueThread} to get a version of this function already scoped
    * to a thread (and optionally userId).
    */
-  async streamObject<T>(
+  async streamObject<T extends FlexibleSchema<T>>(
     ctx: ActionCtx,
     {
       userId: argsUserId,
@@ -818,8 +820,10 @@ export class Agent<
       ...opts,
     });
     const { args: aiArgs, messageId, order, userId } = context;
+    const messages = context.savedMessages ?? [];
     const saveOutput = opts.storageOptions?.saveMessages !== "none";
-    const stream = streamObject<T>({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stream = streamObject<any>({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(aiArgs as any),
       onError: async (error) => {
@@ -828,7 +832,7 @@ export class Agent<
       },
       onFinish: async (result) => {
         if (threadId && messageId && saveOutput) {
-          await this.saveObject(ctx, {
+          const saved = await this.saveObject(ctx, {
             userId,
             threadId,
             promptMessageId: messageId,
@@ -840,22 +844,20 @@ export class Agent<
               request: await stream.request,
               response: result.response,
               providerMetadata: result.providerMetadata,
-              experimental_providerMetadata:
-                result.experimental_providerMetadata,
-              logprobs: undefined,
               toJsonResponse: stream.toTextStreamResponse,
             },
-            model: aiArgs.model.modelId,
-            provider: aiArgs.model.provider,
+            model: getModelName(aiArgs.model),
+            provider: getProviderName(aiArgs.model),
           });
+          messages.push(...saved.messages);
         }
         if (opts.usageHandler && result.usage) {
           await opts.usageHandler(ctx, {
             userId,
             threadId,
             agentName: this.options.name,
-            model: aiArgs.model.modelId,
-            provider: aiArgs.model.provider,
+            model: getModelName(aiArgs.model),
+            provider: getProviderName(aiArgs.model),
             usage: result.usage,
             providerMetadata: result.providerMetadata,
           });
@@ -876,6 +878,7 @@ export class Agent<
       GenerationOutputMetadata;
     stream.messageId = messageId;
     stream.order = order;
+    stream.messages = messages;
     return stream;
   }
 
@@ -898,14 +901,11 @@ export class Agent<
       skipEmbeddings?: boolean;
     },
   ) {
-    const { lastMessageId, messages } = await this.saveMessages(ctx, {
+    const { messages } = await this.saveMessages(ctx, {
       threadId: args.threadId,
       userId: args.userId,
       embeddings: args.embedding
-        ? {
-            model: args.embedding.model,
-            vectors: [args.embedding.vector],
-          }
+        ? { model: args.embedding.model, vectors: [args.embedding.vector] }
         : undefined,
       messages:
         args.prompt !== undefined
@@ -914,7 +914,8 @@ export class Agent<
       metadata: args.metadata ? [args.metadata] : undefined,
       skipEmbeddings: args.skipEmbeddings,
     });
-    return { messageId: lastMessageId, message: messages.at(-1)! };
+    const message = messages.at(-1)!;
+    return { messageId: message._id, message };
   }
 
   /**
@@ -936,16 +937,8 @@ export class Agent<
        */
       skipEmbeddings?: boolean;
     },
-  ): Promise<{
-    lastMessageId: string;
-    messages: MessageDoc[];
-  }> {
-    let embeddings:
-      | {
-          vectors: (number[] | null)[];
-          model: string;
-        }
-      | undefined;
+  ): Promise<{ messages: MessageDoc[] }> {
+    let embeddings: { vectors: (number[] | null)[]; model: string } | undefined;
     const { skipEmbeddings, ...rest } = args;
     if (args.embeddings) {
       embeddings = args.embeddings;
@@ -967,10 +960,7 @@ export class Agent<
       } else {
         embeddings = await this.generateEmbeddings(
           ctx,
-          {
-            userId: args.userId ?? undefined,
-            threadId: args.threadId,
-          },
+          { userId: args.userId ?? undefined, threadId: args.threadId },
           args.messages,
         );
       }
@@ -1037,7 +1027,7 @@ export class Agent<
     args: {
       userId: string | undefined;
       threadId: string | undefined;
-      messages: CoreMessage[];
+      messages: (ModelMessage | Message)[];
       /**
        * If provided, it will search for messages up to and including this message.
        * Note: if this is far in the past, text and vector search results may be more
@@ -1069,7 +1059,7 @@ export class Agent<
               values: [text],
             })
           ).embeddings[0],
-          embeddingModel: this.options.textEmbedding.modelId,
+          embeddingModel: this.options.textEmbedding,
         };
       },
     });
@@ -1121,11 +1111,8 @@ export class Agent<
     {
       userId,
       threadId,
-    }: {
-      userId: string | undefined;
-      threadId: string | undefined;
-    },
-    messages: CoreMessage[],
+    }: { userId: string | undefined; threadId: string | undefined },
+    messages: (ModelMessage | Message)[],
   ) {
     if (!this.options.textEmbedding) {
       return undefined;
@@ -1151,7 +1138,6 @@ export class Agent<
       threadId,
       values: messageTexts as string[],
     });
-    // TODO: record usage of embeddings
     // Then assemble the embeddings into a single array with nulls for the messages without text.
     const embeddingsOrNull = Array(messages.length).fill(null);
     textIndexes.forEach((i, j) => {
@@ -1160,11 +1146,8 @@ export class Agent<
     if (textEmbeddings.embeddings.length > 0) {
       const dimension = textEmbeddings.embeddings[0].length;
       validateVectorDimension(dimension);
-      embeddings = {
-        vectors: embeddingsOrNull,
-        dimension,
-        model: this.options.textEmbedding.modelId,
-      };
+      const model = getModelName(this.options.textEmbedding);
+      embeddings = { vectors: embeddingsOrNull, dimension, model };
     }
     return embeddings;
   }
@@ -1178,9 +1161,7 @@ export class Agent<
    */
   async generateAndSaveEmbeddings(
     ctx: RunActionCtx,
-    args: {
-      messageIds: string[];
-    },
+    args: { messageIds: string[] },
   ) {
     const messages = (
       await ctx.runQuery(this.component.messages.getMessagesByIds, {
@@ -1218,7 +1199,7 @@ export class Agent<
         userId: messagesMissingEmbeddings[0]!.userId,
         threadId: messagesMissingEmbeddings[0]!.threadId,
       },
-      messagesMissingEmbeddings.map((m) => m!.message!),
+      messagesMissingEmbeddings.map((m) => deserializeMessage(m!.message!)),
     );
     if (!embeddings) {
       if (!this.options.textEmbedding) {
@@ -1278,14 +1259,14 @@ export class Agent<
        */
       provider?: string;
     },
-  ): Promise<{ messages: MessageDoc[]; pending?: MessageDoc }> {
+  ): Promise<{ messages: MessageDoc[] }> {
     const messages = await serializeNewMessagesInStep(
       ctx,
       this.component,
       args.step,
       {
-        provider: args.provider ?? this.options.chat.provider,
-        model: args.model ?? this.options.chat.modelId,
+        provider: args.provider ?? getProviderName(this.options.chat),
+        model: args.model ?? getModelName(this.options.chat),
       },
     );
     const embeddings = await this.generateEmbeddings(
@@ -1293,7 +1274,7 @@ export class Agent<
       { userId: args.userId, threadId: args.threadId },
       messages.map((m) => m.message),
     );
-    const saved = await ctx.runMutation(this.component.messages.addMessages, {
+    return ctx.runMutation(this.component.messages.addMessages, {
       userId: args.userId,
       threadId: args.threadId,
       agentName: this.options.name,
@@ -1302,7 +1283,6 @@ export class Agent<
       embeddings,
       failPendingSteps: false,
     });
-    return saved;
   }
 
   /**
@@ -1323,23 +1303,23 @@ export class Agent<
       result: GenerateObjectResult<unknown>;
       metadata?: Omit<MessageWithMetadata, "message">;
     },
-  ): Promise<void> {
+  ): Promise<{ messages: MessageDoc[] }> {
     const { messages } = await serializeObjectResult(
       ctx,
       this.component,
       args.result,
       {
-        model: args.model ?? this.options.chat.modelId,
-        provider: args.provider ?? this.options.chat.provider,
+        model: args.model ?? getModelName(this.options.chat),
+        provider: args.provider ?? getProviderName(this.options.chat),
       },
     );
     const embeddings = await this.generateEmbeddings(
       ctx,
       { userId: args.userId, threadId: args.threadId },
-      messages.map((m) => m.message),
+      messages.map((m) => deserializeMessage(m.message)),
     );
 
-    await ctx.runMutation(this.component.messages.addMessages, {
+    return ctx.runMutation(this.component.messages.addMessages, {
       userId: args.userId,
       threadId: args.threadId,
       promptMessageId: args.promptMessageId,
@@ -1347,7 +1327,6 @@ export class Agent<
       messages,
       embeddings,
       agentName: this.options.name,
-      pending: false,
     });
   }
 
@@ -1392,7 +1371,7 @@ export class Agent<
       messageId: string;
       patch: {
         /** The message to replace the existing message. */
-        message: CoreMessage & { id?: string };
+        message: ModelMessage | Message;
         /** The status to set on the message. */
         status: "success" | "error";
         /** The error message to set on the message. */
@@ -1437,9 +1416,7 @@ export class Agent<
    */
   async deleteMessages(
     ctx: RunMutationCtx,
-    args: {
-      messageIds: string[];
-    },
+    args: { messageIds: string[] },
   ): Promise<void> {
     await ctx.runMutation(this.component.messages.deleteByIds, args);
   }
@@ -1452,9 +1429,7 @@ export class Agent<
    */
   async deleteMessage(
     ctx: RunMutationCtx,
-    args: {
-      messageId: string;
-    },
+    args: { messageId: string },
   ): Promise<void> {
     await ctx.runMutation(this.component.messages.deleteByIds, {
       messageIds: [args.messageId],
@@ -1526,10 +1501,7 @@ export class Agent<
    */
   async deleteThreadAsync(
     ctx: RunMutationCtx,
-    args: {
-      threadId: string;
-      pageSize?: number;
-    },
+    args: { threadId: string; pageSize?: number },
   ): Promise<void> {
     await ctx.runMutation(this.component.threads.deleteAllForThreadIdAsync, {
       threadId: args.threadId,
@@ -1546,10 +1518,7 @@ export class Agent<
    */
   async deleteThreadSync(
     ctx: RunActionCtx,
-    args: {
-      threadId: string;
-      pageSize?: number;
-    },
+    args: { threadId: string; pageSize?: number },
   ): Promise<void> {
     await ctx.runAction(this.component.threads.deleteAllForThreadIdSync, {
       threadId: args.threadId,
@@ -1560,12 +1529,11 @@ export class Agent<
   async _saveMessagesAndFetchContext<
     T extends {
       id?: string;
-      prompt?: string;
-      messages?: CoreMessage[] | AIMessageWithoutId[];
+      prompt?: string | (ModelMessage | Message)[];
+      messages?: (ModelMessage | Message)[];
       system?: string;
       promptMessageId?: string;
-      model?: LanguageModelV1;
-      maxRetries?: number;
+      model?: LanguageModel;
     },
   >(
     ctx: RunActionCtx,
@@ -1575,19 +1543,22 @@ export class Agent<
       threadId,
       contextOptions,
       storageOptions,
-    }: {
-      userId: string | undefined;
-      threadId: string | undefined;
-    } & Options,
+    }: { userId: string | undefined; threadId: string | undefined } & Options,
   ): Promise<{
-    args: T & { model: LanguageModelV1 };
+    args: T & { model: LanguageModel };
     userId: string | undefined;
     messageId: string | undefined;
     order: number | undefined;
     stepOrder: number | undefined;
+    savedMessages: MessageDoc[] | undefined;
   }> {
     // If only a promptMessageId is provided, this will be empty.
-    const messages = promptOrMessagesToCoreMessages(args);
+    const messages = args.messages ?? [];
+    const prompt: (ModelMessage | Message)[] = !args.prompt
+      ? []
+      : Array.isArray(args.prompt)
+        ? args.prompt
+        : [{ role: "user", content: args.prompt }];
     const userId =
       argsUserId ??
       (threadId &&
@@ -1603,45 +1574,47 @@ export class Agent<
     });
     // If it was a promptMessageId, pop it off context messages
     // and add to the end of messages.
-    // TODO: slice it from the prompt message, to append all of them
+    const promptMessageIndex = args.promptMessageId
+      ? contextMessages.findIndex((m) => m._id === args.promptMessageId)
+      : -1;
     const promptMessage =
-      !!args.promptMessageId &&
-      contextMessages.at(-1)?._id === args.promptMessageId
-        ? contextMessages.pop()
+      promptMessageIndex !== -1
+        ? contextMessages.splice(promptMessageIndex, 1)[0]
         : undefined;
-    if (promptMessage && args.prompt) {
-      // If they specify both a promptMessageId and a prompt, we prefer
-      // the prompt to stand in for the promptMessageId message.
-      promptMessage.message = { role: "user", content: args.prompt };
-    }
+
     let messageId = promptMessage?._id;
     let order = promptMessage?.order;
     let stepOrder = promptMessage?.stepOrder;
+    let savedMessages = undefined;
     if (
       threadId &&
-      messages.length &&
+      messages.length + prompt.length &&
       storageOptions?.saveMessages !== "none" &&
       // If it was a promptMessageId, we don't want to save it again.
       (!args.promptMessageId || storageOptions?.saveMessages === "all")
     ) {
       const saveAll = storageOptions?.saveMessages === "all";
-      const coreMessages = saveAll ? messages : messages.slice(-1);
+      const coreMessages = [...messages, ...prompt];
+      const toSave = saveAll ? coreMessages : coreMessages.slice(-1);
+      const metadata = Array.from({ length: toSave.length }, () => ({}));
       const saved = await this.saveMessages(ctx, {
         threadId,
         userId,
-        messages: coreMessages,
-        metadata: coreMessages.map((_, i) =>
-          i === coreMessages.length - 1 ? { id: args.id } : {},
-        ),
+        messages: toSave,
+        metadata,
         failPendingSteps: true,
       });
-      messageId = saved.lastMessageId;
-      order = saved.messages.at(-1)?.order;
-      stepOrder = saved.messages.at(-1)?.stepOrder;
+      messageId = saved.messages.at(-1)!._id;
+      order = saved.messages.at(-1)!.order;
+      stepOrder = saved.messages.at(-1)!.stepOrder;
+      savedMessages = saved.messages;
     }
+
     if (promptMessage?.message) {
-      // Add the message after saving the messages, so it's not saved again.
-      messages.push(deserializeMessage(promptMessage.message));
+      if (!args.prompt) {
+        // If they override the prompt, we skip the existing prompt message.
+        messages.push(deserializeMessage(promptMessage.message));
+      }
       // Lazily generate embeddings for the prompt message, if it doesn't have
       // embeddings yet. This can happen if the message was saved in a mutation
       // where the LLM is not available.
@@ -1650,10 +1623,28 @@ export class Agent<
       }
     }
 
+    const prePrompt = contextMessages.map((m) =>
+      deserializeMessage(m.message!),
+    );
+    let existingResponses: ModelMessage[] = [];
+    if (promptMessageIndex !== -1) {
+      // pull any messages that already responded to the prompt off
+      // and add them after the prompt
+      existingResponses = prePrompt.splice(promptMessageIndex);
+    }
+
     let processedMessages = [
-      ...contextMessages.map((m) => deserializeMessage(m.message!)),
+      ...prePrompt,
       ...messages,
+      ...prompt,
+      ...existingResponses,
     ];
+    if (promptMessageIndex === -1) {
+      processedMessages.push(...prompt);
+    } else {
+      // We add the prompt where the prompt message was
+      processedMessages.splice(promptMessageIndex, 0, ...prompt);
+    }
 
     // Process messages to inline localhost files (if not, file urls pointing to localhost will be sent to LLM providers)
     if (process.env.CONVEX_CLOUD_URL?.startsWith("http://127.0.0.1")) {
@@ -1663,14 +1654,15 @@ export class Agent<
     const { prompt: _, model, ...rest } = args;
     return {
       args: {
+        ...this.options.callSettings,
         ...rest,
-        maxRetries: args.maxRetries ?? this.options.maxRetries,
         model: model ?? this.options.chat,
         system: args.system ?? this.options.instructions,
         messages: processedMessages,
-      } as T & { model: LanguageModelV1 },
+      } as T & { model: LanguageModel },
       userId,
       messageId,
+      savedMessages,
       order,
       stepOrder,
     };
@@ -1692,23 +1684,23 @@ export class Agent<
       "a textEmbedding model is required to be set on the Agent that you're doing vector search with",
     );
     const result = await embedMany({
+      ...this.options.callSettings,
       model: embeddingModel,
       values: options.values,
       abortSignal: options.abortSignal,
       headers: options.headers,
-      maxRetries: this.options.maxRetries,
     });
     if (this.options.usageHandler && result.usage) {
       await this.options.usageHandler(ctx, {
         userId: options.userId,
         threadId: options.threadId,
         agentName: this.options.name,
-        model: embeddingModel.modelId,
-        provider: embeddingModel.provider,
+        model: getModelName(embeddingModel),
+        provider: getProviderName(embeddingModel),
         providerMetadata: undefined,
         usage: {
-          promptTokens: result.usage.tokens,
-          completionTokens: 0,
+          inputTokens: result.usage.tokens,
+          outputTokens: 0,
           totalTokens: result.usage.tokens,
         },
       });
@@ -1722,11 +1714,11 @@ export class Agent<
    * able to access localhost URLs.
    */
   private async _inlineMessagesFiles(
-    messages: CoreMessage[],
-  ): Promise<CoreMessage[]> {
+    messages: (ModelMessage | Message)[],
+  ): Promise<(ModelMessage | Message)[]> {
     // Process each message to convert localhost URLs to base64
     return Promise.all(
-      messages.map(async (message): Promise<CoreMessage> => {
+      messages.map(async (message): Promise<ModelMessage | Message> => {
         if (
           (message.role !== "user" && message.role !== "assistant") ||
           typeof message.content === "string" ||
@@ -1744,10 +1736,7 @@ export class Agent<
               );
               if (this._isLocalhostUrl(part.image)) {
                 const imageData = await this._downloadFile(part.image);
-                return {
-                  ...part,
-                  image: imageData,
-                } as ImagePart;
+                return { ...part, image: imageData } as ImagePart;
               }
             }
 
@@ -1755,10 +1744,7 @@ export class Agent<
             if (part.type === "file" && part.data instanceof URL) {
               if (this._isLocalhostUrl(part.data)) {
                 const fileData = await this._downloadFile(part.data);
-                return {
-                  ...part,
-                  data: fileData,
-                } as FilePart;
+                return { ...part, data: fileData } as FilePart;
               }
             }
 
@@ -1766,15 +1752,9 @@ export class Agent<
           }),
         );
         if (message.role === "user") {
-          return {
-            ...message,
-            content: processedContent as UserContent,
-          };
+          return { ...message, content: processedContent as UserContent };
         } else {
-          return {
-            ...message,
-            content: processedContent as AssistantContent,
-          };
+          return { ...message, content: processedContent as AssistantContent };
         }
       }),
     );
@@ -1845,15 +1825,15 @@ export class Agent<
    * Create an action out of this agent so you can call it from workflows or other actions
    * without a wrapping function.
    * @param spec Configuration for the agent acting as an action, including
-   *   {@link ContextOptions}, {@link StorageOptions}, and maxSteps.
+   *   {@link ContextOptions}, {@link StorageOptions}, and {@link stopWhen}.
    */
   asTextAction<DataModel extends GenericDataModel>(
     spec?: {
       /**
-       * The maximum number of steps to take in this action.
-       * Defaults to the {@link Agent.maxSteps} option.
+       * When to stop generating text.
+       * Defaults to the {@link Agent["options"].stopWhen} option.
        */
-      maxSteps?: number;
+      stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
       /**
        * The {@link ContextOptions} to use for fetching contextual messages and
        * saving input/output messages.
@@ -1902,17 +1882,25 @@ export class Agent<
         }
       : { customCtx?: never }),
   ) {
-    const maxSteps = spec?.maxSteps ?? this.options.maxSteps;
+    const stopWhen = spec?.stopWhen ?? this.options.stopWhen;
     return internalActionGeneric({
       args: vTextArgs,
       handler: async (ctx_, args) => {
         const stream =
-          args.stream === true ? spec?.stream || true : spec?.stream ?? false;
+          args.stream === true ? spec?.stream || true : (spec?.stream ?? false);
         const targetArgs = { userId: args.userId, threadId: args.threadId };
         const llmArgs = {
-          maxSteps,
+          stopWhen,
           ...omit(args, ["storageOptions", "contextOptions"]),
-        };
+          messages: args.messages?.map(deserializeMessage),
+          prompt: Array.isArray(args.prompt)
+            ? args.prompt.map(deserializeMessage)
+            : args.prompt,
+          toolChoice: args.toolChoice as ToolChoice<AgentTools>,
+        } satisfies StreamingTextArgs<AgentTools>;
+        if (args.maxSteps) {
+          llmArgs.stopWhen = stepCountIs(args.maxSteps);
+        }
         const opts = {
           ...this.options,
           ...(spec && pick(spec, ["contextOptions", "storageOptions"])),
@@ -1925,7 +1913,13 @@ export class Agent<
             : ctx_
         ) as UserActionCtx & CustomCtx;
         if (stream) {
-          const result = await this.streamText(ctx, targetArgs, llmArgs, opts);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await this.streamText<any>(
+            ctx,
+            targetArgs,
+            llmArgs,
+            opts,
+          );
           await result.consumeStream();
           return {
             text: await result.text,
@@ -1935,7 +1929,13 @@ export class Agent<
             warnings: result.warnings,
           };
         } else {
-          const res = await this.generateText(ctx, targetArgs, llmArgs, opts);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const res = await this.generateText<any>(
+            ctx,
+            targetArgs,
+            llmArgs,
+            opts,
+          );
           return {
             text: res.text,
             messageId: res.messageId,
@@ -1952,28 +1952,27 @@ export class Agent<
    * it from workflows or other actions without a wrapping function.
    * @param spec Configuration for the agent acting as an action, including
    * the normal parameters to {@link generateObject}, plus {@link ContextOptions}
-   * and maxSteps.
+   * and stopWhen.
    */
   asObjectAction<T>(
-    spec: OurObjectArgs<T> & { maxSteps?: number },
+    spec: OurObjectArgs<T>,
     options?: {
       contextOptions?: ContextOptions;
       storageOptions?: StorageOptions;
     },
   ) {
-    const maxSteps = spec?.maxSteps ?? this.options.maxSteps;
     return internalActionGeneric({
       args: vSafeObjectArgs,
       handler: async (ctx, args) => {
-        const overrides = pick(args, ["userId", "threadId"]);
+        const { userId, threadId, ...rest } = args;
+        const overrides = pick(rest, ["contextOptions", "storageOptions"]);
         const value = await this.generateObject(
           ctx,
-          { userId: args.userId, threadId: args.threadId },
+          { userId, threadId },
           {
             ...spec,
-            maxSteps,
-            ...omit(args, ["userId", "threadId"]),
-          } as unknown as OurObjectArgs<unknown>,
+            ...omit(rest, ["contextOptions", "storageOptions"]),
+          } as OurObjectArgs<unknown>,
           { ...this.options, ...options, ...overrides },
         );
         return {
@@ -2014,228 +2013,21 @@ export class Agent<
         userId: v.optional(v.string()),
         promptMessageId: v.optional(v.string()),
         messages: v.array(vMessageWithMetadata),
-        pending: v.optional(v.boolean()),
         failPendingSteps: v.optional(v.boolean()),
+        embeddings: v.optional(vMessageEmbeddings),
       },
       handler: async (ctx, args) => {
-        const { lastMessageId, messages } = await this.saveMessages(ctx, {
+        const { messages } = await this.saveMessages(ctx, {
           ...args,
-          messages: args.messages.map((m) => m.message),
+          messages: args.messages.map((m) => deserializeMessage(m.message)),
           metadata: args.messages.map(({ message: _, ...m }) => m),
+          skipEmbeddings: true,
         });
         return {
-          lastMessageId,
-          messageIds: messages.map((m) => m._id),
+          lastMessageId: messages.at(-1)!._id,
+          messages: messages.map((m) => pick(m, ["_id", "order", "stepOrder"])),
         };
       },
     });
   }
-}
-
-type CoreMessageMaybeWithId = CoreMessage & { id?: string | undefined };
-
-/**
- * Create a thread to store messages with an Agent.
- * @param ctx The context from a mutation or action.
- * @param component The Agent component, usually `components.agent`.
- * @param args The associated thread metadata.
- * @returns The id of the created thread.
- */
-export async function createThread(
-  ctx: RunMutationCtx,
-  component: AgentComponent,
-  args?: {
-    userId?: string | null;
-    title?: string;
-    summary?: string;
-  },
-) {
-  const { _id: threadId } = await ctx.runMutation(
-    component.threads.createThread,
-    {
-      userId: args?.userId ?? undefined,
-      title: args?.title,
-      summary: args?.summary,
-    },
-  );
-  return threadId;
-}
-
-/**
- * Get the metadata for a thread.
- * @param ctx A ctx object from a query, mutation, or action.
- * @param args.threadId The thread to get the metadata for.
- * @returns The metadata for the thread.
- */
-export async function getThreadMetadata(
-  ctx: RunQueryCtx,
-  component: AgentComponent,
-  args: { threadId: string },
-): Promise<ThreadDoc> {
-  const thread = await ctx.runQuery(component.threads.getThread, {
-    threadId: args.threadId,
-  });
-  if (!thread) {
-    throw new Error("Thread not found");
-  }
-  return thread;
-}
-
-type SaveMessagesArgs = {
-  threadId: string;
-  userId?: string | null;
-  /**
-   * The message that these messages are in response to. They will be
-   * the same "order" as this message, at increasing stepOrder(s).
-   */
-  promptMessageId?: string;
-  /**
-   * The messages to save.
-   */
-  messages: CoreMessageMaybeWithId[];
-  /**
-   * Metadata to save with the messages. Each element corresponds to the
-   * message at the same index.
-   */
-  metadata?: Omit<MessageWithMetadata, "message">[];
-  /**
-   * If false, it will "commit" the messages immediately.
-   * If true, it will mark them as pending until the final step has finished.
-   * Defaults to false.
-   */
-  pending?: boolean;
-  /**
-   * If true, it will fail any pending steps.
-   * Defaults to false.
-   */
-  failPendingSteps?: boolean;
-  /**
-   * The embeddings to save with the messages.
-   */
-  embeddings?: Omit<MessageEmbeddings, "dimension">;
-};
-
-/**
- * Explicitly save messages associated with the thread (& user if provided)
- */
-export async function saveMessages(
-  ctx: RunMutationCtx,
-  component: AgentComponent,
-  args: SaveMessagesArgs & {
-    /**
-     * The agent name to associate with the messages.
-     */
-    agentName?: string;
-  },
-) {
-  let embeddings: MessageEmbeddings | undefined;
-  if (args.embeddings) {
-    const dimension = args.embeddings.vectors.find((v) => v !== null)?.length;
-    if (dimension) {
-      validateVectorDimension(dimension);
-      embeddings = {
-        model: args.embeddings.model,
-        dimension,
-        vectors: args.embeddings.vectors,
-      };
-    }
-  }
-  const result = await ctx.runMutation(component.messages.addMessages, {
-    threadId: args.threadId,
-    userId: args.userId ?? undefined,
-    agentName: args.agentName,
-    promptMessageId: args.promptMessageId,
-    embeddings,
-    messages: await Promise.all(
-      args.messages.map(async (m, i) => {
-        const { message, fileIds } = await serializeMessage(ctx, component, m);
-        return {
-          ...args.metadata?.[i],
-          message,
-          fileIds,
-        } as MessageWithMetadata;
-      }),
-    ),
-    failPendingSteps: args.failPendingSteps ?? false,
-    pending: args.pending ?? false,
-  });
-  return {
-    lastMessageId: result.messages.at(-1)!._id,
-    messages: result.messages,
-  };
-}
-
-type SaveMessageArgs = {
-  threadId: string;
-  userId?: string | null;
-  /**
-   * Metadata to save with the messages. Each element corresponds to the
-   * message at the same index.
-   */
-  metadata?: Omit<MessageWithMetadata, "message">;
-  /**
-   * The embedding to save with the message.
-   */
-  embedding?: {
-    vector: number[];
-    model: string;
-  };
-} & (
-  | {
-      prompt?: undefined;
-      /**
-       * The message to save.
-       */
-      message: CoreMessage;
-    }
-  | {
-      /*
-       * The prompt to save with the message.
-       */
-      prompt: string;
-      message?: undefined;
-    }
-);
-
-/**
- * Save a message to the thread.
- * @param ctx A ctx object from a mutation or action.
- * @param args The message and what to associate it with (user / thread)
- * You can pass extra metadata alongside the message, e.g. associated fileIds.
- * @returns The messageId of the saved message.
- */
-export async function saveMessage(
-  ctx: RunMutationCtx,
-  component: AgentComponent,
-  args: SaveMessageArgs & {
-    /**
-     * The agent name to associate with the message.
-     */
-    agentName?: string;
-  },
-) {
-  let embeddings:
-    | {
-        vectors: number[][];
-        model: string;
-      }
-    | undefined;
-  if (args.embedding && args.embedding.vector) {
-    embeddings = {
-      model: args.embedding.model,
-      vectors: [args.embedding.vector],
-    };
-  }
-  const { lastMessageId, messages } = await saveMessages(ctx, component, {
-    threadId: args.threadId,
-    userId: args.userId ?? undefined,
-    agentName: args.agentName,
-    messages:
-      args.prompt !== undefined
-        ? [{ role: "user", content: args.prompt }]
-        : [args.message],
-    metadata: args.metadata ? [args.metadata] : undefined,
-    embeddings,
-  });
-  return { messageId: lastMessageId, message: messages.at(-1)! };
 }

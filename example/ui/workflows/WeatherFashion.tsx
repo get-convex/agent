@@ -14,7 +14,7 @@ export function WeatherFashion() {
     { initialNumItems: 10 },
   );
   const messages = useThreadMessages(
-    api.chat.basic.listMessages,
+    api.chat.basic.listThreadMessages,
     threadId ? { threadId } : "skip",
     { initialNumItems: 10 },
   );

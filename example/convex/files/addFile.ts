@@ -48,8 +48,10 @@ export const uploadFile = action({
       ctx,
       components.agent,
       new Blob([args.bytes], { type: args.mimeType }),
-      args.filename,
-      args.sha256,
+      {
+        filename: args.filename,
+        sha256: args.sha256,
+      },
     );
     return { fileId, url };
   },

@@ -152,7 +152,6 @@ export type Mounts = {
             | "error"
             | "other"
             | "unknown";
-          id?: string;
           message:
             | {
                 content:
@@ -199,6 +198,7 @@ export type Mounts = {
                       | {
                           providerOptions?: Record<string, Record<string, any>>;
                           signature?: string;
+                          state?: "streaming" | "done";
                           text: string;
                           type: "reasoning";
                         }
@@ -209,6 +209,7 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          providerExecuted?: boolean;
                           providerOptions?: Record<string, Record<string, any>>;
                           toolCallId: string;
                           toolName: string;
@@ -226,6 +227,7 @@ export type Mounts = {
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
+                  providerExecuted?: boolean;
                   providerOptions?: Record<string, Record<string, any>>;
                   result: any;
                   toolCallId: string;
@@ -245,20 +247,42 @@ export type Mounts = {
           providerMetadata?: Record<string, Record<string, any>>;
           reasoning?: string;
           reasoningDetails?: Array<
+            | {
+                providerOptions?: Record<string, Record<string, any>>;
+                signature?: string;
+                state?: "streaming" | "done";
+                text: string;
+                type: "reasoning";
+              }
             | { signature?: string; text: string; type: "text" }
             | { data: string; type: "redacted" }
           >;
-          sources?: Array<{
-            id: string;
-            providerOptions?: Record<string, Record<string, any>>;
-            sourceType: "url";
-            title?: string;
-            url: string;
-          }>;
+          sources?: Array<
+            | {
+                id: string;
+                providerOptions?: Record<string, Record<string, any>>;
+                sourceType: "url";
+                title?: string;
+                type?: "source";
+                url?: string;
+              }
+            | {
+                filename?: string;
+                id: string;
+                mediaType: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                sourceType: "document";
+                title: string;
+                type: "source";
+              }
+          >;
+          status?: "pending" | "success" | "failed";
           text?: string;
           usage?: {
+            cachedInputTokens?: number;
             completionTokens: number;
             promptTokens: number;
+            reasoningTokens?: number;
             totalTokens: number;
           };
           warnings?: Array<
@@ -267,7 +291,6 @@ export type Mounts = {
             | { message: string; type: "other" }
           >;
         }>;
-        pending?: boolean;
         promptMessageId?: string;
         threadId: string;
         userId?: string;
@@ -335,6 +358,7 @@ export type Mounts = {
                       | {
                           providerOptions?: Record<string, Record<string, any>>;
                           signature?: string;
+                          state?: "streaming" | "done";
                           text: string;
                           type: "reasoning";
                         }
@@ -345,6 +369,7 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          providerExecuted?: boolean;
                           providerOptions?: Record<string, Record<string, any>>;
                           toolCallId: string;
                           toolName: string;
@@ -362,6 +387,7 @@ export type Mounts = {
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
+                  providerExecuted?: boolean;
                   providerOptions?: Record<string, Record<string, any>>;
                   result: any;
                   toolCallId: string;
@@ -383,24 +409,45 @@ export type Mounts = {
           providerOptions?: Record<string, Record<string, any>>;
           reasoning?: string;
           reasoningDetails?: Array<
+            | {
+                providerOptions?: Record<string, Record<string, any>>;
+                signature?: string;
+                state?: "streaming" | "done";
+                text: string;
+                type: "reasoning";
+              }
             | { signature?: string; text: string; type: "text" }
             | { data: string; type: "redacted" }
           >;
-          sources?: Array<{
-            id: string;
-            providerOptions?: Record<string, Record<string, any>>;
-            sourceType: "url";
-            title?: string;
-            url: string;
-          }>;
+          sources?: Array<
+            | {
+                id: string;
+                providerOptions?: Record<string, Record<string, any>>;
+                sourceType: "url";
+                title?: string;
+                type?: "source";
+                url?: string;
+              }
+            | {
+                filename?: string;
+                id: string;
+                mediaType: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                sourceType: "document";
+                title: string;
+                type: "source";
+              }
+          >;
           status: "pending" | "success" | "failed";
           stepOrder: number;
           text?: string;
           threadId: string;
           tool: boolean;
           usage?: {
+            cachedInputTokens?: number;
             completionTokens: number;
             promptTokens: number;
+            reasoningTokens?: number;
             totalTokens: number;
           };
           userId?: string;
@@ -502,6 +549,7 @@ export type Mounts = {
                     | {
                         providerOptions?: Record<string, Record<string, any>>;
                         signature?: string;
+                        state?: "streaming" | "done";
                         text: string;
                         type: "reasoning";
                       }
@@ -512,6 +560,7 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        providerExecuted?: boolean;
                         providerOptions?: Record<string, Record<string, any>>;
                         toolCallId: string;
                         toolName: string;
@@ -529,6 +578,7 @@ export type Mounts = {
                   | { data: string; mimeType?: string; type: "image" }
                 >;
                 isError?: boolean;
+                providerExecuted?: boolean;
                 providerOptions?: Record<string, Record<string, any>>;
                 result: any;
                 toolCallId: string;
@@ -550,24 +600,45 @@ export type Mounts = {
         providerOptions?: Record<string, Record<string, any>>;
         reasoning?: string;
         reasoningDetails?: Array<
+          | {
+              providerOptions?: Record<string, Record<string, any>>;
+              signature?: string;
+              state?: "streaming" | "done";
+              text: string;
+              type: "reasoning";
+            }
           | { signature?: string; text: string; type: "text" }
           | { data: string; type: "redacted" }
         >;
-        sources?: Array<{
-          id: string;
-          providerOptions?: Record<string, Record<string, any>>;
-          sourceType: "url";
-          title?: string;
-          url: string;
-        }>;
+        sources?: Array<
+          | {
+              id: string;
+              providerOptions?: Record<string, Record<string, any>>;
+              sourceType: "url";
+              title?: string;
+              type?: "source";
+              url?: string;
+            }
+          | {
+              filename?: string;
+              id: string;
+              mediaType: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              sourceType: "document";
+              title: string;
+              type: "source";
+            }
+        >;
         status: "pending" | "success" | "failed";
         stepOrder: number;
         text?: string;
         threadId: string;
         tool: boolean;
         usage?: {
+          cachedInputTokens?: number;
           completionTokens: number;
           promptTokens: number;
+          reasoningTokens?: number;
           totalTokens: number;
         };
         userId?: string;
@@ -661,6 +732,7 @@ export type Mounts = {
                       | {
                           providerOptions?: Record<string, Record<string, any>>;
                           signature?: string;
+                          state?: "streaming" | "done";
                           text: string;
                           type: "reasoning";
                         }
@@ -671,6 +743,7 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          providerExecuted?: boolean;
                           providerOptions?: Record<string, Record<string, any>>;
                           toolCallId: string;
                           toolName: string;
@@ -688,6 +761,7 @@ export type Mounts = {
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
+                  providerExecuted?: boolean;
                   providerOptions?: Record<string, Record<string, any>>;
                   result: any;
                   toolCallId: string;
@@ -709,24 +783,45 @@ export type Mounts = {
           providerOptions?: Record<string, Record<string, any>>;
           reasoning?: string;
           reasoningDetails?: Array<
+            | {
+                providerOptions?: Record<string, Record<string, any>>;
+                signature?: string;
+                state?: "streaming" | "done";
+                text: string;
+                type: "reasoning";
+              }
             | { signature?: string; text: string; type: "text" }
             | { data: string; type: "redacted" }
           >;
-          sources?: Array<{
-            id: string;
-            providerOptions?: Record<string, Record<string, any>>;
-            sourceType: "url";
-            title?: string;
-            url: string;
-          }>;
+          sources?: Array<
+            | {
+                id: string;
+                providerOptions?: Record<string, Record<string, any>>;
+                sourceType: "url";
+                title?: string;
+                type?: "source";
+                url?: string;
+              }
+            | {
+                filename?: string;
+                id: string;
+                mediaType: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                sourceType: "document";
+                title: string;
+                type: "source";
+              }
+          >;
           status: "pending" | "success" | "failed";
           stepOrder: number;
           text?: string;
           threadId: string;
           tool: boolean;
           usage?: {
+            cachedInputTokens?: number;
             completionTokens: number;
             promptTokens: number;
+            reasoningTokens?: number;
             totalTokens: number;
           };
           userId?: string;
@@ -822,6 +917,7 @@ export type Mounts = {
                     | {
                         providerOptions?: Record<string, Record<string, any>>;
                         signature?: string;
+                        state?: "streaming" | "done";
                         text: string;
                         type: "reasoning";
                       }
@@ -832,6 +928,7 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        providerExecuted?: boolean;
                         providerOptions?: Record<string, Record<string, any>>;
                         toolCallId: string;
                         toolName: string;
@@ -849,6 +946,7 @@ export type Mounts = {
                   | { data: string; mimeType?: string; type: "image" }
                 >;
                 isError?: boolean;
+                providerExecuted?: boolean;
                 providerOptions?: Record<string, Record<string, any>>;
                 result: any;
                 toolCallId: string;
@@ -870,24 +968,45 @@ export type Mounts = {
         providerOptions?: Record<string, Record<string, any>>;
         reasoning?: string;
         reasoningDetails?: Array<
+          | {
+              providerOptions?: Record<string, Record<string, any>>;
+              signature?: string;
+              state?: "streaming" | "done";
+              text: string;
+              type: "reasoning";
+            }
           | { signature?: string; text: string; type: "text" }
           | { data: string; type: "redacted" }
         >;
-        sources?: Array<{
-          id: string;
-          providerOptions?: Record<string, Record<string, any>>;
-          sourceType: "url";
-          title?: string;
-          url: string;
-        }>;
+        sources?: Array<
+          | {
+              id: string;
+              providerOptions?: Record<string, Record<string, any>>;
+              sourceType: "url";
+              title?: string;
+              type?: "source";
+              url?: string;
+            }
+          | {
+              filename?: string;
+              id: string;
+              mediaType: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              sourceType: "document";
+              title: string;
+              type: "source";
+            }
+        >;
         status: "pending" | "success" | "failed";
         stepOrder: number;
         text?: string;
         threadId: string;
         tool: boolean;
         usage?: {
+          cachedInputTokens?: number;
           completionTokens: number;
           promptTokens: number;
+          reasoningTokens?: number;
           totalTokens: number;
         };
         userId?: string;
@@ -970,6 +1089,7 @@ export type Mounts = {
                     | {
                         providerOptions?: Record<string, Record<string, any>>;
                         signature?: string;
+                        state?: "streaming" | "done";
                         text: string;
                         type: "reasoning";
                       }
@@ -980,6 +1100,7 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        providerExecuted?: boolean;
                         providerOptions?: Record<string, Record<string, any>>;
                         toolCallId: string;
                         toolName: string;
@@ -997,6 +1118,7 @@ export type Mounts = {
                   | { data: string; mimeType?: string; type: "image" }
                 >;
                 isError?: boolean;
+                providerExecuted?: boolean;
                 providerOptions?: Record<string, Record<string, any>>;
                 result: any;
                 toolCallId: string;
@@ -1018,24 +1140,45 @@ export type Mounts = {
         providerOptions?: Record<string, Record<string, any>>;
         reasoning?: string;
         reasoningDetails?: Array<
+          | {
+              providerOptions?: Record<string, Record<string, any>>;
+              signature?: string;
+              state?: "streaming" | "done";
+              text: string;
+              type: "reasoning";
+            }
           | { signature?: string; text: string; type: "text" }
           | { data: string; type: "redacted" }
         >;
-        sources?: Array<{
-          id: string;
-          providerOptions?: Record<string, Record<string, any>>;
-          sourceType: "url";
-          title?: string;
-          url: string;
-        }>;
+        sources?: Array<
+          | {
+              id: string;
+              providerOptions?: Record<string, Record<string, any>>;
+              sourceType: "url";
+              title?: string;
+              type?: "source";
+              url?: string;
+            }
+          | {
+              filename?: string;
+              id: string;
+              mediaType: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              sourceType: "document";
+              title: string;
+              type: "source";
+            }
+        >;
         status: "pending" | "success" | "failed";
         stepOrder: number;
         text?: string;
         threadId: string;
         tool: boolean;
         usage?: {
+          cachedInputTokens?: number;
           completionTokens: number;
           promptTokens: number;
+          reasoningTokens?: number;
           totalTokens: number;
         };
         userId?: string;
@@ -1100,6 +1243,7 @@ export type Mounts = {
                       | {
                           providerOptions?: Record<string, Record<string, any>>;
                           signature?: string;
+                          state?: "streaming" | "done";
                           text: string;
                           type: "reasoning";
                         }
@@ -1110,6 +1254,7 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          providerExecuted?: boolean;
                           providerOptions?: Record<string, Record<string, any>>;
                           toolCallId: string;
                           toolName: string;
@@ -1127,6 +1272,7 @@ export type Mounts = {
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
+                  providerExecuted?: boolean;
                   providerOptions?: Record<string, Record<string, any>>;
                   result: any;
                   toolCallId: string;
@@ -1206,6 +1352,7 @@ export type Mounts = {
                     | {
                         providerOptions?: Record<string, Record<string, any>>;
                         signature?: string;
+                        state?: "streaming" | "done";
                         text: string;
                         type: "reasoning";
                       }
@@ -1216,6 +1363,7 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        providerExecuted?: boolean;
                         providerOptions?: Record<string, Record<string, any>>;
                         toolCallId: string;
                         toolName: string;
@@ -1233,6 +1381,7 @@ export type Mounts = {
                   | { data: string; mimeType?: string; type: "image" }
                 >;
                 isError?: boolean;
+                providerExecuted?: boolean;
                 providerOptions?: Record<string, Record<string, any>>;
                 result: any;
                 toolCallId: string;
@@ -1254,24 +1403,45 @@ export type Mounts = {
         providerOptions?: Record<string, Record<string, any>>;
         reasoning?: string;
         reasoningDetails?: Array<
+          | {
+              providerOptions?: Record<string, Record<string, any>>;
+              signature?: string;
+              state?: "streaming" | "done";
+              text: string;
+              type: "reasoning";
+            }
           | { signature?: string; text: string; type: "text" }
           | { data: string; type: "redacted" }
         >;
-        sources?: Array<{
-          id: string;
-          providerOptions?: Record<string, Record<string, any>>;
-          sourceType: "url";
-          title?: string;
-          url: string;
-        }>;
+        sources?: Array<
+          | {
+              id: string;
+              providerOptions?: Record<string, Record<string, any>>;
+              sourceType: "url";
+              title?: string;
+              type?: "source";
+              url?: string;
+            }
+          | {
+              filename?: string;
+              id: string;
+              mediaType: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              sourceType: "document";
+              title: string;
+              type: "source";
+            }
+        >;
         status: "pending" | "success" | "failed";
         stepOrder: number;
         text?: string;
         threadId: string;
         tool: boolean;
         usage?: {
+          cachedInputTokens?: number;
           completionTokens: number;
           promptTokens: number;
+          reasoningTokens?: number;
           totalTokens: number;
         };
         userId?: string;
@@ -1310,16 +1480,31 @@ export type Mounts = {
                 providerOptions?: Record<string, Record<string, any>>;
                 sourceType: "url";
                 title?: string;
-                url: string;
+                url?: string;
               };
               type: "source";
             }
           | {
               args: any;
+              providerExecuted?: boolean;
               providerOptions?: Record<string, Record<string, any>>;
               toolCallId: string;
               toolName: string;
               type: "tool-call";
+            }
+          | {
+              args?: any;
+              experimental_content?: Array<
+                | { text: string; type: "text" }
+                | { data: string; mimeType?: string; type: "image" }
+              >;
+              isError?: boolean;
+              providerExecuted?: boolean;
+              providerOptions?: Record<string, Record<string, any>>;
+              result: any;
+              toolCallId: string;
+              toolName: string;
+              type: "tool-result";
             }
           | {
               toolCallId: string;
@@ -1333,18 +1518,67 @@ export type Mounts = {
               type: "tool-call-delta";
             }
           | {
-              args?: any;
-              experimental_content?: Array<
-                | { text: string; type: "text" }
-                | { data: string; mimeType?: string; type: "image" }
-              >;
-              isError?: boolean;
+              id: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              text: string;
+              type: "text-delta";
+            }
+          | {
+              id: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              text: string;
+              type: "reasoning-delta";
+            }
+          | {
+              id: string;
               providerOptions?: Record<string, Record<string, any>>;
-              result: any;
+              sourceType: "url";
+              title?: string;
+              type?: "source";
+              url?: string;
+            }
+          | {
+              filename?: string;
+              id: string;
+              mediaType: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              sourceType: "document";
+              title: string;
+              type: "source";
+            }
+          | {
+              dynamic?: boolean;
+              input: any;
+              providerExecuted?: boolean;
+              providerMetadata?: Record<string, Record<string, any>>;
+              toolCallId: string;
+              toolName: string;
+              type: "tool-call";
+            }
+          | {
+              dynamic?: boolean;
+              id: string;
+              providerExecuted?: boolean;
+              providerMetadata?: Record<string, Record<string, any>>;
+              toolName: string;
+              type: "tool-input-start";
+            }
+          | {
+              delta: string;
+              id: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              type: "tool-input-delta";
+            }
+          | {
+              dynamic?: boolean;
+              input?: any;
+              output?: any;
+              providerExecuted?: boolean;
               toolCallId: string;
               toolName: string;
               type: "tool-result";
             }
+          | { rawValue: any; type: "raw" }
         >;
         start: number;
         streamId: string;
@@ -1405,16 +1639,31 @@ export type Mounts = {
                   providerOptions?: Record<string, Record<string, any>>;
                   sourceType: "url";
                   title?: string;
-                  url: string;
+                  url?: string;
                 };
                 type: "source";
               }
             | {
                 args: any;
+                providerExecuted?: boolean;
                 providerOptions?: Record<string, Record<string, any>>;
                 toolCallId: string;
                 toolName: string;
                 type: "tool-call";
+              }
+            | {
+                args?: any;
+                experimental_content?: Array<
+                  | { text: string; type: "text" }
+                  | { data: string; mimeType?: string; type: "image" }
+                >;
+                isError?: boolean;
+                providerExecuted?: boolean;
+                providerOptions?: Record<string, Record<string, any>>;
+                result: any;
+                toolCallId: string;
+                toolName: string;
+                type: "tool-result";
               }
             | {
                 toolCallId: string;
@@ -1428,18 +1677,67 @@ export type Mounts = {
                 type: "tool-call-delta";
               }
             | {
-                args?: any;
-                experimental_content?: Array<
-                  | { text: string; type: "text" }
-                  | { data: string; mimeType?: string; type: "image" }
-                >;
-                isError?: boolean;
+                id: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                text: string;
+                type: "text-delta";
+              }
+            | {
+                id: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                text: string;
+                type: "reasoning-delta";
+              }
+            | {
+                id: string;
                 providerOptions?: Record<string, Record<string, any>>;
-                result: any;
+                sourceType: "url";
+                title?: string;
+                type?: "source";
+                url?: string;
+              }
+            | {
+                filename?: string;
+                id: string;
+                mediaType: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                sourceType: "document";
+                title: string;
+                type: "source";
+              }
+            | {
+                dynamic?: boolean;
+                input: any;
+                providerExecuted?: boolean;
+                providerMetadata?: Record<string, Record<string, any>>;
+                toolCallId: string;
+                toolName: string;
+                type: "tool-call";
+              }
+            | {
+                dynamic?: boolean;
+                id: string;
+                providerExecuted?: boolean;
+                providerMetadata?: Record<string, Record<string, any>>;
+                toolName: string;
+                type: "tool-input-start";
+              }
+            | {
+                delta: string;
+                id: string;
+                providerMetadata?: Record<string, Record<string, any>>;
+                type: "tool-input-delta";
+              }
+            | {
+                dynamic?: boolean;
+                input?: any;
+                output?: any;
+                providerExecuted?: boolean;
                 toolCallId: string;
                 toolName: string;
                 type: "tool-result";
               }
+            | { rawValue: any; type: "raw" }
           >;
           start: number;
           streamId: string;
@@ -1486,16 +1784,31 @@ export type Mounts = {
                 providerOptions?: Record<string, Record<string, any>>;
                 sourceType: "url";
                 title?: string;
-                url: string;
+                url?: string;
               };
               type: "source";
             }
           | {
               args: any;
+              providerExecuted?: boolean;
               providerOptions?: Record<string, Record<string, any>>;
               toolCallId: string;
               toolName: string;
               type: "tool-call";
+            }
+          | {
+              args?: any;
+              experimental_content?: Array<
+                | { text: string; type: "text" }
+                | { data: string; mimeType?: string; type: "image" }
+              >;
+              isError?: boolean;
+              providerExecuted?: boolean;
+              providerOptions?: Record<string, Record<string, any>>;
+              result: any;
+              toolCallId: string;
+              toolName: string;
+              type: "tool-result";
             }
           | {
               toolCallId: string;
@@ -1509,18 +1822,67 @@ export type Mounts = {
               type: "tool-call-delta";
             }
           | {
-              args?: any;
-              experimental_content?: Array<
-                | { text: string; type: "text" }
-                | { data: string; mimeType?: string; type: "image" }
-              >;
-              isError?: boolean;
+              id: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              text: string;
+              type: "text-delta";
+            }
+          | {
+              id: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              text: string;
+              type: "reasoning-delta";
+            }
+          | {
+              id: string;
               providerOptions?: Record<string, Record<string, any>>;
-              result: any;
+              sourceType: "url";
+              title?: string;
+              type?: "source";
+              url?: string;
+            }
+          | {
+              filename?: string;
+              id: string;
+              mediaType: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              sourceType: "document";
+              title: string;
+              type: "source";
+            }
+          | {
+              dynamic?: boolean;
+              input: any;
+              providerExecuted?: boolean;
+              providerMetadata?: Record<string, Record<string, any>>;
+              toolCallId: string;
+              toolName: string;
+              type: "tool-call";
+            }
+          | {
+              dynamic?: boolean;
+              id: string;
+              providerExecuted?: boolean;
+              providerMetadata?: Record<string, Record<string, any>>;
+              toolName: string;
+              type: "tool-input-start";
+            }
+          | {
+              delta: string;
+              id: string;
+              providerMetadata?: Record<string, Record<string, any>>;
+              type: "tool-input-delta";
+            }
+          | {
+              dynamic?: boolean;
+              input?: any;
+              output?: any;
+              providerExecuted?: boolean;
               toolCallId: string;
               toolName: string;
               type: "tool-result";
             }
+          | { rawValue: any; type: "raw" }
         >;
         start: number;
         streamId: string;

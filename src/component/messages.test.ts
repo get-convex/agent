@@ -30,6 +30,29 @@ describe("agent", () => {
       stepOrder: 1,
     });
   });
+  test("getMaxMessage works for a specific order", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "hello" } },
+        { message: { role: "assistant", content: "step 1" } },
+        { message: { role: "user", content: "hello2" } },
+      ],
+    });
+    const maxMessage = await t.run(async (ctx) => {
+      return await getMaxMessage(ctx, thread._id as Id<"threads">, 0);
+    });
+    expect(maxMessage).toMatchObject({
+      _id: messages.at(1)!._id,
+      order: 0,
+      stepOrder: 1,
+    });
+  });
+
   test("getMaxMessages works when there are tools involved", async () => {
     const t = convexTest(schema, modules);
     const thread = await t.mutation(api.threads.createThread, {
@@ -78,7 +101,7 @@ describe("agent", () => {
     });
   });
 
-  test("ordering is incremented on subsequent calls to addMessages", async () => {
+  test("ordering is incremented on subsequent calls to addMessages for user messages", async () => {
     const t = convexTest(schema, modules);
     const thread = await t.mutation(api.threads.createThread, {
       userId: "test",
@@ -109,7 +132,38 @@ describe("agent", () => {
     });
   });
 
-  test("sub order is incremented on subsequent calls to addMessages for the same promptMessageId", async () => {
+  test("ordering is incremented on subsequent calls to addMessages for assistant messages", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const maxMessage = await t.run(async (ctx) => {
+      return await getMaxMessage(ctx, thread._id as Id<"threads">);
+    });
+    expect(maxMessage).toMatchObject({
+      _id: messages.at(-1)!._id,
+      order: 0,
+      stepOrder: 0,
+    });
+    const { messages: messages2 } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "assistant", content: "hello" } }],
+    });
+    const maxMessage2 = await t.run(async (ctx) => {
+      return await getMaxMessage(ctx, thread._id as Id<"threads">);
+    });
+    expect(maxMessage2).toMatchObject({
+      _id: messages2.at(-1)!._id,
+      order: 0,
+      stepOrder: 1,
+    });
+  });
+
+  test("order is incremented for user messages on to addMessages for the same promptMessageId", async () => {
     const t = convexTest(schema, modules);
     const thread = await t.mutation(api.threads.createThread, {
       userId: "test",
@@ -137,9 +191,119 @@ describe("agent", () => {
     });
     expect(maxMessage2).toMatchObject({
       _id: messages2.at(-1)!._id,
+      order: 1,
+      stepOrder: 0,
+    });
+  });
+
+  test("sub order is incremented on subsequent calls to addMessages for the same promptMessageId", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const maxMessage = await t.run(async (ctx) => {
+      return await getMaxMessage(ctx, thread._id as Id<"threads">);
+    });
+    expect(maxMessage).toMatchObject({
+      _id: messages.at(-1)!._id,
+      order: 0,
+      stepOrder: 0,
+    });
+    const { messages: messages2 } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "assistant", content: "hello" } }],
+      agentName: "test",
+      promptMessageId: messages.at(-1)!._id as Id<"messages">,
+    });
+    const maxMessage2 = await t.run(async (ctx) => {
+      return await getMaxMessage(ctx, thread._id as Id<"threads">);
+    });
+    expect(maxMessage2).toMatchObject({
+      _id: messages2.at(-1)!._id,
       order: 0,
       stepOrder: 1,
     });
+  });
+
+  test("adding multiple messages at a promptMessageId skips later messages", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+
+    const { messages: messages2 } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "hello2" } },
+        { message: { role: "assistant", content: "hello" } },
+      ],
+      agentName: "test",
+    });
+    expect(messages2.length).toBe(2);
+
+    const { messages: messages3 } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        {
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                args: { a: 1 },
+                toolCallId: "1",
+                toolName: "tool",
+              },
+            ],
+          },
+        },
+        {
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolName: "tool",
+                result: "foo",
+                toolCallId: "1",
+              },
+            ],
+          },
+        },
+        { message: { role: "user", content: "bye" } },
+      ],
+      agentName: "test",
+      promptMessageId: messages.at(-1)!._id as Id<"messages">,
+    });
+
+    expect(messages3.length).toBe(3);
+
+    const allMessages = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+    });
+    expect(allMessages.page).toHaveLength(6);
+    expect(allMessages.page.map((m) => m.order)).toEqual([0, 0, 0, 1, 1, 2]);
+    expect(allMessages.page.map((m) => m.stepOrder)).toEqual([
+      0, 1, 2, 0, 1, 0,
+    ]);
+    expect(allMessages.page[0]!.message!.role).toBe("user");
+    expect(allMessages.page[0]!.message!.content).toBe("hello");
+    expect(allMessages.page[1]!.message!.role).toBe("assistant");
+    expect(allMessages.page[2]!.message!.role).toBe("tool");
+    expect(allMessages.page[3]!.message!.role).toBe("user");
+    expect(allMessages.page[3]!.message!.content).toBe("hello2");
+    expect(allMessages.page[4]!.message!.role).toBe("assistant");
+    expect(allMessages.page[5]!.message!.role).toBe("user");
+    expect(allMessages.page[5]!.message!.content).toBe("bye");
   });
 
   test("updateMessage updates message content", async () => {
@@ -155,9 +319,7 @@ describe("agent", () => {
 
     const updatedMessage = await t.mutation(api.messages.updateMessage, {
       messageId,
-      patch: {
-        message: { role: "user", content: "updated content" },
-      },
+      patch: { message: { role: "user", content: "updated content" } },
     });
 
     expect(updatedMessage.message).toEqual({
@@ -173,8 +335,9 @@ describe("agent", () => {
     });
     const { messages } = await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
-      messages: [{ message: { role: "assistant", content: "hello" } }],
-      pending: true,
+      messages: [
+        { message: { role: "assistant", content: "hello" }, status: "pending" },
+      ],
     });
     const messageId = messages[0]._id as Id<"messages">;
 
@@ -184,9 +347,7 @@ describe("agent", () => {
     // Update to success
     const updatedMessage = await t.mutation(api.messages.updateMessage, {
       messageId,
-      patch: {
-        status: "success",
-      },
+      patch: { status: "success" },
     });
 
     expect(updatedMessage.status).toBe("success");
@@ -199,17 +360,15 @@ describe("agent", () => {
     });
     const { messages } = await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
-      messages: [{ message: { role: "assistant", content: "hello" } }],
-      pending: true,
+      messages: [
+        { message: { role: "assistant", content: "hello" }, status: "pending" },
+      ],
     });
     const messageId = messages[0]._id as Id<"messages">;
 
     const updatedMessage = await t.mutation(api.messages.updateMessage, {
       messageId,
-      patch: {
-        status: "failed",
-        error: "Something went wrong",
-      },
+      patch: { status: "failed", error: "Something went wrong" },
     });
 
     expect(updatedMessage.status).toBe("failed");
@@ -277,9 +436,7 @@ describe("agent", () => {
     await expect(
       t.mutation(api.messages.updateMessage, {
         messageId: "invalidId" as Id<"messages">,
-        patch: {
-          message: { role: "user", content: "test" },
-        },
+        patch: { message: { role: "user", content: "test" } },
       }),
     ).rejects.toThrow();
   });
@@ -308,10 +465,7 @@ describe("agent", () => {
     // Verify messages are actually deleted
     const remainingMessages = await t.query(
       api.messages.listMessagesByThreadId,
-      {
-        threadId: thread._id as Id<"threads">,
-        order: "asc",
-      },
+      { threadId: thread._id as Id<"threads">, order: "asc" },
     );
     expect(remainingMessages.page).toHaveLength(1);
     expect(remainingMessages.page[0]._id).toBe(messageIds[1]);
@@ -343,10 +497,7 @@ describe("agent", () => {
     // Verify the valid message was deleted
     const remainingMessages = await t.query(
       api.messages.listMessagesByThreadId,
-      {
-        threadId: thread._id as Id<"threads">,
-        order: "asc",
-      },
+      { threadId: thread._id as Id<"threads">, order: "asc" },
     );
     expect(remainingMessages.page).toHaveLength(0);
   });
@@ -395,10 +546,7 @@ describe("agent", () => {
     // Verify only messages from order 0 were deleted
     const remainingMessages = await t.query(
       api.messages.listMessagesByThreadId,
-      {
-        threadId: thread._id as Id<"threads">,
-        order: "asc",
-      },
+      { threadId: thread._id as Id<"threads">, order: "asc" },
     );
 
     expect(remainingMessages.page).toHaveLength(3); // Should have messages from order 1 and 2
@@ -417,7 +565,7 @@ describe("agent", () => {
       messages: [
         { message: { role: "user", content: "step 0" } },
         { message: { role: "assistant", content: "step 1" } },
-        { message: { role: "user", content: "step 2" } },
+        { message: { role: "assistant", content: "step 2" } },
         { message: { role: "assistant", content: "step 3" } },
       ],
     });
@@ -438,10 +586,7 @@ describe("agent", () => {
     // Verify only step 1 and 2 were deleted (step 3 is excluded by upperBoundInclusive: false)
     const remainingMessages = await t.query(
       api.messages.listMessagesByThreadId,
-      {
-        threadId: thread._id as Id<"threads">,
-        order: "asc",
-      },
+      { threadId: thread._id as Id<"threads">, order: "asc" },
     );
 
     expect(remainingMessages.page).toHaveLength(2);
@@ -501,10 +646,7 @@ describe("agent", () => {
     // Verify original message is still there
     const remainingMessages = await t.query(
       api.messages.listMessagesByThreadId,
-      {
-        threadId: thread._id as Id<"threads">,
-        order: "asc",
-      },
+      { threadId: thread._id as Id<"threads">, order: "asc" },
     );
     expect(remainingMessages.page).toHaveLength(1);
   });
