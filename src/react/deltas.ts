@@ -104,6 +104,18 @@ export function getParts(
   return { parts, cursor };
 }
 
+// TODO: use readUIMessageStream to produce message docs
+// set extra fields on the UIMessages
+//   key: string;
+//   order: number;
+//   stepOrder: number;
+//   status: "streaming" | MessageStatus;
+//   agentName?: string;
+//   text: string;
+// update status based on whether the message is done, aborted, errored, etc.
+// update stepOrder based on how many messages are wrapped up in the UIMessage
+// using the step-start part
+
 // exported for testing
 export function applyDeltasToStreamMessage(
   threadId: string,

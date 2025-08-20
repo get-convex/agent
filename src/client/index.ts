@@ -736,6 +736,15 @@ export class Agent<
           call.updateModel(result?.model ?? options.model);
           return result;
         },
+        // _internal: {
+        //   generateId: () => {
+        //     console.log("generateId");
+        //     // or keep track of uuids we generate
+        //     // consumedPendingMessageId = true;
+        //     // return pendingMessageId
+        //     return crypto.randomUUID();
+        //   }
+        // },
         onStepFinish: async (step) => {
           steps.push(step);
           await call.save({ step }, await willContinue(steps, args.stopWhen));
@@ -855,6 +864,11 @@ export class Agent<
         if (result) {
           const model = result.model ?? options.model;
           call.updateModel(model);
+          // streamer?.updateMetadata({
+          //   model: getModelName(model),
+          //   provider: getProviderName(model),
+          //   providerOptions: options.messages.at(-1)?.providerOptions,
+          // });
           return result;
         }
         return undefined;
