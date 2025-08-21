@@ -3,13 +3,14 @@ import {
   type StreamTextTransform,
   type ToolSet,
   type TextStreamPart,
+  type UIMessageChunk,
 } from "ai";
 import {
   DEFAULT_STREAMING_OPTIONS,
   type StreamingOptions,
 } from "./streaming.js";
 
-export function serializeTextStreamingPartsV5(
+export function compressTextStreamParts(
   parts: TextStreamPart<ToolSet>[],
 ): TextStreamPart<ToolSet>[] {
   const compressed: TextStreamPart<ToolSet>[] = [];
@@ -59,4 +60,24 @@ export function mergeTransforms<TOOLS extends ToolSet>(
       : [];
   transforms.push(smoothStream({ delayInMs: null, chunking }));
   return transforms;
+}
+
+export function compressUIMessageChunks<TOOLSET extends ToolSet>(
+  parts: UIMessageChunk<TOOLSET>[],
+): UIMessageChunk<TOOLSET>[] {
+  const compressed: UIMessageChunk<TOOLSET>[] = [];
+  for (const part of parts) {
+    const last = compressed.at(-1);
+    if (part.type === "text-delta" && last?.type === "text-delta") {
+      last.delta += part.delta;
+    } else if (
+      part.type === "reasoning-delta" &&
+      last?.type === "reasoning-delta"
+    ) {
+      last.delta += part.delta;
+    } else {
+      compressed.push(part);
+    }
+  }
+  return compressed;
 }

@@ -5,13 +5,18 @@ import type {
   PaginationOptions,
   PaginationResult,
 } from "convex/server";
-import type { MessageDoc } from "../client/index.js";
 import type { SyncStreamsReturnValue } from "../client/types.js";
-import type { StreamArgs } from "../validators.js";
+import type { MessageStatus, StreamArgs } from "../validators.js";
+
+export type MessageLike = {
+  order: number;
+  stepOrder: number;
+  status: MessageStatus | "streaming";
+};
 
 export type ThreadQuery<
   Args = unknown,
-  M extends MessageDoc = MessageDoc,
+  M extends MessageLike = MessageLike,
 > = FunctionReference<
   "query",
   "public",
@@ -30,7 +35,7 @@ export type ThreadQuery<
 
 export type ThreadStreamQuery<
   Args = Record<string, unknown>,
-  M extends MessageDoc = MessageDoc,
+  M extends MessageLike = MessageLike,
 > = FunctionReference<
   "query",
   "public",
@@ -42,11 +47,13 @@ export type ThreadStreamQuery<
   PaginationResult<M> & { streams: SyncStreamsReturnValue }
 >;
 
-export type ThreadMessagesArgs<Query extends ThreadQuery<unknown, MessageDoc>> =
-  Query extends ThreadQuery<unknown, MessageDoc>
+export type ThreadMessagesArgs<
+  Query extends ThreadQuery<unknown, MessageLike>,
+> =
+  Query extends ThreadQuery<unknown, MessageLike>
     ? Expand<BetterOmit<FunctionArgs<Query>, "paginationOpts" | "streamArgs">>
     : never;
 
 export type ThreadMessagesResult<
-  Query extends ThreadQuery<unknown, MessageDoc>,
+  Query extends ThreadQuery<unknown, MessageLike>,
 > = Query extends ThreadQuery<unknown, infer M> ? M : never;

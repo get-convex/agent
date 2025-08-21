@@ -16,6 +16,7 @@ import type {
   StreamTextResult,
   ToolChoice,
   ToolSet,
+  UIMessage,
 } from "ai";
 import {
   embedMany,
@@ -76,10 +77,7 @@ import {
   syncStreams,
   type StreamingOptions,
 } from "./streaming.js";
-import {
-  mergeTransforms,
-  serializeTextStreamingPartsV5,
-} from "./textStreamParts.js";
+import { compressUIMessageChunks, mergeTransforms } from "./textStreamParts.js";
 import { createThread, getThreadMetadata } from "./threads.js";
 import type {
   ActionCtx,
@@ -559,7 +557,7 @@ export class Agent<
       abortSignal.addEventListener(
         "abort",
         async () => {
-          await fail(abortSignal.reason ?? "Aborted");
+          await fail(abortSignal.reason ?? "abortSignal");
         },
         { once: true },
       );
@@ -820,7 +818,7 @@ export class Agent<
             {
               stream: opts.saveStreamDeltas,
               onAsyncAbort: call.fail,
-              compress: serializeTextStreamingPartsV5,
+              compress: compressUIMessageChunks<Tools>,
               abortSignal: args.abortSignal,
             },
             {
@@ -843,11 +841,6 @@ export class Agent<
         options?.saveStreamDeltas,
         streamTextArgs.experimental_transform,
       ),
-      onChunk: async (event) => {
-        await streamer?.addParts([event.chunk]);
-        // console.log("onChunk", chunk);
-        return streamTextArgs.onChunk?.(event);
-      },
       onError: async (error) => {
         console.error("onError", error);
         await call.fail(errorToString(error.error));
@@ -870,15 +863,15 @@ export class Agent<
         steps.push(step);
         const createPendingMessage = await willContinue(steps, args.stopWhen);
         await call.save({ step }, createPendingMessage);
-        if (!createPendingMessage) {
-          await streamer?.finish();
-        }
         return args.onStepFinish?.(step);
       },
     }) as StreamTextResult<
       TOOLS extends undefined ? AgentTools : TOOLS,
       PARTIAL_OUTPUT
     >;
+    const stream = streamer?.consumeStream(
+      result.toUIMessageStream<UIMessage<Tools>>(),
+    );
     const metadata: GenerationOutputMetadata = {
       promptMessageId,
       order,
@@ -890,6 +883,7 @@ export class Agent<
         !options.saveStreamDeltas.returnImmediately) ||
       options?.saveStreamDeltas === true
     ) {
+      await stream;
       await result.consumeStream();
     }
     return Object.assign(result, metadata);

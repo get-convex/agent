@@ -70,6 +70,40 @@ export function mergeDeltas(
   return [messages, newStreams, changed];
 }
 
+export function getParts(
+  stream: { streamId: string; cursor: number },
+  streamDeltas: StreamDelta[],
+) {
+  const deltas = streamDeltas.filter((d) => d.streamId === stream.streamId);
+  const parts: UIMessageChunk<ToolSet>[] = [];
+  let cursor = stream.cursor;
+  for (const delta of deltas.sort((a, b) => a.start - b.start)) {
+    if (delta.parts.length === 0) {
+      console.debug(`Got delta with no parts: ${JSON.stringify(delta)}`);
+      continue;
+    }
+    if (cursor !== delta.start) {
+      if (cursor >= delta.end) {
+        console.debug(
+          `Got duplicate delta for stream ${delta.streamId} at ${delta.start}`,
+        );
+        continue;
+      } else if (cursor < delta.start) {
+        console.warn(
+          `Got delta for stream ${delta.streamId} that has a gap ${cursor} -> ${delta.start}`,
+        );
+        break;
+      } else {
+        throw new Error(
+          `Got unexpected delta for stream ${delta.streamId}: delta: ${delta.start} -> ${delta.end} existing cursor: ${cursor}`,
+        );
+      }
+    }
+    cursor = delta.end;
+  }
+  return { parts, cursor };
+}
+
 // exported for testing
 export function applyDeltasToStreamMessage(
   threadId: string,
