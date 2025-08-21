@@ -1,18 +1,18 @@
-import type { TextStreamPart, ToolSet } from "ai";
+import type { UIMessageChunk, ToolSet } from "ai";
 
 export function serializeTextStreamingPartsV5(
-  parts: TextStreamPart<ToolSet>[],
-): TextStreamPart<ToolSet>[] {
-  const compressed: TextStreamPart<ToolSet>[] = [];
+  parts: UIMessageChunk<ToolSet>[],
+): UIMessageChunk<ToolSet>[] {
+  const compressed: UIMessageChunk<ToolSet>[] = [];
   for (const part of parts) {
     const last = compressed.at(-1);
     if (part.type === "text-delta" && last?.type === "text-delta") {
-      last.text += part.text;
+      last.delta += part.delta;
     } else if (
       part.type === "reasoning-delta" &&
       last?.type === "reasoning-delta"
     ) {
-      last.text += part.text;
+      last.delta += part.delta;
     } else {
       if (
         part.type === "start-step" ||
@@ -25,11 +25,8 @@ export function serializeTextStreamingPartsV5(
       if (part.type === "file") {
         compressed.push({
           type: "file",
-          file: {
-            mediaType: part.file.mediaType,
-            base64: part.file.base64,
-            uint8Array: new Uint8Array([]),
-          },
+          mediaType: part.mediaType,
+          url: part.url,
         });
       }
       compressed.push(part);

@@ -2,8 +2,9 @@ import {
   type ChunkDetector,
   smoothStream,
   type StreamTextTransform,
-  type TextStreamPart,
+  type UIMessageChunk,
   type ToolSet,
+  type AsyncIterableStream,
 } from "ai";
 import {
   vStreamDelta,
@@ -22,7 +23,6 @@ import type {
   SyncStreamsReturnValue,
 } from "./types.js";
 import { omit } from "convex-helpers";
-import { serializeTextStreamingPartsV5 } from "../parts.js";
 import { v } from "convex/values";
 import { vMessageDoc } from "../component/schema.js";
 
@@ -187,7 +187,7 @@ export function mergeTransforms<TOOLS extends ToolSet>(
 export class DeltaStreamer {
   public streamId: string | undefined;
   public readonly options: Required<StreamingOptions>;
-  #nextParts: TextStreamPart<ToolSet>[] = [];
+  #nextParts: UIMessageChunk<ToolSet>[] = [];
   #latestWrite: number = 0;
   #ongoingWrite: Promise<void> | undefined;
   #cursor: number = 0;
@@ -217,37 +217,59 @@ export class DeltaStreamer {
     this.abortController = new AbortController();
     if (metadata.abortSignal) {
       metadata.abortSignal.addEventListener("abort", async () => {
-        if (this.streamId) {
-          this.abortController.abort();
-          const finalDelta = this.#createDelta();
-          await this.#ongoingWrite;
-          await this.ctx.runMutation(this.component.streams.abort, {
-            streamId: this.streamId,
-            reason: "abortSignal",
-            finalDelta,
-          });
-        }
+        this.abortController.abort();
+        if (!this.streamId) return;
+        // add an abort UIMessagePart to the stream and flush
+        this.#nextParts.push({ type: "abort" });
+
+        await this.ctx.runMutation(this.component.streams.abort, {
+          streamId: this.streamId,
+          reason: "abortSignal",
+          finalDelta: this.#createDelta(),
+        });
       });
     }
   }
 
-  public async addParts(parts: TextStreamPart<ToolSet>[]) {
-    if (this.abortController.signal.aborted) {
-      return;
+  public reset(updates: {
+    order?: number;
+    stepOrder?: number;
+    agentName?: string;
+    model?: string;
+    provider?: string;
+    providerOptions?: ProviderOptions;
+  }) {
+    this.streamId = undefined;
+    this.#nextParts = [];
+    this.#cursor = 0;
+    Object.assign(this.metadata, {
+      ...updates,
+      order: updates.order ?? this.metadata.order,
+      stepOrder: updates.stepOrder ?? this.metadata.stepOrder,
+    });
+  }
+
+  public async consumeStream(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    stream: AsyncIterableStream<UIMessageChunk<any>>,
+  ) {
+    this.streamId = await this.ctx.runMutation(this.component.streams.create, {
+      ...omit(this.metadata, ["abortSignal"]),
+      order: this.metadata.order,
+    });
+    for await (const chunk of stream) {
+      if (this.abortController.signal.aborted) {
+        break;
+      }
+      this.#nextParts.push(chunk);
+      if (
+        !this.#ongoingWrite &&
+        Date.now() - this.#latestWrite >= this.options.throttleMs
+      ) {
+        this.#ongoingWrite = this.#sendDelta();
+      }
     }
-    if (!this.streamId) {
-      this.streamId = await this.ctx.runMutation(
-        this.component.streams.create,
-        omit(this.metadata, ["abortSignal"]),
-      );
-    }
-    this.#nextParts.push(...parts);
-    if (
-      !this.#ongoingWrite &&
-      Date.now() - this.#latestWrite >= this.options.throttleMs
-    ) {
-      this.#ongoingWrite = this.#sendDelta();
-    }
+    await this.finish();
   }
 
   async #sendDelta() {
@@ -290,7 +312,7 @@ export class DeltaStreamer {
     const start = this.#cursor;
     const end = start + this.#nextParts.length;
     this.#cursor = end;
-    const parts = serializeTextStreamingPartsV5(this.#nextParts);
+    const parts = compressUIMessageChunks(this.#nextParts);
     this.#nextParts = [];
     if (!this.streamId) {
       throw new Error("Creating a delta before the stream is created");
@@ -326,4 +348,24 @@ export class DeltaStreamer {
       finalDelta,
     });
   }
+}
+
+export function compressUIMessageChunks(
+  parts: UIMessageChunk<ToolSet>[],
+): UIMessageChunk<ToolSet>[] {
+  const compressed: UIMessageChunk<ToolSet>[] = [];
+  for (const part of parts) {
+    const last = compressed.at(-1);
+    if (part.type === "text-delta" && last?.type === "text-delta") {
+      last.delta += part.delta;
+    } else if (
+      part.type === "reasoning-delta" &&
+      last?.type === "reasoning-delta"
+    ) {
+      last.delta += part.delta;
+    } else {
+      compressed.push(part);
+    }
+  }
+  return compressed;
 }

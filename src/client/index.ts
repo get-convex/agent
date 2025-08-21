@@ -808,11 +808,6 @@ export class Agent<
         options?.saveStreamDeltas,
         streamTextArgs.experimental_transform,
       ),
-      onChunk: async (event) => {
-        await streamer?.addParts([event.chunk]);
-        // console.log("onChunk", chunk);
-        return streamTextArgs.onChunk?.(event);
-      },
       onError: async (error) => {
         console.error("onError", error);
         await call.fail(errorToString(error.error));
@@ -835,15 +830,13 @@ export class Agent<
         steps.push(step);
         const createPendingMessage = await willContinue(steps, args.stopWhen);
         await call.save({ step }, createPendingMessage);
-        if (!createPendingMessage) {
-          await streamer?.finish();
-        }
         return args.onStepFinish?.(step);
       },
     }) as StreamTextResult<
       TOOLS extends undefined ? AgentTools : TOOLS,
       PARTIAL_OUTPUT
     >;
+    const stream = streamer?.consumeStream(result.toUIMessageStream());
     const metadata: GenerationOutputMetadata = {
       promptMessageId,
       order,
@@ -855,6 +848,7 @@ export class Agent<
         !options.saveStreamDeltas.returnImmediately) ||
       options?.saveStreamDeltas === true
     ) {
+      await stream;
       await result.consumeStream();
     }
     return Object.assign(result, metadata);
