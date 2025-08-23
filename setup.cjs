@@ -36,7 +36,7 @@ if (initFlag) {
     console.log("Checking backend configuration...");
     execSync("npm run dev:backend -- --once", {
       cwd: exampleDir,
-      stdio: "pipe",
+      stdio: "inherit",
     });
     console.log("✅ Backend setup complete! No API key needed.\n");
   } catch (error) {
