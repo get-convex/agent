@@ -24,14 +24,18 @@ console.log("Detected Convex URL:", convexUrl);
 // If we have a Convex URL, encode it and add to args
 if (convexUrl) {
   const encodedUrl = encodeURIComponent(convexUrl);
-  args.unshift(`--open`, `/play/${encodedUrl}`);
+  args.unshift("--open", `/play/${encodedUrl}`);
 }
 
+// Pick correct npx binary for OS
+const npxBin = process.platform === "win32" ? "npx.cmd" : "npx";
+
 // Use npx to run vite directly
-const child = spawn("npx", ["vite", "preview", ...args], {
+const child = spawn(npxBin, ["vite", "preview", ...args], {
   cwd: playgroundDir,
   stdio: "inherit",
-  env: process.env, // Pass through env vars
+  env: process.env, 
+  shell: process.platform === "win32", // ✅ needed for Windows
 });
 
 child.on("exit", (code) => process.exit(code));
