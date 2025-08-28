@@ -79,9 +79,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       {message.text && (
         <div
           className={
-            message.message?.role === "user"
-              ? "message-bubble-user"
-              : "message-bubble-agent" + "whitespace-pre-wrap"
+            `${message.message?.role === "user" ? "message-bubble-user" : "message-bubble-agent"} whitespace-pre-wrap`
           }
         >
           <SmoothText
