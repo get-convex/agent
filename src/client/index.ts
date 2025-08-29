@@ -102,6 +102,7 @@ import type {
   Thread,
   UsageHandler,
   UserActionCtx,
+  Config,
 } from "./types.js";
 import { inlineMessagesFiles } from "./files.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
@@ -169,6 +170,7 @@ export { extractText, isTool, sorted } from "../shared.js";
 export { createTool } from "./createTool.js";
 export type {
   AgentComponent,
+  Config,
   ContextOptions,
   MessageDoc,
   ProviderMetadata,
@@ -181,82 +183,6 @@ export type {
   UsageHandler,
 };
 export { mockModel } from "./mockModel.js";
-
-// 10k characters should be more than enough for most cases, and stays under
-// the 8k token limit for some models.
-const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
-
-export type Config = {
-  /**
-   * The LLM model to use for generating / streaming text and objects.
-   * e.g.
-   * import { openai } from "@ai-sdk/openai"
-   * const myAgent = new Agent(components.agent, {
-   *   languageModel: openai.chat("gpt-4o-mini"),
-   */
-  languageModel?: LanguageModel;
-  /**
-   * The model to use for text embeddings. Optional.
-   * If specified, it will use this for generating vector embeddings
-   * of chats, and can opt-in to doing vector search for automatic context
-   * on generateText, etc.
-   * e.g.
-   * import { openai } from "@ai-sdk/openai"
-   * const myAgent = new Agent(components.agent, {
-   *   ...
-   *   textEmbeddingModel: openai.embedding("text-embedding-3-small")
-   */
-  textEmbeddingModel?: EmbeddingModel<string>;
-  /**
-   * Options to determine what messages are included as context in message
-   * generation. To disable any messages automatically being added, pass:
-   * { recentMessages: 0 }
-   */
-  contextOptions?: ContextOptions;
-  /**
-   * Determines whether messages are automatically stored when passed as
-   * arguments or generated.
-   */
-  storageOptions?: StorageOptions;
-  /**
-   * The usage handler to use for this agent.
-   */
-  usageHandler?: UsageHandler;
-  /**
-   * Called for each LLM request/response, so you can do things like
-   * log the raw request body or response headers to a table, or logs.
-   */
-  rawRequestResponseHandler?: RawRequestResponseHandler;
-  /**
-   * @deprecated Reach out if you use this. Otherwise will be removed soon.
-   * Default provider options to pass for the LLM calls.
-   * This can be overridden at each generate/stream callsite on a per-field
-   * basis. To clear a default setting, you'll need to pass `undefined`.
-   */
-  providerOptions?: ProviderOptions;
-  /**
-   * The default settings to use for the LLM calls.
-   * This can be overridden at each generate/stream callsite on a per-field
-   * basis. To clear a default setting, you'll need to pass `undefined`.
-   */
-  callSettings?: CallSettings;
-  /**
-   * The maximum number of steps to allow for a single generation.
-   *
-   * For example, if an agent wants to call a tool, that call and tool response
-   * will be one step. Generating a response based on the tool call & response
-   * will be a second step.
-   * If it runs out of steps, it will return the last step result, which may
-   * not be an assistant message.
-
-   * This becomes the default value when `stopWhen` is not specified in the
-   * Agent or generation callsite.
-   * AI SDK v5 removed the `maxSteps` argument, but this is kept here for
-   * convenience and backwards compatibility.
-   * Defaults to 1.
-   */
-  maxSteps?: number;
-};
 
 export class Agent<
   /**
