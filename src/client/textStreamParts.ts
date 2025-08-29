@@ -23,21 +23,12 @@ export function serializeTextStreamingPartsV5(
     ) {
       last.text += part.text;
     } else {
-      if (
-        part.type === "start-step" ||
-        part.type === "finish-step" ||
-        part.type === "start" ||
-        part.type === "finish"
-      ) {
-        continue;
-      }
       if (part.type === "file") {
         compressed.push({
           type: "file",
           file: {
-            mediaType: part.file.mediaType,
-            base64: part.file.base64,
-            uint8Array: new Uint8Array([]),
+            ...part.file,
+            uint8Array: undefined as unknown as Uint8Array,
           },
         });
       }
