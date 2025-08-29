@@ -19,7 +19,6 @@ import type {
   UIMessage,
 } from "ai";
 import {
-  embedMany,
   generateObject,
   generateText,
   stepCountIs,
@@ -68,6 +67,8 @@ import {
   type SaveMessagesArgs,
 } from "./messages.js";
 import {
+  embedMany,
+  embedMessages,
   fetchContextMessages,
   getModelName,
   getProviderName,
@@ -1138,7 +1139,9 @@ export class Agent<
         );
         return {
           embedding: (
-            await this.doEmbed(ctx, {
+            await embedMany(ctx, {
+              ...this.options,
+              agentName: this.options.name,
               userId: args.userId,
               threadId: args.threadId,
               values: [text],
@@ -1193,51 +1196,21 @@ export class Agent<
    */
   async generateEmbeddings(
     ctx: RunActionCtx,
-    {
-      userId,
-      threadId,
-    }: { userId: string | undefined; threadId: string | undefined },
+    args: { userId: string | undefined; threadId: string | undefined },
     messages: (ModelMessage | Message)[],
-  ) {
-    if (!this.options.textEmbeddingModel) {
-      return undefined;
-    }
-    let embeddings:
-      | {
-          vectors: (number[] | null)[];
-          dimension: VectorDimension;
-          model: string;
-        }
-      | undefined;
-    const messageTexts = messages.map((m) => !isTool(m) && extractText(m));
-    // Find the indexes of the messages that have text.
-    const textIndexes = messageTexts
-      .map((t, i) => (t ? i : undefined))
-      .filter((i) => i !== undefined);
-    if (textIndexes.length === 0) {
-      return undefined;
-    }
-    const values = messageTexts
-      .map((t) => t && t.trim().slice(0, MAX_EMBEDDING_TEXT_LENGTH))
-      .filter((t): t is string => !!t);
-    // Then embed those messages.
-    const textEmbeddings = await this.doEmbed(ctx, {
-      userId,
-      threadId,
-      values,
-    });
-    // Then assemble the embeddings into a single array with nulls for the messages without text.
-    const embeddingsOrNull = Array(messages.length).fill(null);
-    textIndexes.forEach((i, j) => {
-      embeddingsOrNull[i] = textEmbeddings.embeddings[j];
-    });
-    if (textEmbeddings.embeddings.length > 0) {
-      const dimension = textEmbeddings.embeddings[0].length;
-      validateVectorDimension(dimension);
-      const model = getModelName(this.options.textEmbeddingModel);
-      embeddings = { vectors: embeddingsOrNull, dimension, model };
-    }
-    return embeddings;
+  ): Promise<
+    | {
+        vectors: (number[] | null)[];
+        dimension: VectorDimension;
+        model: string;
+      }
+    | undefined
+  > {
+    return embedMessages(
+      ctx,
+      { ...args, ...this.options, agentName: this.options.name },
+      messages,
+    );
   }
 
   /**
@@ -1753,46 +1726,6 @@ export class Agent<
       order,
       stepOrder,
     };
-  }
-
-  async doEmbed(
-    ctx: RunActionCtx,
-    options: {
-      userId: string | undefined;
-      threadId: string | undefined;
-      values: string[];
-      abortSignal?: AbortSignal;
-      headers?: Record<string, string>;
-    },
-  ): Promise<{ embeddings: number[][] }> {
-    const embeddingModel = this.options.textEmbeddingModel;
-    assert(
-      embeddingModel,
-      "a textEmbeddingModel is required to be set on the Agent that you're doing vector search with",
-    );
-    const result = await embedMany({
-      ...this.options.callSettings,
-      model: embeddingModel,
-      values: options.values,
-      abortSignal: options.abortSignal,
-      headers: options.headers,
-    });
-    if (this.options.usageHandler && result.usage) {
-      await this.options.usageHandler(ctx, {
-        userId: options.userId,
-        threadId: options.threadId,
-        agentName: this.options.name,
-        model: getModelName(embeddingModel),
-        provider: getProviderName(embeddingModel),
-        providerMetadata: undefined,
-        usage: {
-          inputTokens: result.usage.tokens,
-          outputTokens: 0,
-          totalTokens: result.usage.tokens,
-        },
-      });
-    }
-    return { embeddings: result.embeddings };
   }
 
   /**

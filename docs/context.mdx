@@ -120,19 +120,24 @@ and use them for vector search.
 When you change models or decide to start or stop using embeddings for vector
 search, you can manage the embeddings manually.
 
-Generate embeddings for a set of messages.
+Generate embeddings for a set of messages. Optionally pass `config` with a usage
+handler, which can be a globally shared `Config`.
 
 ```ts
-const embeddings = await supportAgent.generateEmbeddings([
-  { role: "user", content: "What is love?" },
-]);
+import { embedMessages } from "@convex-dev/agent";
+
+const embeddings = await embedMessages(
+  ctx,
+  { userId, threadId, textEmbeddingModel, ...config },
+  [{ role: "user", content: "What is love?" }],
+);
 ```
 
 Generate and save embeddings for existing messages.
 
 ```ts
 const embeddings = await supportAgent.generateAndSaveEmbeddings(ctx, {
-  messageIds
+  messageIds,
 });
 ```
 
