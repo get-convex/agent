@@ -1,7 +1,6 @@
 import {
   embedMany as embedMany_,
   type EmbeddingModel,
-  type LanguageModel,
   type ModelMessage,
 } from "ai";
 import { assert } from "convex-helpers";
@@ -14,6 +13,8 @@ import {
   DEFAULT_MESSAGE_RANGE,
   DEFAULT_RECENT_MESSAGES,
   extractText,
+  getModelName,
+  getProviderName,
   isTool,
   sorted,
 } from "../shared.js";
@@ -186,27 +187,6 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
     }
   }
   return result;
-}
-
-export function getModelName(
-  embeddingModel: string | EmbeddingModel<string> | LanguageModel,
-): string {
-  if (typeof embeddingModel === "string") {
-    if (embeddingModel.includes("/")) {
-      return embeddingModel.split("/").slice(1).join("/");
-    }
-    return embeddingModel;
-  }
-  return embeddingModel.modelId;
-}
-
-export function getProviderName(
-  embeddingModel: string | EmbeddingModel<string> | LanguageModel,
-): string {
-  if (typeof embeddingModel === "string") {
-    return embeddingModel.split("/").at(0)!;
-  }
-  return embeddingModel.provider;
 }
 
 export async function embedMessages(

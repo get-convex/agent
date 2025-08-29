@@ -29,7 +29,7 @@ import {
   type MessageDoc,
 } from "./index.js";
 import { serializeNewMessagesInStep } from "../mapping.js";
-import { getModelName, getProviderName } from "./search.js";
+import { getModelName, getProviderName } from "../shared.js";
 
 export type PlaygroundAPI = ApiFromModules<{
   playground: ReturnType<typeof definePlaygroundAPI>;
