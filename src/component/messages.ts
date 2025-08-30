@@ -32,7 +32,7 @@ import type { MessageDoc } from "./schema.js";
 import { schema, v, vMessageDoc } from "./schema.js";
 import { insertVector, searchVectors } from "./vector/index.js";
 import {
-  type VectorDimension,
+  validateVectorDimension,
   VectorDimensions,
   type VectorTableId,
   vVectorId,
@@ -532,7 +532,8 @@ export const searchMessages = action({
       });
     }
     if (args.embedding) {
-      const dimension = args.embedding.length as VectorDimension;
+      const dimension = args.embedding.length;
+      validateVectorDimension(dimension);
       if (!VectorDimensions.includes(dimension)) {
         throw new Error(`Unsupported embedding dimension: ${dimension}`);
       }
