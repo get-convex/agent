@@ -46,6 +46,11 @@ import {
   type ReasoningPart,
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
+import {
+  getModelName,
+  getProviderName,
+  type ModelOrMetadata,
+} from "./shared.js";
 export type AIMessageWithoutId = Omit<AIMessage, "id">;
 
 export type SerializeUrlsAndUint8Arrays<T> = T extends URL
@@ -159,13 +164,13 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   ctx: ActionCtx,
   component: AgentComponent,
   step: StepResult<TOOLS>,
-  metadata: { model: string; provider: string },
+  model: ModelOrMetadata | undefined,
 ): Promise<{ messages: MessageWithMetadata[] }> {
   // If there are tool results, there's another message with the tool results
   // ref: https://github.com/vercel/ai/blob/main/packages/ai/core/generate-text/to-response-messages.ts
   const assistantFields = {
-    model: metadata.model,
-    provider: metadata.provider,
+    model: model ? getModelName(model) : undefined,
+    provider: model ? getProviderName(model) : undefined,
     providerMetadata: step.providerMetadata,
     reasoning: step.reasoningText,
     reasoningDetails: step.reasoning,
@@ -198,7 +203,7 @@ export async function serializeObjectResult(
   ctx: ActionCtx,
   component: AgentComponent,
   result: GenerateObjectResult<unknown>,
-  metadata: { model: string; provider: string },
+  model: ModelOrMetadata | undefined,
 ): Promise<{ messages: MessageWithMetadata[] }> {
   const text = JSON.stringify(result.object);
 
@@ -210,8 +215,8 @@ export async function serializeObjectResult(
     messages: [
       {
         message,
-        model: metadata.model,
-        provider: metadata.provider,
+        model: model ? getModelName(model) : undefined,
+        provider: model ? getProviderName(model) : undefined,
         providerMetadata: result.providerMetadata,
         finishReason: result.finishReason,
         text,

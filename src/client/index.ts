@@ -2,11 +2,9 @@ import type {
   FlexibleSchema,
   IdGenerator,
   InferSchema,
-  ProviderOptions,
 } from "@ai-sdk/provider-utils";
 import type {
   CallSettings,
-  EmbeddingModel,
   GenerateObjectResult,
   GenerateTextResult,
   LanguageModel,
@@ -16,9 +14,9 @@ import type {
   StreamTextResult,
   ToolChoice,
   ToolSet,
+  UIMessage,
 } from "ai";
 import {
-  embedMany,
   generateObject,
   generateText,
   stepCountIs,
@@ -37,17 +35,14 @@ import {
 import { convexToJson, v, type Value } from "convex/values";
 import type { MessageDoc, ThreadDoc } from "../component/schema.js";
 import type { threadFieldsSupportingPatch } from "../component/threads.js";
-import {
-  validateVectorDimension,
-  type VectorDimension,
-} from "../component/vector/tables.js";
+import { type VectorDimension } from "../component/vector/tables.js";
 import {
   deserializeMessage,
   serializeMessage,
   serializeNewMessagesInStep,
   serializeObjectResult,
 } from "../mapping.js";
-import { extractText, isTool } from "../shared.js";
+import { getModelName, getProviderName } from "../shared.js";
 import {
   vMessageEmbeddings,
   vMessageWithMetadata,
@@ -59,27 +54,19 @@ import {
   type ProviderMetadata,
   type StreamArgs,
 } from "../validators.js";
-import { wrapTools, type ToolCtx } from "./createTool.js";
 import {
   listMessages,
   saveMessages,
   type SaveMessageArgs,
   type SaveMessagesArgs,
 } from "./messages.js";
-import {
-  fetchContextMessages,
-  getModelName,
-  getProviderName,
-} from "./search.js";
+import { embedMany, embedMessages, fetchContextMessages } from "./search.js";
 import {
   DeltaStreamer,
   syncStreams,
   type StreamingOptions,
 } from "./streaming.js";
-import {
-  mergeTransforms,
-  serializeTextStreamingPartsV5,
-} from "./textStreamParts.js";
+import { compressUIMessageChunks, mergeTransforms } from "./textStreamParts.js";
 import { createThread, getThreadMetadata } from "./threads.js";
 import type {
   ActionCtx,
@@ -104,9 +91,10 @@ import type {
   Thread,
   UsageHandler,
   UserActionCtx,
+  Config,
 } from "./types.js";
-import { inlineMessagesFiles } from "./files.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
+import { start } from "./start.js";
 
 export { stepCountIs } from "ai";
 export { vMessageDoc, vThreadDoc } from "../component/schema.js";
@@ -171,6 +159,7 @@ export { extractText, isTool, sorted } from "../shared.js";
 export { createTool } from "./createTool.js";
 export type {
   AgentComponent,
+  Config,
   ContextOptions,
   MessageDoc,
   ProviderMetadata,
@@ -183,82 +172,6 @@ export type {
   UsageHandler,
 };
 export { mockModel } from "./mockModel.js";
-
-// 10k characters should be more than enough for most cases, and stays under
-// the 8k token limit for some models.
-const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
-
-export type Config = {
-  /**
-   * The LLM model to use for generating / streaming text and objects.
-   * e.g.
-   * import { openai } from "@ai-sdk/openai"
-   * const myAgent = new Agent(components.agent, {
-   *   languageModel: openai.chat("gpt-4o-mini"),
-   */
-  languageModel?: LanguageModel;
-  /**
-   * The model to use for text embeddings. Optional.
-   * If specified, it will use this for generating vector embeddings
-   * of chats, and can opt-in to doing vector search for automatic context
-   * on generateText, etc.
-   * e.g.
-   * import { openai } from "@ai-sdk/openai"
-   * const myAgent = new Agent(components.agent, {
-   *   ...
-   *   textEmbeddingModel: openai.embedding("text-embedding-3-small")
-   */
-  textEmbeddingModel?: EmbeddingModel<string>;
-  /**
-   * Options to determine what messages are included as context in message
-   * generation. To disable any messages automatically being added, pass:
-   * { recentMessages: 0 }
-   */
-  contextOptions?: ContextOptions;
-  /**
-   * Determines whether messages are automatically stored when passed as
-   * arguments or generated.
-   */
-  storageOptions?: StorageOptions;
-  /**
-   * The usage handler to use for this agent.
-   */
-  usageHandler?: UsageHandler;
-  /**
-   * Called for each LLM request/response, so you can do things like
-   * log the raw request body or response headers to a table, or logs.
-   */
-  rawRequestResponseHandler?: RawRequestResponseHandler;
-  /**
-   * @deprecated Reach out if you use this. Otherwise will be removed soon.
-   * Default provider options to pass for the LLM calls.
-   * This can be overridden at each generate/stream callsite on a per-field
-   * basis. To clear a default setting, you'll need to pass `undefined`.
-   */
-  providerOptions?: ProviderOptions;
-  /**
-   * The default settings to use for the LLM calls.
-   * This can be overridden at each generate/stream callsite on a per-field
-   * basis. To clear a default setting, you'll need to pass `undefined`.
-   */
-  callSettings?: CallSettings;
-  /**
-   * The maximum number of steps to allow for a single generation.
-   *
-   * For example, if an agent wants to call a tool, that call and tool response
-   * will be one step. Generating a response based on the tool call & response
-   * will be a second step.
-   * If it runs out of steps, it will return the last step result, which may
-   * not be an assistant message.
-
-   * This becomes the default value when `stopWhen` is not specified in the
-   * Agent or generation callsite.
-   * AI SDK v5 removed the `maxSteps` argument, but this is kept here for
-   * convenience and backwards compatibility.
-   * Defaults to 1.
-   */
-  maxSteps?: number;
-};
 
 export class Agent<
   /**
@@ -519,182 +432,25 @@ export class Agent<
     fail: (reason: string) => Promise<void>;
     getSavedMessages: () => MessageDoc[];
   }> {
-    const { threadId, ...opts } = { ...this.options, ...options };
-    const context = await this._saveMessagesAndFetchContext(ctx, {
-      userId: options?.userId,
-      threadId: options?.threadId,
-      messages: args.messages,
-      prompt: args.prompt,
-      promptMessageId: args.promptMessageId,
-      ...opts,
-    });
-    let pendingMessageId = context.pendingMessageId;
-    const { messages, promptMessageId, order, stepOrder, userId } = context;
-    const savedMessages = context.savedMessages ?? [];
-    const toolCtx = {
-      ...(ctx as UserActionCtx & CustomCtx),
-      userId,
-      threadId,
-      promptMessageId,
-      agent: this,
-    } satisfies ToolCtx;
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    const tools = wrapTools(toolCtx, args.tools ?? this.options.tools) as Tools;
-    const saveOutput = opts.storageOptions?.saveMessages !== "none";
-    const fail = async (reason: string) => {
-      if (threadId && promptMessageId) {
-        console.error(
-          `Message failed in thread ${threadId} with promptMessageId ${promptMessageId}: ${reason}`,
-        );
-      }
-      if (pendingMessageId) {
-        await ctx.runMutation(this.component.messages.finalizeMessage, {
-          messageId: pendingMessageId,
-          result: { status: "failed", error: reason },
-        });
-      }
-    };
-    if (args.abortSignal) {
-      const abortSignal = args.abortSignal;
-      abortSignal.addEventListener(
-        "abort",
-        async () => {
-          await fail(abortSignal.reason ?? "Aborted");
-        },
-        { once: true },
-      );
-    }
-    const aiArgs = {
-      ...this.options.callSettings,
-      providerOptions: this.options.providerOptions,
-      ...omit(args, ["messages", "prompt", "promptMessageId"]),
-      model: args.model ?? this.options.languageModel,
-      system: args.system ?? this.options.instructions,
-      messages,
-      stopWhen:
-        args.stopWhen ??
-        this.options.stopWhen ??
-        stepCountIs(this.options.maxSteps ?? 1),
-      tools,
-    } as T & {
-      model: LanguageModel;
-      messages: ModelMessage[];
-      tools?: TOOLS extends undefined ? AgentTools : TOOLS;
-    } & CallSettings;
-    if (pendingMessageId) {
-      if (!aiArgs._internal?.generateId) {
-        aiArgs._internal = {
-          ...aiArgs._internal,
-          generateId: () => pendingMessageId ?? crypto.randomUUID(),
-        };
-      }
-    }
-    let activeModel = aiArgs.model;
-    return {
-      args: aiArgs,
-      order: order ?? 0,
-      stepOrder: stepOrder ?? 0,
-      userId,
-      promptMessageId,
-      getSavedMessages: () => savedMessages,
-      updateModel: (model: LanguageModel | undefined) => {
-        if (model) {
-          activeModel = model;
-        }
+    return start<T, Tools, CustomCtx>(
+      ctx,
+      this.component,
+      {
+        ...args,
+        tools: (args.tools ?? this.options.tools) as Tools,
+        system: args.system ?? this.options.instructions,
+        stopWhen: (args.stopWhen ?? this.options.stopWhen) as
+          | StopCondition<Tools>
+          | Array<StopCondition<Tools>>,
       },
-      fail,
-      save: async <TOOLS extends ToolSet>(
-        toSave:
-          | { step: StepResult<TOOLS> }
-          | { object: GenerateObjectResult<unknown> },
-        createPendingMessage?: boolean,
-      ) => {
-        if (threadId && promptMessageId && saveOutput) {
-          const metadata = {
-            // TODO: get up to date one when user selects mid-generation
-            model: getModelName(activeModel),
-            provider: getProviderName(activeModel),
-          };
-          const serialized =
-            "object" in toSave
-              ? await serializeObjectResult(
-                  ctx,
-                  this.component,
-                  toSave.object,
-                  metadata,
-                )
-              : await serializeNewMessagesInStep(
-                  ctx,
-                  this.component,
-                  toSave.step,
-                  metadata,
-                );
-          const embeddings = await this.generateEmbeddings(
-            ctx,
-            { userId, threadId },
-            serialized.messages.map((m) => m.message),
-          );
-          if (createPendingMessage) {
-            serialized.messages.push({
-              message: { role: "assistant", content: [] },
-              status: "pending",
-            });
-            embeddings?.vectors.push(null);
-          }
-          const saved = await ctx.runMutation(
-            this.component.messages.addMessages,
-            {
-              userId,
-              threadId,
-              agentName: this.options.name,
-              promptMessageId,
-              pendingMessageId,
-              messages: serialized.messages,
-              embeddings,
-              failPendingSteps: false,
-            },
-          );
-          const lastMessage = saved.messages.at(-1)!;
-          if (createPendingMessage) {
-            if (lastMessage.status === "failed") {
-              pendingMessageId = undefined;
-              savedMessages.push(...saved.messages);
-              await fail(
-                lastMessage.error ??
-                  "Aborting - the pending message was marked as failed",
-              );
-            } else {
-              pendingMessageId = lastMessage._id;
-              savedMessages.push(...saved.messages.slice(0, -1));
-            }
-          } else {
-            pendingMessageId = undefined;
-            savedMessages.push(...saved.messages);
-          }
-        }
-        const output = "object" in toSave ? toSave.object : toSave.step;
-        if (this.options.rawRequestResponseHandler) {
-          await this.options.rawRequestResponseHandler(ctx, {
-            userId,
-            threadId,
-            agentName: this.options.name,
-            request: output.request,
-            response: output.response,
-          });
-        }
-        if (opts.usageHandler && output.usage) {
-          await opts.usageHandler(ctx, {
-            userId,
-            threadId,
-            agentName: this.options.name,
-            model: getModelName(activeModel),
-            provider: getProviderName(activeModel),
-            usage: output.usage,
-            providerMetadata: output.providerMetadata,
-          });
-        }
+      {
+        ...this.options,
+        ...options,
+        agentName: this.options.name,
+        agentForToolCtx: this,
       },
-    };
+    );
   }
 
   /**
@@ -820,7 +576,7 @@ export class Agent<
             {
               stream: opts.saveStreamDeltas,
               onAsyncAbort: call.fail,
-              compress: serializeTextStreamingPartsV5,
+              compress: compressUIMessageChunks<Tools>,
               abortSignal: args.abortSignal,
             },
             {
@@ -843,25 +599,22 @@ export class Agent<
         options?.saveStreamDeltas,
         streamTextArgs.experimental_transform,
       ),
-      onChunk: async (event) => {
-        await streamer?.addParts([event.chunk]);
-        // console.log("onChunk", chunk);
-        return streamTextArgs.onChunk?.(event);
-      },
       onError: async (error) => {
         console.error("onError", error);
         await call.fail(errorToString(error.error));
         await streamer?.fail(errorToString(error.error));
         return streamTextArgs.onError?.(error);
       },
-      // onFinish: async (event) => {
-      //   return streamTextArgs.onFinish?.(event);
-      // },
       prepareStep: async (options) => {
         const result = await streamTextArgs.prepareStep?.(options);
         if (result) {
           const model = result.model ?? options.model;
           call.updateModel(model);
+          // streamer?.updateMetadata({
+          //   model: getModelName(model),
+          //   provider: getProviderName(model),
+          //   providerOptions: options.messages.at(-1)?.providerOptions,
+          // });
           return result;
         }
         return undefined;
@@ -870,28 +623,29 @@ export class Agent<
         steps.push(step);
         const createPendingMessage = await willContinue(steps, args.stopWhen);
         await call.save({ step }, createPendingMessage);
-        if (!createPendingMessage) {
-          await streamer?.finish();
-        }
         return args.onStepFinish?.(step);
       },
     }) as StreamTextResult<
       TOOLS extends undefined ? AgentTools : TOOLS,
       PARTIAL_OUTPUT
     >;
+    const stream = streamer?.consumeStream(
+      result.toUIMessageStream<UIMessage<Tools>>(),
+    );
+    if (
+      (typeof options?.saveStreamDeltas === "object" &&
+        !options.saveStreamDeltas.returnImmediately) ||
+      options?.saveStreamDeltas === true
+    ) {
+      await stream;
+      await result.consumeStream();
+    }
     const metadata: GenerationOutputMetadata = {
       promptMessageId,
       order,
       savedMessages: call.getSavedMessages(),
       messageId: promptMessageId,
     };
-    if (
-      (typeof options?.saveStreamDeltas === "object" &&
-        !options.saveStreamDeltas.returnImmediately) ||
-      options?.saveStreamDeltas === true
-    ) {
-      await result.consumeStream();
-    }
     return Object.assign(result, metadata);
   }
 
@@ -1204,7 +958,9 @@ export class Agent<
         );
         return {
           embedding: (
-            await this.doEmbed(ctx, {
+            await embedMany(ctx, {
+              ...this.options,
+              agentName: this.options.name,
               userId: args.userId,
               threadId: args.threadId,
               values: [text],
@@ -1259,51 +1015,21 @@ export class Agent<
    */
   async generateEmbeddings(
     ctx: RunActionCtx,
-    {
-      userId,
-      threadId,
-    }: { userId: string | undefined; threadId: string | undefined },
+    args: { userId: string | undefined; threadId: string | undefined },
     messages: (ModelMessage | Message)[],
-  ) {
-    if (!this.options.textEmbeddingModel) {
-      return undefined;
-    }
-    let embeddings:
-      | {
-          vectors: (number[] | null)[];
-          dimension: VectorDimension;
-          model: string;
-        }
-      | undefined;
-    const messageTexts = messages.map((m) => !isTool(m) && extractText(m));
-    // Find the indexes of the messages that have text.
-    const textIndexes = messageTexts
-      .map((t, i) => (t ? i : undefined))
-      .filter((i) => i !== undefined);
-    if (textIndexes.length === 0) {
-      return undefined;
-    }
-    const values = messageTexts
-      .map((t) => t && t.trim().slice(0, MAX_EMBEDDING_TEXT_LENGTH))
-      .filter((t): t is string => !!t);
-    // Then embed those messages.
-    const textEmbeddings = await this.doEmbed(ctx, {
-      userId,
-      threadId,
-      values,
-    });
-    // Then assemble the embeddings into a single array with nulls for the messages without text.
-    const embeddingsOrNull = Array(messages.length).fill(null);
-    textIndexes.forEach((i, j) => {
-      embeddingsOrNull[i] = textEmbeddings.embeddings[j];
-    });
-    if (textEmbeddings.embeddings.length > 0) {
-      const dimension = textEmbeddings.embeddings[0].length;
-      validateVectorDimension(dimension);
-      const model = getModelName(this.options.textEmbeddingModel);
-      embeddings = { vectors: embeddingsOrNull, dimension, model };
-    }
-    return embeddings;
+  ): Promise<
+    | {
+        vectors: (number[] | null)[];
+        dimension: VectorDimension;
+        model: string;
+      }
+    | undefined
+  > {
+    return embedMessages(
+      ctx,
+      { ...args, ...this.options, agentName: this.options.name },
+      messages,
+    );
   }
 
   /**
@@ -1330,10 +1056,6 @@ export class Agent<
             .join(", "),
       );
     }
-    await this._generateAndSaveEmbeddings(ctx, messages);
-  }
-
-  async _generateAndSaveEmbeddings(ctx: RunActionCtx, messages: MessageDoc[]) {
     if (messages.some((m) => !m.message)) {
       throw new Error(
         "Some messages don't have a message: " +
@@ -1676,189 +1398,6 @@ export class Agent<
       threadId: args.threadId,
       limit: args.pageSize,
     });
-  }
-
-  async _saveMessagesAndFetchContext(
-    ctx: RunActionCtx,
-    {
-      userId: argsUserId,
-      threadId,
-      contextOptions,
-      storageOptions,
-      ...args
-    }: {
-      prompt: string | (ModelMessage | Message)[] | undefined;
-      messages: (ModelMessage | Message)[] | undefined;
-      promptMessageId: string | undefined;
-      userId: string | null | undefined;
-      threadId: string | undefined;
-    } & Options,
-  ): Promise<{
-    messages: ModelMessage[];
-    userId: string | undefined;
-    promptMessageId: string | undefined;
-    pendingMessageId: string | undefined;
-    order: number | undefined;
-    stepOrder: number | undefined;
-    savedMessages: MessageDoc[] | undefined;
-  }> {
-    // If only a promptMessageId is provided, this will be empty.
-    const messages: (ModelMessage | Message)[] = args.messages ?? [];
-    const promptArray: ModelMessage[] = !args.prompt
-      ? []
-      : Array.isArray(args.prompt)
-        ? args.prompt.map((p) => deserializeMessage(p))
-        : [{ role: "user", content: args.prompt }];
-    const userId =
-      argsUserId ??
-      (threadId &&
-        (await ctx.runQuery(this.component.threads.getThread, { threadId }))
-          ?.userId) ??
-      undefined;
-    // If only a messageId is provided, this will add that message to the end.
-    const contextMessages: MessageDoc[] = await this.fetchContextMessages(ctx, {
-      userId,
-      threadId,
-      upToAndIncludingMessageId: args.promptMessageId,
-      messages,
-      contextOptions,
-    });
-    // If it was a promptMessageId, pop it off context messages
-    // and add to the end of messages.
-    const promptMessageIndex = args.promptMessageId
-      ? contextMessages.findIndex((m) => m._id === args.promptMessageId)
-      : -1;
-    const promptMessage: MessageDoc | undefined =
-      promptMessageIndex !== -1
-        ? contextMessages.splice(promptMessageIndex, 1)[0]
-        : undefined;
-
-    let promptMessageId = promptMessage?._id;
-    let order = promptMessage?.order;
-    let stepOrder = promptMessage?.stepOrder;
-    let savedMessages = undefined;
-    let pendingMessageId = undefined;
-    if (threadId && storageOptions?.saveMessages !== "none") {
-      let saved: { messages: MessageDoc[] };
-      if (
-        messages.length + promptArray.length &&
-        // If it was a promptMessageId, we don't want to save it again.
-        (!args.promptMessageId || storageOptions?.saveMessages === "all")
-      ) {
-        const saveAll = storageOptions?.saveMessages === "all";
-        const coreMessages: (ModelMessage | Message)[] = [
-          ...messages,
-          ...promptArray,
-        ];
-        const toSave = saveAll ? coreMessages : coreMessages.slice(-1);
-        const metadata = Array.from({ length: toSave.length }, () => ({}));
-        saved = await this.saveMessages(ctx, {
-          threadId,
-          userId,
-          messages: [...toSave, { role: "assistant", content: [] }],
-          metadata: [...metadata, { status: "pending" }],
-          // TODO: sanity check
-          failPendingSteps: !!args.promptMessageId,
-        });
-        promptMessageId = saved.messages.at(-2)!._id;
-      } else {
-        saved = await this.saveMessages(ctx, {
-          threadId,
-          userId,
-          messages: [{ role: "assistant", content: [] }],
-          metadata: [{ status: "pending" }],
-          failPendingSteps: !!args.promptMessageId,
-        });
-      }
-      pendingMessageId = saved.messages.at(-1)!._id;
-      order = saved.messages.at(-1)!.order;
-      stepOrder = saved.messages.at(-1)!.stepOrder;
-      // Don't return the pending message
-      savedMessages = saved.messages.slice(0, -1);
-    }
-
-    if (promptMessage?.message) {
-      if (!args.prompt) {
-        // If they override the prompt, we skip the existing prompt message.
-        messages.push(promptMessage.message);
-      }
-      // Lazily generate embeddings for the prompt message, if it doesn't have
-      // embeddings yet. This can happen if the message was saved in a mutation
-      // where the LLM is not available.
-      if (!promptMessage.embeddingId && this.options.textEmbeddingModel) {
-        await this._generateAndSaveEmbeddings(ctx, [promptMessage]);
-      }
-    }
-
-    const prePrompt = contextMessages.map((m) => m.message).filter((m) => !!m);
-    let existingResponses: (ModelMessage | Message)[] = [];
-    if (promptMessageIndex !== -1) {
-      // pull any messages that already responded to the prompt off
-      // and add them after the prompt
-      existingResponses = prePrompt.splice(promptMessageIndex);
-    }
-
-    let processedMessages: ModelMessage[] = [
-      ...prePrompt,
-      ...messages,
-      ...promptArray,
-      ...existingResponses,
-    ].map((m) => deserializeMessage(m));
-
-    // Process messages to inline localhost files (if not, file urls pointing to localhost will be sent to LLM providers)
-    if (process.env.CONVEX_CLOUD_URL?.startsWith("http://127.0.0.1")) {
-      processedMessages = await inlineMessagesFiles(processedMessages);
-    }
-
-    return {
-      messages: processedMessages,
-      userId,
-      promptMessageId,
-      pendingMessageId,
-      savedMessages,
-      order,
-      stepOrder,
-    };
-  }
-
-  async doEmbed(
-    ctx: RunActionCtx,
-    options: {
-      userId: string | undefined;
-      threadId: string | undefined;
-      values: string[];
-      abortSignal?: AbortSignal;
-      headers?: Record<string, string>;
-    },
-  ): Promise<{ embeddings: number[][] }> {
-    const embeddingModel = this.options.textEmbeddingModel;
-    assert(
-      embeddingModel,
-      "a textEmbeddingModel is required to be set on the Agent that you're doing vector search with",
-    );
-    const result = await embedMany({
-      ...this.options.callSettings,
-      model: embeddingModel,
-      values: options.values,
-      abortSignal: options.abortSignal,
-      headers: options.headers,
-    });
-    if (this.options.usageHandler && result.usage) {
-      await this.options.usageHandler(ctx, {
-        userId: options.userId,
-        threadId: options.threadId,
-        agentName: this.options.name,
-        model: getModelName(embeddingModel),
-        provider: getProviderName(embeddingModel),
-        providerMetadata: undefined,
-        usage: {
-          inputTokens: result.usage.tokens,
-          outputTokens: 0,
-          totalTokens: result.usage.tokens,
-        },
-      });
-    }
-    return { embeddings: result.embeddings };
   }
 
   /**

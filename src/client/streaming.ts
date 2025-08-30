@@ -1,4 +1,4 @@
-import { type ChunkDetector } from "ai";
+import { type ChunkDetector, type AsyncIterableStream } from "ai";
 import {
   vStreamDelta,
   vStreamMessage,
@@ -237,6 +237,13 @@ export class DeltaStreamer<T> {
     ) {
       this.#ongoingWrite = this.#sendDelta();
     }
+  }
+
+  public async consumeStream(stream: AsyncIterableStream<T>) {
+    for await (const chunk of stream) {
+      await this.addParts([chunk]);
+    }
+    await this.finish();
   }
 
   async #sendDelta() {

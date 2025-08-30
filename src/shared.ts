@@ -49,3 +49,26 @@ export function sorted<T extends { order: number; stepOrder: number }>(
       : (a, b) => b.order - a.order || b.stepOrder - a.stepOrder,
   );
 }
+
+export type ModelOrMetadata =
+  | string
+  | ({ provider: string } & ({ modelId: string } | { model: string }));
+
+export function getModelName(embeddingModel: ModelOrMetadata): string {
+  if (typeof embeddingModel === "string") {
+    if (embeddingModel.includes("/")) {
+      return embeddingModel.split("/").slice(1).join("/");
+    }
+    return embeddingModel;
+  }
+  return "modelId" in embeddingModel
+    ? embeddingModel.modelId
+    : embeddingModel.model;
+}
+
+export function getProviderName(embeddingModel: ModelOrMetadata): string {
+  if (typeof embeddingModel === "string") {
+    return embeddingModel.split("/").at(0)!;
+  }
+  return embeddingModel.provider;
+}

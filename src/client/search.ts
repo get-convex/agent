@@ -1,25 +1,38 @@
-import type {
-  AgentComponent,
-  ContextOptions,
-  RunActionCtx,
-  RunQueryCtx,
-} from "./types.js";
-import type { MessageDoc } from "../component/schema.js";
-import type { EmbeddingModel, LanguageModel, ModelMessage } from "ai";
+import {
+  embedMany as embedMany_,
+  type EmbeddingModel,
+  type ModelMessage,
+} from "ai";
 import { assert } from "convex-helpers";
+import type { MessageDoc } from "../component/schema.js";
+import {
+  validateVectorDimension,
+  type VectorDimension,
+} from "../component/vector/tables.js";
 import {
   DEFAULT_MESSAGE_RANGE,
   DEFAULT_RECENT_MESSAGES,
   extractText,
+  getModelName,
+  getProviderName,
+  isTool,
   sorted,
 } from "../shared.js";
 import type { Message } from "../validators.js";
+import type {
+  AgentComponent,
+  Config,
+  ContextOptions,
+  RunActionCtx,
+  RunQueryCtx,
+} from "./types.js";
 
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
+// 10k characters should be more than enough for most cases, and stays under
+// the 8k token limit for some models.
+const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
 
-export type GetEmbedding = (
-  text: string,
-) => Promise<{
+export type GetEmbedding = (text: string) => Promise<{
   embedding: number[];
   textEmbeddingModel: string | EmbeddingModel<string>;
 }>;
@@ -176,23 +189,113 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
   return result;
 }
 
-export function getModelName(
-  embeddingModel: string | EmbeddingModel<string> | LanguageModel,
-): string {
-  if (typeof embeddingModel === "string") {
-    if (embeddingModel.includes("/")) {
-      return embeddingModel.split("/").slice(1).join("/");
+export async function embedMessages(
+  ctx: RunActionCtx,
+  {
+    userId,
+    threadId,
+    ...options
+  }: { userId: string | undefined; threadId: string | undefined } & Config & {
+      agentName?: string;
+    },
+  messages: (ModelMessage | Message)[],
+): Promise<
+  | {
+      vectors: (number[] | null)[];
+      dimension: VectorDimension;
+      model: string;
     }
-    return embeddingModel;
+  | undefined
+> {
+  if (!options.textEmbeddingModel) {
+    return undefined;
   }
-  return embeddingModel.modelId;
+  let embeddings:
+    | {
+        vectors: (number[] | null)[];
+        dimension: VectorDimension;
+        model: string;
+      }
+    | undefined;
+  const messageTexts = messages.map((m) => !isTool(m) && extractText(m));
+  // Find the indexes of the messages that have text.
+  const textIndexes = messageTexts
+    .map((t, i) => (t ? i : undefined))
+    .filter((i) => i !== undefined);
+  if (textIndexes.length === 0) {
+    return undefined;
+  }
+  const values = messageTexts
+    .map((t) => t && t.trim().slice(0, MAX_EMBEDDING_TEXT_LENGTH))
+    .filter((t): t is string => !!t);
+  // Then embed those messages.
+  const textEmbeddings = await embedMany(ctx, {
+    ...options,
+    userId,
+    threadId,
+    values,
+  });
+  // Then assemble the embeddings into a single array with nulls for the messages without text.
+  const embeddingsOrNull = Array(messages.length).fill(null);
+  textIndexes.forEach((i, j) => {
+    embeddingsOrNull[i] = textEmbeddings.embeddings[j];
+  });
+  if (textEmbeddings.embeddings.length > 0) {
+    const dimension = textEmbeddings.embeddings[0].length;
+    validateVectorDimension(dimension);
+    const model = getModelName(options.textEmbeddingModel);
+    embeddings = { vectors: embeddingsOrNull, dimension, model };
+  }
+  return embeddings;
 }
 
-export function getProviderName(
-  embeddingModel: string | EmbeddingModel<string> | LanguageModel,
-): string {
-  if (typeof embeddingModel === "string") {
-    return embeddingModel.split("/").at(0)!;
+export async function embedMany(
+  ctx: RunActionCtx,
+  {
+    userId,
+    threadId,
+    values,
+    abortSignal,
+    headers,
+    agentName,
+    usageHandler,
+    textEmbeddingModel,
+    callSettings,
+  }: {
+    userId: string | undefined;
+    threadId: string | undefined;
+    values: string[];
+    abortSignal?: AbortSignal;
+    headers?: Record<string, string>;
+    agentName?: string;
+  } & Config,
+): Promise<{ embeddings: number[][] }> {
+  const embeddingModel = textEmbeddingModel;
+  assert(
+    embeddingModel,
+    "a textEmbeddingModel is required to be set for vector search",
+  );
+  const result = await embedMany_({
+    ...callSettings,
+    model: embeddingModel,
+    values,
+    abortSignal,
+    headers,
+  });
+  if (usageHandler && result.usage) {
+    await usageHandler(ctx, {
+      userId,
+      threadId,
+      agentName,
+      model: getModelName(embeddingModel),
+      provider: getProviderName(embeddingModel),
+      providerMetadata: undefined,
+      usage: {
+        inputTokens: result.usage.tokens,
+        outputTokens: 0,
+        totalTokens: result.usage.tokens,
+      },
+    });
   }
-  return embeddingModel.provider;
+  return { embeddings: result.embeddings };
 }

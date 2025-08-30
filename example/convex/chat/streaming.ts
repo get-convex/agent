@@ -90,7 +90,7 @@ export const listThreadMessages = query({
     streamArgs: vStreamArgs, // Used to stream messages.
   },
   handler: async (ctx, args) => {
-    const { threadId, paginationOpts, streamArgs } = args;
+    const { threadId, streamArgs } = args;
     await authorizeThreadAccess(ctx, threadId);
     const streams = await syncStreams(ctx, components.agent, {
       threadId,
@@ -100,10 +100,7 @@ export const listThreadMessages = query({
     // Here you could filter out / modify the stream of deltas / filter out
     // deltas.
 
-    const paginated = await listMessages(ctx, components.agent, {
-      threadId,
-      paginationOpts,
-    });
+    const paginated = await listMessages(ctx, components.agent, args);
 
     // Here you could filter out metadata that you don't want from any optional
     // fields on the messages.
