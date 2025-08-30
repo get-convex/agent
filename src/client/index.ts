@@ -2,11 +2,9 @@ import type {
   FlexibleSchema,
   IdGenerator,
   InferSchema,
-  ProviderOptions,
 } from "@ai-sdk/provider-utils";
 import type {
   CallSettings,
-  EmbeddingModel,
   GenerateObjectResult,
   GenerateTextResult,
   LanguageModel,
@@ -37,22 +35,14 @@ import {
 import { convexToJson, v, type Value } from "convex/values";
 import type { MessageDoc, ThreadDoc } from "../component/schema.js";
 import type { threadFieldsSupportingPatch } from "../component/threads.js";
-import {
-  validateVectorDimension,
-  type VectorDimension,
-} from "../component/vector/tables.js";
+import { type VectorDimension } from "../component/vector/tables.js";
 import {
   deserializeMessage,
   serializeMessage,
   serializeNewMessagesInStep,
   serializeObjectResult,
 } from "../mapping.js";
-import {
-  extractText,
-  getModelName,
-  getProviderName,
-  isTool,
-} from "../shared.js";
+import { getModelName, getProviderName } from "../shared.js";
 import {
   vMessageEmbeddings,
   vMessageWithMetadata,
@@ -64,7 +54,6 @@ import {
   type ProviderMetadata,
   type StreamArgs,
 } from "../validators.js";
-import { wrapTools, type ToolCtx } from "./createTool.js";
 import {
   listMessages,
   saveMessages,
@@ -104,8 +93,8 @@ import type {
   UserActionCtx,
   Config,
 } from "./types.js";
-import { inlineMessagesFiles } from "./files.js";
 import type { DataModel } from "../component/_generated/dataModel.js";
+import { start } from "./start.js";
 
 export { stepCountIs } from "ai";
 export { vMessageDoc, vThreadDoc } from "../component/schema.js";
@@ -443,182 +432,25 @@ export class Agent<
     fail: (reason: string) => Promise<void>;
     getSavedMessages: () => MessageDoc[];
   }> {
-    const { threadId, ...opts } = { ...this.options, ...options };
-    const context = await this._saveMessagesAndFetchContext(ctx, {
-      userId: options?.userId,
-      threadId: options?.threadId,
-      messages: args.messages,
-      prompt: args.prompt,
-      promptMessageId: args.promptMessageId,
-      ...opts,
-    });
-    let pendingMessageId = context.pendingMessageId;
-    const { messages, promptMessageId, order, stepOrder, userId } = context;
-    const savedMessages = context.savedMessages ?? [];
-    const toolCtx = {
-      ...(ctx as UserActionCtx & CustomCtx),
-      userId,
-      threadId,
-      promptMessageId,
-      agent: this,
-    } satisfies ToolCtx;
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    const tools = wrapTools(toolCtx, args.tools ?? this.options.tools) as Tools;
-    const saveOutput = opts.storageOptions?.saveMessages !== "none";
-    const fail = async (reason: string) => {
-      if (threadId && promptMessageId) {
-        console.error(
-          `Message failed in thread ${threadId} with promptMessageId ${promptMessageId}: ${reason}`,
-        );
-      }
-      if (pendingMessageId) {
-        await ctx.runMutation(this.component.messages.finalizeMessage, {
-          messageId: pendingMessageId,
-          result: { status: "failed", error: reason },
-        });
-      }
-    };
-    if (args.abortSignal) {
-      const abortSignal = args.abortSignal;
-      abortSignal.addEventListener(
-        "abort",
-        async () => {
-          await fail(abortSignal.reason ?? "abortSignal");
-        },
-        { once: true },
-      );
-    }
-    const aiArgs = {
-      ...this.options.callSettings,
-      providerOptions: this.options.providerOptions,
-      ...omit(args, ["messages", "prompt", "promptMessageId"]),
-      model: args.model ?? this.options.languageModel,
-      system: args.system ?? this.options.instructions,
-      messages,
-      stopWhen:
-        args.stopWhen ??
-        this.options.stopWhen ??
-        stepCountIs(this.options.maxSteps ?? 1),
-      tools,
-    } as T & {
-      model: LanguageModel;
-      messages: ModelMessage[];
-      tools?: TOOLS extends undefined ? AgentTools : TOOLS;
-    } & CallSettings;
-    if (pendingMessageId) {
-      if (!aiArgs._internal?.generateId) {
-        aiArgs._internal = {
-          ...aiArgs._internal,
-          generateId: () => pendingMessageId ?? crypto.randomUUID(),
-        };
-      }
-    }
-    let activeModel = aiArgs.model;
-    return {
-      args: aiArgs,
-      order: order ?? 0,
-      stepOrder: stepOrder ?? 0,
-      userId,
-      promptMessageId,
-      getSavedMessages: () => savedMessages,
-      updateModel: (model: LanguageModel | undefined) => {
-        if (model) {
-          activeModel = model;
-        }
+    return start<T, Tools, CustomCtx>(
+      ctx,
+      this.component,
+      {
+        ...args,
+        tools: (args.tools ?? this.options.tools) as Tools,
+        system: args.system ?? this.options.instructions,
+        stopWhen: (args.stopWhen ?? this.options.stopWhen) as
+          | StopCondition<Tools>
+          | Array<StopCondition<Tools>>,
       },
-      fail,
-      save: async <TOOLS extends ToolSet>(
-        toSave:
-          | { step: StepResult<TOOLS> }
-          | { object: GenerateObjectResult<unknown> },
-        createPendingMessage?: boolean,
-      ) => {
-        if (threadId && promptMessageId && saveOutput) {
-          const metadata = {
-            // TODO: get up to date one when user selects mid-generation
-            model: getModelName(activeModel),
-            provider: getProviderName(activeModel),
-          };
-          const serialized =
-            "object" in toSave
-              ? await serializeObjectResult(
-                  ctx,
-                  this.component,
-                  toSave.object,
-                  metadata,
-                )
-              : await serializeNewMessagesInStep(
-                  ctx,
-                  this.component,
-                  toSave.step,
-                  metadata,
-                );
-          const embeddings = await this.generateEmbeddings(
-            ctx,
-            { userId, threadId },
-            serialized.messages.map((m) => m.message),
-          );
-          if (createPendingMessage) {
-            serialized.messages.push({
-              message: { role: "assistant", content: [] },
-              status: "pending",
-            });
-            embeddings?.vectors.push(null);
-          }
-          const saved = await ctx.runMutation(
-            this.component.messages.addMessages,
-            {
-              userId,
-              threadId,
-              agentName: this.options.name,
-              promptMessageId,
-              pendingMessageId,
-              messages: serialized.messages,
-              embeddings,
-              failPendingSteps: false,
-            },
-          );
-          const lastMessage = saved.messages.at(-1)!;
-          if (createPendingMessage) {
-            if (lastMessage.status === "failed") {
-              pendingMessageId = undefined;
-              savedMessages.push(...saved.messages);
-              await fail(
-                lastMessage.error ??
-                  "Aborting - the pending message was marked as failed",
-              );
-            } else {
-              pendingMessageId = lastMessage._id;
-              savedMessages.push(...saved.messages.slice(0, -1));
-            }
-          } else {
-            pendingMessageId = undefined;
-            savedMessages.push(...saved.messages);
-          }
-        }
-        const output = "object" in toSave ? toSave.object : toSave.step;
-        if (this.options.rawRequestResponseHandler) {
-          await this.options.rawRequestResponseHandler(ctx, {
-            userId,
-            threadId,
-            agentName: this.options.name,
-            request: output.request,
-            response: output.response,
-          });
-        }
-        if (opts.usageHandler && output.usage) {
-          await opts.usageHandler(ctx, {
-            userId,
-            threadId,
-            agentName: this.options.name,
-            model: getModelName(activeModel),
-            provider: getProviderName(activeModel),
-            usage: output.usage,
-            providerMetadata: output.providerMetadata,
-          });
-        }
+      {
+        ...this.options,
+        ...options,
+        agentName: this.options.name,
+        agentForToolCtx: this,
       },
-    };
+    );
   }
 
   /**
@@ -662,15 +494,6 @@ export class Agent<
           call.updateModel(result?.model ?? options.model);
           return result;
         },
-        // _internal: {
-        //   generateId: () => {
-        //     console.log("generateId");
-        //     // or keep track of uuids we generate
-        //     // consumedPendingMessageId = true;
-        //     // return pendingMessageId
-        //     return crypto.randomUUID();
-        //   }
-        // },
         onStepFinish: async (step) => {
           steps.push(step);
           await call.save({ step }, await willContinue(steps, args.stopWhen));
@@ -782,9 +605,6 @@ export class Agent<
         await streamer?.fail(errorToString(error.error));
         return streamTextArgs.onError?.(error);
       },
-      // onFinish: async (event) => {
-      //   return streamTextArgs.onFinish?.(event);
-      // },
       prepareStep: async (options) => {
         const result = await streamTextArgs.prepareStep?.(options);
         if (result) {
@@ -812,12 +632,6 @@ export class Agent<
     const stream = streamer?.consumeStream(
       result.toUIMessageStream<UIMessage<Tools>>(),
     );
-    const metadata: GenerationOutputMetadata = {
-      promptMessageId,
-      order,
-      savedMessages: call.getSavedMessages(),
-      messageId: promptMessageId,
-    };
     if (
       (typeof options?.saveStreamDeltas === "object" &&
         !options.saveStreamDeltas.returnImmediately) ||
@@ -826,6 +640,12 @@ export class Agent<
       await stream;
       await result.consumeStream();
     }
+    const metadata: GenerationOutputMetadata = {
+      promptMessageId,
+      order,
+      savedMessages: call.getSavedMessages(),
+      messageId: promptMessageId,
+    };
     return Object.assign(result, metadata);
   }
 
@@ -1236,10 +1056,6 @@ export class Agent<
             .join(", "),
       );
     }
-    await this._generateAndSaveEmbeddings(ctx, messages);
-  }
-
-  async _generateAndSaveEmbeddings(ctx: RunActionCtx, messages: MessageDoc[]) {
     if (messages.some((m) => !m.message)) {
       throw new Error(
         "Some messages don't have a message: " +
@@ -1582,149 +1398,6 @@ export class Agent<
       threadId: args.threadId,
       limit: args.pageSize,
     });
-  }
-
-  async _saveMessagesAndFetchContext(
-    ctx: RunActionCtx,
-    {
-      userId: argsUserId,
-      threadId,
-      contextOptions,
-      storageOptions,
-      ...args
-    }: {
-      prompt: string | (ModelMessage | Message)[] | undefined;
-      messages: (ModelMessage | Message)[] | undefined;
-      promptMessageId: string | undefined;
-      userId: string | null | undefined;
-      threadId: string | undefined;
-    } & Options,
-  ): Promise<{
-    messages: ModelMessage[];
-    userId: string | undefined;
-    promptMessageId: string | undefined;
-    pendingMessageId: string | undefined;
-    order: number | undefined;
-    stepOrder: number | undefined;
-    savedMessages: MessageDoc[] | undefined;
-  }> {
-    // If only a promptMessageId is provided, this will be empty.
-    const messages: (ModelMessage | Message)[] = args.messages ?? [];
-    const promptArray: ModelMessage[] = !args.prompt
-      ? []
-      : Array.isArray(args.prompt)
-        ? args.prompt.map((p) => deserializeMessage(p))
-        : [{ role: "user", content: args.prompt }];
-    const userId =
-      argsUserId ??
-      (threadId &&
-        (await ctx.runQuery(this.component.threads.getThread, { threadId }))
-          ?.userId) ??
-      undefined;
-    // If only a messageId is provided, this will add that message to the end.
-    const contextMessages: MessageDoc[] = await this.fetchContextMessages(ctx, {
-      userId,
-      threadId,
-      upToAndIncludingMessageId: args.promptMessageId,
-      messages,
-      contextOptions,
-    });
-    // If it was a promptMessageId, pop it off context messages
-    // and add to the end of messages.
-    const promptMessageIndex = args.promptMessageId
-      ? contextMessages.findIndex((m) => m._id === args.promptMessageId)
-      : -1;
-    const promptMessage: MessageDoc | undefined =
-      promptMessageIndex !== -1
-        ? contextMessages.splice(promptMessageIndex, 1)[0]
-        : undefined;
-
-    let promptMessageId = promptMessage?._id;
-    let order = promptMessage?.order;
-    let stepOrder = promptMessage?.stepOrder;
-    let savedMessages = undefined;
-    let pendingMessageId = undefined;
-    if (threadId && storageOptions?.saveMessages !== "none") {
-      let saved: { messages: MessageDoc[] };
-      if (
-        messages.length + promptArray.length &&
-        // If it was a promptMessageId, we don't want to save it again.
-        (!args.promptMessageId || storageOptions?.saveMessages === "all")
-      ) {
-        const saveAll = storageOptions?.saveMessages === "all";
-        const coreMessages: (ModelMessage | Message)[] = [
-          ...messages,
-          ...promptArray,
-        ];
-        const toSave = saveAll ? coreMessages : coreMessages.slice(-1);
-        const metadata = Array.from({ length: toSave.length }, () => ({}));
-        saved = await this.saveMessages(ctx, {
-          threadId,
-          userId,
-          messages: [...toSave, { role: "assistant", content: [] }],
-          metadata: [...metadata, { status: "pending" }],
-          // TODO: sanity check
-          failPendingSteps: !!args.promptMessageId,
-        });
-        promptMessageId = saved.messages.at(-2)!._id;
-      } else {
-        saved = await this.saveMessages(ctx, {
-          threadId,
-          userId,
-          messages: [{ role: "assistant", content: [] }],
-          metadata: [{ status: "pending" }],
-          failPendingSteps: !!args.promptMessageId,
-        });
-      }
-      pendingMessageId = saved.messages.at(-1)!._id;
-      order = saved.messages.at(-1)!.order;
-      stepOrder = saved.messages.at(-1)!.stepOrder;
-      // Don't return the pending message
-      savedMessages = saved.messages.slice(0, -1);
-    }
-
-    if (promptMessage?.message) {
-      if (!args.prompt) {
-        // If they override the prompt, we skip the existing prompt message.
-        messages.push(promptMessage.message);
-      }
-      // Lazily generate embeddings for the prompt message, if it doesn't have
-      // embeddings yet. This can happen if the message was saved in a mutation
-      // where the LLM is not available.
-      if (!promptMessage.embeddingId && this.options.textEmbeddingModel) {
-        await this._generateAndSaveEmbeddings(ctx, [promptMessage]);
-      }
-    }
-
-    const prePrompt = contextMessages.map((m) => m.message).filter((m) => !!m);
-    let existingResponses: (ModelMessage | Message)[] = [];
-    if (promptMessageIndex !== -1) {
-      // pull any messages that already responded to the prompt off
-      // and add them after the prompt
-      existingResponses = prePrompt.splice(promptMessageIndex);
-    }
-
-    let processedMessages: ModelMessage[] = [
-      ...prePrompt,
-      ...messages,
-      ...promptArray,
-      ...existingResponses,
-    ].map((m) => deserializeMessage(m));
-
-    // Process messages to inline localhost files (if not, file urls pointing to localhost will be sent to LLM providers)
-    if (process.env.CONVEX_CLOUD_URL?.startsWith("http://127.0.0.1")) {
-      processedMessages = await inlineMessagesFiles(processedMessages);
-    }
-
-    return {
-      messages: processedMessages,
-      userId,
-      promptMessageId,
-      pendingMessageId,
-      savedMessages,
-      order,
-      stepOrder,
-    };
   }
 
   /**
