@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server.js";
+import { mutation } from "./triggers.js";
+import { query } from "./_generated/server.js";
 
 export const issue = mutation({
   args: {

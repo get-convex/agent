@@ -2559,7 +2559,6 @@ export declare const components: {
         "internal",
         {
           agentName?: string;
-          format?: "UIMessageChunk" | "TextStreamPart";
           model?: string;
           order: number;
           provider?: string;
@@ -2624,7 +2623,6 @@ export declare const components: {
         },
         Array<{
           agentName?: string;
-          format?: "UIMessageChunk" | "TextStreamPart";
           model?: string;
           order: number;
           provider?: string;

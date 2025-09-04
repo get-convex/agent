@@ -9,11 +9,10 @@ import { api, internal } from "./_generated/api.js";
 import type { Doc } from "./_generated/dataModel.js";
 import {
   action,
-  internalMutation,
-  mutation,
-  type MutationCtx,
   query,
+  type MutationCtx,
 } from "./_generated/server.js";
+import { mutation, internalMutation } from "./triggers.js";
 import { deleteMessage } from "./messages.js";
 import { schema, v } from "./schema.js";
 import { deleteStreamsPageForThreadId } from "./streams.js";
