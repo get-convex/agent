@@ -8,13 +8,8 @@ import {
 } from "../validators.js";
 import { api, internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
-import {
-  internalMutation,
-  mutation,
-  type MutationCtx,
-  query,
-  action,
-} from "./_generated/server.js";
+import { mutation, internalMutation } from "./triggers.js";
+import { action, type MutationCtx, query } from "./_generated/server.js";
 import schema from "./schema.js";
 import { stream } from "convex-helpers/server/stream";
 import { mergedStream } from "convex-helpers/server/stream";

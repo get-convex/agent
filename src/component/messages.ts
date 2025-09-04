@@ -23,13 +23,9 @@ import {
 import { api, internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import {
-  action,
-  internalQuery,
-  mutation,
-  type MutationCtx,
-  query,
-  type QueryCtx,
-} from "./_generated/server.js";
+  mutation
+} from "./triggers.js";
+import { action, internalQuery, type MutationCtx, query, type QueryCtx } from "./_generated/server.js";
 import { schema, v } from "./schema.js";
 import { insertVector, searchVectors } from "./vector/index.js";
 import {
@@ -288,7 +284,7 @@ async function addMessagesHandler(
     if (message.fileIds) {
       await changeRefcount(ctx, [], message.fileIds);
     }
-    // TODO: delete the associated stream data for the order/stepOrder
+        // TODO: delete the associated stream data for the order/stepOrder
     toReturn.push((await ctx.db.get(messageId))!);
   }
   return { messages: toReturn.map(publicMessage) };
