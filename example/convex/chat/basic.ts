@@ -1,11 +1,17 @@
 // See the docs at https://docs.convex.dev/agents/messages
 import { components, internal } from "../_generated/api";
 import { action, internalAction, mutation, query } from "../_generated/server";
+import { triggers } from "@convex-dev/agent";
 import { listMessages, saveMessage } from "@convex-dev/agent";
 import { v } from "convex/values";
 import { agent } from "../agents/simple";
 import { authorizeThreadAccess } from "../threads";
 import { paginationOptsValidator } from "convex/server";
+
+triggers.register('messages', async (ctx, change) => {
+  console.log('[example/chat/basic] trigger fired', change.operation, change.id);
+});
+
 
 /**
  * OPTION 1 (BASIC):
