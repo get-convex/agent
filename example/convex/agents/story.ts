@@ -43,4 +43,5 @@ export const storyAgent = new Agent(components.agent, {
       },
     }),
   },
+  textEmbeddingModel: undefined,
 });

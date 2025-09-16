@@ -75,7 +75,7 @@ function Story({ threadId, reset }: { threadId: string; reset: () => void }) {
   const abortStreamByOrder = useMutation(
     api.chat.streamAbort.abortStreamByOrder,
   );
-  const [prompt, setPrompt] = useState("Tell me a story");
+  const [prompt, setPrompt] = useState("What is the best flavor of ice cream?");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {

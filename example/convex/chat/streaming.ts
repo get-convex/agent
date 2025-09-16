@@ -3,6 +3,7 @@ import { paginationOptsValidator } from "convex/server";
 import {
   createThread,
   listUIMessages,
+  mockModel,
   syncStreams,
   vStreamArgs,
 } from "@convex-dev/agent";
@@ -17,6 +18,8 @@ import {
 import { v } from "convex/values";
 import { authorizeThreadAccess } from "../threads";
 import { storyAgent } from "../agents/story";
+import { tool } from "@ai-sdk/provider-utils";
+import { z } from "zod/v4";
 
 /**
  * OPTION 1:
@@ -62,13 +65,58 @@ export const initiateAsyncStreaming = mutation({
   },
 });
 
+const model = mockModel({
+  initialDelayInMs: 200,
+  chunkDelayInMs: 50,
+  content: [
+    {
+      type: "reasoning",
+      text: 'Okay, the user is asking, "What is the best flavor of ice cream?" I need to figure out how to respond. Let me check the tools provided. The only tool available is the "say" function, which allows me to ask a friend for their favorite ice cream flavor. The function requires a "question" parameter.\n\nSo, since I don\'t have any other functions, I can\'t look up information or calculate the answer. The best approach is to use the "say" function to ask a friend. I should formulate the question to match the friend\'s parameters. The user is asking for the "best" flavor, which is subjective. Therefore, asking a friend\'s favorite makes sense.\n\nI need to structure the function call correctly. The function name is "say" and the argument is the question. The question should be, "What is your favorite flavor of ice cream?" That\'s the parameter required. Let me make sure the JSON is properly formatted with the arguments as a JSON object. Yep, that should work. I\'ll output the tool_call with the function name and the question argument.\n',
+    },
+    {
+      type: "tool-call",
+      toolCallId: "1",
+      toolName: "say",
+      input: '{"question": "What is the best flavor of ice cream?"}',
+    },
+    {
+      type: "tool-result",
+      toolCallId: "1",
+      toolName: "say",
+      result: "Tool result!",
+    },
+    {
+      type: "reasoning",
+      text: "Okay, the user initially asked for the best ice cream flavor. I tried using the 'say' function to ask a friend, but the friend didn't help. Now I need to respond. Since I can't get an answer from the friend, I should tell the user that I can't determine the best flavor because it's subjective. Maybe suggest they try different ones. Keep the response friendly and helpful.\n",
+    },
+    {
+      type: "text",
+      text: 'The "best" ice cream flavor is subjective—it depends on personal taste! Some people love classic vanilla, while others might prefer adventurous options like matcha or salted caramel. Why not try a few and see which one you like most? 🍦',
+      // text: "test",
+    },
+  ],
+});
+
+const sayTool = tool({
+  description: "Ask a friend for their favorite flavor of ice cream",
+
+  inputSchema: z.object({
+    question: z.string().describe("The question to ask the friend"),
+  }),
+  execute: async ({ question }) => {
+    // console.log("asking a friend", question);
+    // await new Promise((resolve) => setTimeout(resolve, 1000));
+    return "I'm sorry I can't help you. Stop asking me questions.";
+  },
+});
+
 export const streamAsync = internalAction({
   args: { promptMessageId: v.string(), threadId: v.string() },
   handler: async (ctx, { promptMessageId, threadId }) => {
     const result = await storyAgent.streamText(
       ctx,
       { threadId },
-      { promptMessageId },
+      { promptMessageId, model, tools: { say: sayTool as any } },
       // more custom delta options (`true` uses defaults)
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
