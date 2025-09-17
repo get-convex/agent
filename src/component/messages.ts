@@ -454,7 +454,7 @@ const cloneMessageArgs = {
 export const cloneMessageBatch = internalMutation({
   args: {
     ...cloneMessageArgs,
-    paginationOpts: v.optional(paginationOptsValidator),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (
     ctx,
@@ -474,37 +474,67 @@ export const cloneMessageBatch = internalMutation({
       upToAndIncludingMessageId: args.upToAndIncludingMessageId,
     });
 
+    const existing =
+      result.page.length === 0
+        ? []
+        : await mergedStream(
+            [true, false].flatMap((tool) =>
+              messageStatuses.map((status) =>
+                stream(ctx.db, schema)
+                  .query("messages")
+                  .withIndex("threadId_status_tool_order_stepOrder", (q) =>
+                    q
+                      .eq("threadId", args.targetThreadId)
+                      .eq("status", status)
+                      .eq("tool", tool)
+                      .gte("order", result.page[0].order)
+                      .lte("order", result.page[result.page.length - 1].order),
+                  ),
+              ),
+            ),
+            ["order", "stepOrder"],
+          ).collect();
+
     await Promise.all(
-      result.page.map(async (m) => {
-        // update file refs
-        if (m.fileIds) {
-          await changeRefcount(ctx, [], m.fileIds);
-        }
-        let embeddingId: VectorTableId | undefined = undefined;
-        if (m.embeddingId) {
-          const vector = await ctx.db.get(m.embeddingId);
-          assert(vector, `Vector ${m.embeddingId} not found`);
-          const dimension = vector.vector.length;
-          validateVectorDimension(dimension);
-          embeddingId = await insertVector(ctx, dimension, {
-            ...pick(vector, ["model", "table", "vector"]),
-            userId: args.copyUserIdForVectorSearch ? vector.userId : undefined,
+      result.page
+        .filter(
+          (m) =>
+            !existing.some(
+              (e) => e.order === m.order && e.stepOrder === m.stepOrder,
+            ),
+        )
+        .map(async (m) => {
+          // update file refs
+          if (m.fileIds) {
+            await changeRefcount(ctx, [], m.fileIds);
+          }
+          let embeddingId: VectorTableId | undefined = undefined;
+          if (m.embeddingId) {
+            const vector = await ctx.db.get(m.embeddingId);
+            assert(vector, `Vector ${m.embeddingId} not found`);
+            const dimension = vector.vector.length;
+            validateVectorDimension(dimension);
+            embeddingId = await insertVector(ctx, dimension, {
+              ...pick(vector, ["model", "table", "vector"]),
+              userId: args.copyUserIdForVectorSearch
+                ? vector.userId
+                : undefined,
+              threadId: args.targetThreadId,
+            });
+          }
+          await ctx.db.insert("messages", {
+            ...omit(m, [
+              "_id",
+              "_creationTime",
+              "threadId",
+              "order",
+              "embeddingId",
+            ]),
+            embeddingId,
             threadId: args.targetThreadId,
+            order: orderOffset + m.order,
           });
-        }
-        await ctx.db.insert("messages", {
-          ...omit(m, [
-            "_id",
-            "_creationTime",
-            "threadId",
-            "order",
-            "embeddingId",
-          ]),
-          embeddingId,
-          threadId: args.targetThreadId,
-          order: orderOffset + m.order,
-        });
-      }),
+        }),
     );
     return {
       numCopied: result.page.length,
