@@ -551,6 +551,37 @@ describe("search.ts", () => {
       expect(result.order).toBeUndefined();
       expect(result.stepOrder).toBeUndefined();
     });
+
+    it("should include core memory system messages when present", async () => {
+      // Reset mocks so we can control specific call order/values
+      vi.mocked(mockCtx.runQuery).mockReset();
+      vi.mocked(mockCtx.runAction).mockReset();
+      // No recent messages or search
+      // First runQuery call in this scenario will be coreMemories.get
+      vi.mocked(mockCtx.runQuery).mockResolvedValueOnce(
+        { persona: "Helpful", human: "Prefers concise answers" } as unknown as ReturnType<RunQueryCtx["runQuery"]>,
+      );
+      vi.mocked(mockCtx.runAction).mockResolvedValue([]);
+
+      const result = await fetchContextWithPrompt(mockCtx, components.agent, {
+        ...baseArgs,
+        userId: "userCore",
+        threadId: "threadCore",
+        prompt: undefined,
+        messages: undefined,
+        promptMessageId: undefined,
+        contextOptions: { recentMessages: 0 },
+      });
+
+      expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].role).toBe("system");
+      expect(String(result.messages[0].content)).toContain(
+        "Core Memory - Agent Persona: Helpful",
+      );
+      expect(String(result.messages[1].content)).toContain(
+        "Core Memory - Human Context: Prefers concise answers",
+      );
+    });
   });
 
   describe("fetchContextWithPrompt - Integration Tests", () => {
@@ -750,6 +781,7 @@ describe("search.ts", () => {
           ...args.inputPrompt,
           ...args.recent,
           ...args.search,
+          ...args.coreMemory,
           ...args.existingResponses,
         ];
       });
@@ -780,6 +812,7 @@ describe("search.ts", () => {
           inputPrompt: expect.arrayContaining([
             expect.objectContaining({ content: "Custom prompt" }),
           ]),
+          coreMemory: expect.any(Array),
           existingResponses: [], // No existing responses in this test
           userId: "userContext",
           threadId,
@@ -807,6 +840,7 @@ describe("search.ts", () => {
       const contextHandler = vi.fn(async (ctx, args) => {
         const allMessages = [
           ...args.search,
+          ...args.coreMemory,
           ...args.recent,
           ...args.inputMessages,
           ...args.inputPrompt,
@@ -854,7 +888,7 @@ describe("search.ts", () => {
           content: "This is a custom system message added by contextHandler",
         };
 
-        return [customSystemMessage, ...args.recent, ...args.inputPrompt];
+        return [customSystemMessage, ...args.coreMemory, ...args.recent, ...args.inputPrompt];
       });
 
       const result = await fetchContextWithPrompt(ctx, components.agent, {
@@ -889,7 +923,7 @@ describe("search.ts", () => {
 
       const contextHandler = vi.fn(async (ctx, args) => {
         // Put search messages first, then recent, then prompt
-        return [...args.search, ...args.recent, ...args.inputPrompt];
+        return [...args.search, ...args.coreMemory, ...args.recent, ...args.inputPrompt];
       });
 
       const result = await fetchContextWithPrompt(ctx, components.agent, {
@@ -914,6 +948,7 @@ describe("search.ts", () => {
         expect.objectContaining({
           search: expect.any(Array),
           recent: expect.any(Array),
+          coreMemory: expect.any(Array),
           inputPrompt: expect.arrayContaining([
             expect.objectContaining({ content: "Tell me about cats" }),
           ]),
@@ -950,6 +985,7 @@ describe("search.ts", () => {
         // Put existing responses first to test they're properly identified
         return [
           ...args.recent,
+          ...args.coreMemory,
           ...args.existingResponses,
           ...args.inputPrompt,
         ];
@@ -972,6 +1008,7 @@ describe("search.ts", () => {
           recent: expect.arrayContaining([
             expect.objectContaining({ content: "Before prompt" }),
           ]),
+          coreMemory: expect.any(Array),
           existingResponses: expect.arrayContaining([
             expect.objectContaining({ content: "Existing response 1" }),
             expect.objectContaining({ content: "Existing response 2" }),

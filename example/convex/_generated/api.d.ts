@@ -137,6 +137,55 @@ export declare const components: {
         boolean
       >;
     };
+    coreMemories: {
+      append: FunctionReference<
+        "mutation",
+        "internal",
+        { field: "persona" | "human"; text: string; userId?: string },
+        null
+      >;
+      create: FunctionReference<
+        "mutation",
+        "internal",
+        { human?: string; persona?: string; userId?: string },
+        string
+      >;
+      get: FunctionReference<"query", "internal", { userId?: string }, any>;
+      insert: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          field: "persona" | "human";
+          index: number;
+          text: string;
+          userId?: string;
+        },
+        null
+      >;
+      prepend: FunctionReference<
+        "mutation",
+        "internal",
+        { field: "persona" | "human"; text: string; userId?: string },
+        null
+      >;
+      remove: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          field: "persona" | "human";
+          index: number;
+          length: number;
+          userId?: string;
+        },
+        null
+      >;
+      update: FunctionReference<
+        "mutation",
+        "internal",
+        { human?: string | null; persona?: string | null; userId?: string },
+        null
+      >;
+    };
     files: {
       addFile: FunctionReference<
         "mutation",
@@ -840,7 +889,7 @@ export declare const components: {
         "mutation",
         "internal",
         { messageIds: Array<string> },
-        Array<string>
+        any
       >;
       deleteByOrder: FunctionReference<
         "mutation",

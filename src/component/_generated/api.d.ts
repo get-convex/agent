@@ -9,6 +9,7 @@
  */
 
 import type * as apiKeys from "../apiKeys.js";
+import type * as coreMemories from "../coreMemories.js";
 import type * as files from "../files.js";
 import type * as messages from "../messages.js";
 import type * as streams from "../streams.js";
@@ -33,6 +34,7 @@ import type {
  */
 declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
+  coreMemories: typeof coreMemories;
   files: typeof files;
   messages: typeof messages;
   streams: typeof streams;
@@ -54,6 +56,55 @@ export type Mounts = {
     >;
     issue: FunctionReference<"mutation", "public", { name?: string }, string>;
     validate: FunctionReference<"query", "public", { apiKey: string }, boolean>;
+  };
+  coreMemories: {
+    append: FunctionReference<
+      "mutation",
+      "public",
+      { field: "persona" | "human"; text: string; userId?: string },
+      null
+    >;
+    create: FunctionReference<
+      "mutation",
+      "public",
+      { human?: string; persona?: string; userId?: string },
+      string
+    >;
+    get: FunctionReference<"query", "public", { userId?: string }, any>;
+    insert: FunctionReference<
+      "mutation",
+      "public",
+      {
+        field: "persona" | "human";
+        index: number;
+        text: string;
+        userId?: string;
+      },
+      null
+    >;
+    prepend: FunctionReference<
+      "mutation",
+      "public",
+      { field: "persona" | "human"; text: string; userId?: string },
+      null
+    >;
+    remove: FunctionReference<
+      "mutation",
+      "public",
+      {
+        field: "persona" | "human";
+        index: number;
+        length: number;
+        userId?: string;
+      },
+      null
+    >;
+    update: FunctionReference<
+      "mutation",
+      "public",
+      { human?: string | null; persona?: string | null; userId?: string },
+      null
+    >;
   };
   files: {
     addFile: FunctionReference<
@@ -666,7 +717,7 @@ export type Mounts = {
       "mutation",
       "public",
       { messageIds: Array<string> },
-      Array<string>
+      any
     >;
     deleteByOrder: FunctionReference<
       "mutation",

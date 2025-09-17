@@ -149,18 +149,28 @@ export function searchVectors(
   return ctx.vectorSearch(tableName, "vector", {
     vector,
     // TODO: to support more tables, add more "OR" clauses for each.
-    filter: (q) =>
-      args.searchAllMessagesForUserId
-        ? q.eq("model_table_userId", [
-            args.model,
-            args.table,
-            args.searchAllMessagesForUserId,
-          ])
-        : q.eq("model_table_threadId", [
-            args.model,
-            args.table,
-            args.threadId!,
-          ]),
+    filter: (q) => {
+      if (args.searchAllMessagesForUserId) {
+        return q.eq("model_table_userId", [
+          args.model,
+          args.table,
+          args.searchAllMessagesForUserId,
+        ]);
+      }
+      if (args.userId && args.table === "memories") {
+        // Memories vector search should be keyed by userId, not threadId
+        return q.eq("model_table_userId", [args.model, args.table, args.userId]);
+      }
+      if (args.threadId) {
+        return q.eq("model_table_threadId", [
+          args.model,
+          args.table,
+          args.threadId,
+        ]);
+      }
+      // Fallback to model+table only – this broadens search but avoids undefined values
+      return q.eq("model_table_threadId", [args.model, args.table, ""]);
+    },
     limit: args.limit,
   });
 }

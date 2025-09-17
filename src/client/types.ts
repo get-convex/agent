@@ -270,6 +270,10 @@ export type ContextHandler = (
      */
     existingResponses: ModelMessage[];
     /**
+     * Core memory messages for the user, injected as system messages.
+     */
+    coreMemory: ModelMessage[];
+    /**
      * The user associated with the generation, if any.
      */
     userId: string | undefined;

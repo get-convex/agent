@@ -137,15 +137,14 @@ export const schema = defineSchema({
     parts: v.array(v.any()),
   }).index("streamId_start_end", ["streamId", "start", "end"]),
 
-  memories: defineTable({
-    threadId: v.optional(v.id("threads")),
+  coreMemories: defineTable({
     userId: v.optional(v.string()),
-    memory: v.string(),
-    embeddingId: v.optional(vVectorId),
+    persona: v.optional(v.string()),
+    human: v.optional(v.string()),
   })
-    .index("threadId", ["threadId"])
     .index("userId", ["userId"])
-    .index("embeddingId", ["embeddingId"]),
+    .index("persona", ["persona"])
+    .index("human", ["human"]),
 
   files: defineTable({
     storageId: v.string(),

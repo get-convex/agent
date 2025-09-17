@@ -4,13 +4,13 @@ import type { LanguageModelV2 } from "@ai-sdk/provider";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
 import { mockModel } from "@convex-dev/agent";
+import { google } from "@ai-sdk/google";
 
 let languageModel: LanguageModelV2;
 let textEmbeddingModel: EmbeddingModel<string>;
 
 if (process.env.OPENAI_API_KEY) {
   languageModel = openai.chat("gpt-4o-mini");
-  textEmbeddingModel = openai.textEmbeddingModel("text-embedding-3-small");
 } else if (process.env.GROQ_API_KEY) {
   languageModel = groq.languageModel(
     "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -22,6 +22,12 @@ if (process.env.OPENAI_API_KEY) {
   console.warn(
     "Run `npx convex env set GROQ_API_KEY=<your-api-key>` or `npx convex env set OPENAI_API_KEY=<your-api-key>` or `npx convex env set OPENROUTER_API_KEY=<your-api-key>` from the example directory to set the API key.",
   );
+}
+
+if (process.env.OPENAI_API_KEY) {
+  textEmbeddingModel = openai.textEmbeddingModel("text-embedding-3-small");
+} else if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  textEmbeddingModel = google.textEmbedding("gemini-embedding-001");
 }
 
 // If you want to use different models for examples, you can change them here.
