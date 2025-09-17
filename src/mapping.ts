@@ -54,7 +54,7 @@ import {
   getProviderName,
   type ModelOrMetadata,
 } from "./shared.js";
-import { pick } from "convex-helpers";
+import { omit, pick } from "convex-helpers";
 export type AIMessageWithoutId = Omit<AIMessage, "id">;
 
 export type SerializeUrlsAndUint8Arrays<T> = T extends URL
@@ -102,9 +102,7 @@ export function fromModelMessage(message: ModelMessage): Message {
   return {
     role: message.role,
     content,
-    ...(message.providerOptions
-      ? { providerOptions: message.providerOptions }
-      : {}),
+    ...pick(message, ["providerOptions"]),
   } as SerializedMessage;
 }
 
@@ -121,9 +119,7 @@ export async function serializeOrThrow(
   return {
     role: message.role,
     content,
-    ...(message.providerOptions
-      ? { providerOptions: message.providerOptions }
-      : {}),
+    ...pick(message, ["providerOptions"]),
   } as SerializedMessage;
 }
 
@@ -613,20 +609,20 @@ export function toModelMessageContent(
           mediaType: getMimeOrMediaType(part)!,
           ...metadata,
         } satisfies FilePart;
-      case "tool-call": {
-        const input = "input" in part ? part.input : part.args;
+      case "tool-call":
         return {
-          type: part.type,
-          input: input ?? null,
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          providerExecuted: part.providerExecuted,
-          ...metadata,
+          input: ("input" in part ? part.input : part.args) ?? null,
+          ...omit(part as Infer<typeof vToolCallPart>, ["args"]),
         } satisfies ToolCallPart;
-      }
-      case "tool-result": {
-        return normalizeToolResult(part, metadata);
-      }
+      case "tool-result":
+        return {
+          input: (part as Infer<typeof vToolResultPart>).args,
+          output: normalizeToolOutput(
+            (part as Infer<typeof vToolResultPart>).result,
+          ),
+          ...omit(part as Infer<typeof vToolResultPart>, ["result", "args"]),
+          ...metadata,
+        } satisfies ToolResultPart & { input: unknown };
       case "reasoning":
         return {
           type: part.type,
@@ -684,16 +680,13 @@ function normalizeToolResult(
     providerOptions?: ProviderOptions;
     providerMetadata?: ProviderMetadata;
   },
-): ToolResultPart & Infer<typeof vToolResultPart> {
+): ToolResultPart & Infer<typeof vToolResultPart> & { input: unknown } {
   return {
-    type: part.type,
-    output:
-      part.output ??
-      normalizeToolOutput("result" in part ? part.result : undefined),
-    toolCallId: part.toolCallId,
-    toolName: part.toolName,
+    input: (part as Infer<typeof vToolResultPart>).args,
+    output: normalizeToolOutput("result" in part ? part.result : undefined),
+    ...omit(part as Infer<typeof vToolResultPart>, ["result", "args"]),
     ...metadata,
-  } satisfies ToolResultPart;
+  } satisfies ToolResultPart & { input: unknown };
 }
 
 /**
@@ -804,16 +797,24 @@ export function toModelMessageDataOrUrl(
   return urlOrString;
 }
 
-export function toUIFilePart(part: ImagePart | FilePart): FileUIPart {
+export function toUIFilePart(
+  part:
+    | ImagePart
+    | FilePart
+    | Infer<typeof vImagePart>
+    | Infer<typeof vFilePart>,
+): FileUIPart {
   const dataOrUrl = part.type === "image" ? part.image : part.data;
   const url =
     dataOrUrl instanceof ArrayBuffer
       ? convertUint8ArrayToBase64(new Uint8Array(dataOrUrl))
       : dataOrUrl.toString();
 
+  const mediaType = getMimeOrMediaType(part);
+
   return {
     type: "file",
-    mediaType: part.mediaType!,
+    mediaType: mediaType!,
     filename: part.type === "file" ? part.filename : undefined,
     url,
     providerMetadata: part.providerOptions,

@@ -381,10 +381,9 @@ function createAssistantUIMessage<
   const allParts: UIMessage<METADATA, DATA_PARTS, TOOLS>["parts"] = [];
 
   for (const message of group) {
-    const coreMessage = message.message && toModelMessage(message.message);
-    if (!coreMessage) continue;
+    if (!message.message) continue;
 
-    const content = coreMessage.content;
+    const content = message.message.content;
     const nonStringContent =
       content && typeof content !== "string" ? content : [];
     const text = extractTextFromMessageDoc(message);
@@ -441,12 +440,11 @@ function createAssistantUIMessage<
             type: "step-start",
           } satisfies StepStartUIPart);
           const toolPart: ToolUIPart<TOOLS> = {
+            ...omit(contentPart, ["args", "type"]),
             type: `tool-${contentPart.toolName as keyof TOOLS & string}`,
-            toolCallId: contentPart.toolCallId,
-            input: contentPart.input as DeepPartial<
+            input: contentPart.args as DeepPartial<
               TOOLS[keyof TOOLS & string]["input"]
             >,
-            providerExecuted: contentPart.providerExecuted,
             ...(message.streaming
               ? { state: "input-streaming" }
               : {
@@ -478,25 +476,22 @@ function createAssistantUIMessage<
               call.output = output;
             }
           } else {
-            console.warn(
-              "Tool result without preceding tool call.. adding anyways",
-              contentPart,
-            );
             if (message.error) {
               allParts.push({
+                input: contentPart.args,
+                ...omit(contentPart, ["args", "type", "output"]),
                 type: `tool-${contentPart.toolName}`,
-                toolCallId: contentPart.toolCallId,
                 state: "output-error",
-                input: undefined,
+                output,
                 errorText: message.error,
                 callProviderMetadata: message.providerMetadata,
               } satisfies ToolUIPart<TOOLS>);
             } else {
               allParts.push({
+                input: contentPart.args,
+                ...omit(contentPart, ["args", "type", "output"]),
                 type: `tool-${contentPart.toolName}`,
-                toolCallId: contentPart.toolCallId,
                 state: "output-available",
-                input: undefined,
                 output,
                 callProviderMetadata: message.providerMetadata,
               } satisfies ToolUIPart<TOOLS>);
