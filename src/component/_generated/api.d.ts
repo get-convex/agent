@@ -232,6 +232,9 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -244,6 +247,7 @@ export type Mounts = {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -265,6 +269,7 @@ export type Mounts = {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -308,6 +313,7 @@ export type Mounts = {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -325,6 +331,7 @@ export type Mounts = {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -494,6 +501,9 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -506,6 +516,7 @@ export type Mounts = {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -527,6 +538,7 @@ export type Mounts = {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -570,6 +582,7 @@ export type Mounts = {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -587,6 +600,7 @@ export type Mounts = {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -777,6 +791,9 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        dynamic?: boolean;
+                        error?: any;
+                        invalid?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -786,6 +803,7 @@ export type Mounts = {
                       }
                     | {
                         args?: any;
+                        dynamic?: boolean;
                         experimental_content?: Array<
                           | { text: string; type: "text" }
                           | { data: string; mimeType?: string; type: "image" }
@@ -807,6 +825,7 @@ export type Mounts = {
                                   }
                               >;
                             };
+                        preliminary?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -841,6 +860,7 @@ export type Mounts = {
           | {
               content: Array<{
                 args?: any;
+                dynamic?: boolean;
                 experimental_content?: Array<
                   | { text: string; type: "text" }
                   | { data: string; mimeType?: string; type: "image" }
@@ -858,6 +878,7 @@ export type Mounts = {
                         | { data: string; mediaType: string; type: "media" }
                       >;
                     };
+                preliminary?: boolean;
                 providerExecuted?: boolean;
                 providerMetadata?: Record<string, Record<string, any>>;
                 providerOptions?: Record<string, Record<string, any>>;
@@ -1049,6 +1070,9 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1061,6 +1085,7 @@ export type Mounts = {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -1082,6 +1107,7 @@ export type Mounts = {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1125,6 +1151,7 @@ export type Mounts = {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -1142,6 +1169,7 @@ export type Mounts = {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -1313,6 +1341,9 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        dynamic?: boolean;
+                        error?: any;
+                        invalid?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -1322,6 +1353,7 @@ export type Mounts = {
                       }
                     | {
                         args?: any;
+                        dynamic?: boolean;
                         experimental_content?: Array<
                           | { text: string; type: "text" }
                           | { data: string; mimeType?: string; type: "image" }
@@ -1343,6 +1375,7 @@ export type Mounts = {
                                   }
                               >;
                             };
+                        preliminary?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -1377,6 +1410,7 @@ export type Mounts = {
           | {
               content: Array<{
                 args?: any;
+                dynamic?: boolean;
                 experimental_content?: Array<
                   | { text: string; type: "text" }
                   | { data: string; mimeType?: string; type: "image" }
@@ -1394,6 +1428,7 @@ export type Mounts = {
                         | { data: string; mediaType: string; type: "media" }
                       >;
                     };
+                preliminary?: boolean;
                 providerExecuted?: boolean;
                 providerMetadata?: Record<string, Record<string, any>>;
                 providerOptions?: Record<string, Record<string, any>>;
@@ -1556,6 +1591,9 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        dynamic?: boolean;
+                        error?: any;
+                        invalid?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -1565,6 +1603,7 @@ export type Mounts = {
                       }
                     | {
                         args?: any;
+                        dynamic?: boolean;
                         experimental_content?: Array<
                           | { text: string; type: "text" }
                           | { data: string; mimeType?: string; type: "image" }
@@ -1586,6 +1625,7 @@ export type Mounts = {
                                   }
                               >;
                             };
+                        preliminary?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -1620,6 +1660,7 @@ export type Mounts = {
           | {
               content: Array<{
                 args?: any;
+                dynamic?: boolean;
                 experimental_content?: Array<
                   | { text: string; type: "text" }
                   | { data: string; mimeType?: string; type: "image" }
@@ -1637,6 +1678,7 @@ export type Mounts = {
                         | { data: string; mediaType: string; type: "media" }
                       >;
                     };
+                preliminary?: boolean;
                 providerExecuted?: boolean;
                 providerMetadata?: Record<string, Record<string, any>>;
                 providerOptions?: Record<string, Record<string, any>>;
@@ -1807,6 +1849,9 @@ export type Mounts = {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1819,6 +1864,7 @@ export type Mounts = {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -1840,6 +1886,7 @@ export type Mounts = {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1883,6 +1930,7 @@ export type Mounts = {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -1900,6 +1948,7 @@ export type Mounts = {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -2000,6 +2049,9 @@ export type Mounts = {
                       }
                     | {
                         args: any;
+                        dynamic?: boolean;
+                        error?: any;
+                        invalid?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -2009,6 +2061,7 @@ export type Mounts = {
                       }
                     | {
                         args?: any;
+                        dynamic?: boolean;
                         experimental_content?: Array<
                           | { text: string; type: "text" }
                           | { data: string; mimeType?: string; type: "image" }
@@ -2030,6 +2083,7 @@ export type Mounts = {
                                   }
                               >;
                             };
+                        preliminary?: boolean;
                         providerExecuted?: boolean;
                         providerMetadata?: Record<string, Record<string, any>>;
                         providerOptions?: Record<string, Record<string, any>>;
@@ -2064,6 +2118,7 @@ export type Mounts = {
           | {
               content: Array<{
                 args?: any;
+                dynamic?: boolean;
                 experimental_content?: Array<
                   | { text: string; type: "text" }
                   | { data: string; mimeType?: string; type: "image" }
@@ -2081,6 +2136,7 @@ export type Mounts = {
                         | { data: string; mediaType: string; type: "media" }
                       >;
                     };
+                preliminary?: boolean;
                 providerExecuted?: boolean;
                 providerMetadata?: Record<string, Record<string, any>>;
                 providerOptions?: Record<string, Record<string, any>>;
