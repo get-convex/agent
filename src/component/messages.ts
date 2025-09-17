@@ -445,8 +445,9 @@ const cloneMessageArgs = {
   copyUserIdForVectorSearch: v.optional(v.boolean()),
   // defaults to false, so tool calls & responses will be copied
   excludeToolMessages: v.optional(v.boolean()),
-  // defaults to false, so tool calls & responses will be copied
+  // defaults to copying all messages, but you could just copy success messages.
   statuses: v.optional(v.array(vMessageStatus)),
+  // stop at this message id
   upToAndIncludingMessageId: v.optional(v.id("messages")),
   // defaults to 0. the messages will be inserted starting at this order.
   insertAtOrder: v.optional(v.number()),
@@ -468,7 +469,7 @@ export const cloneMessageBatch = internalMutation({
     const result = await listMessagesByThreadIdHandler(ctx, {
       threadId: args.sourceThreadId,
       excludeToolMessages: args.excludeToolMessages,
-      order: "asc",
+      order: "desc",
       paginationOpts: args.paginationOpts,
       statuses: args.statuses,
       upToAndIncludingMessageId: args.upToAndIncludingMessageId,
@@ -630,7 +631,7 @@ async function listMessagesByThreadIdHandler(
         .order(order)
         .filterWith(
           // We allow all messages on the same order.
-          async (m) => !last || m.order < last.order || m.order === last.order,
+          async (m) => !last || m.order <= last.order,
         ),
     ),
   );
@@ -640,6 +641,9 @@ async function listMessagesByThreadIdHandler(
       cursor: null,
     },
   );
+  if (messages.page.length === 0) {
+    messages.isDone = true;
+  }
   return messages;
 }
 
