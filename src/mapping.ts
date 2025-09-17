@@ -35,6 +35,8 @@ import {
   type vToolResultPart,
   type SourcePart,
   vToolResultOutput,
+  vAssistantContent,
+  vToolContent,
 } from "./validators.js";
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { RunMutationCtx } from "./client/types.js";
@@ -47,10 +49,12 @@ import {
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
 import {
+  extractText,
   getModelName,
   getProviderName,
   type ModelOrMetadata,
 } from "./shared.js";
+import { pick } from "convex-helpers";
 export type AIMessageWithoutId = Omit<AIMessage, "id">;
 
 export type SerializeUrlsAndUint8Arrays<T> = T extends URL
@@ -179,38 +183,67 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
 ): Promise<{ messages: MessageWithMetadata[] }> {
-  // If there are tool results, there's another message with the tool results
-  // ref: https://github.com/vercel/ai/blob/main/packages/ai/core/generate-text/to-response-messages.ts
-  const assistantFields = {
-    model: model ? getModelName(model) : undefined,
-    provider: model ? getProviderName(model) : undefined,
-    providerMetadata: step.providerMetadata,
-    reasoning: step.reasoningText,
-    reasoningDetails: step.reasoning,
-    usage: serializeUsage(step.usage),
-    warnings: serializeWarnings(step.warnings),
-    finishReason: step.finishReason,
-    // Only store the sources on one message
-    sources: step.toolResults.length === 0 ? step.sources : undefined,
-  } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
-  const toolFields = { sources: step.sources };
-  const messages: MessageWithMetadata[] = await Promise.all(
-    (step.toolResults.length > 0
-      ? step.response.messages.slice(-2)
-      : step.content.length
-        ? step.response.messages.slice(-1)
-        : [{ role: "assistant" as const, content: [] }]
-    ).map(async (msg): Promise<MessageWithMetadata> => {
-      const { message, fileIds } = await serializeMessage(ctx, component, msg);
-      return parse(vMessageWithMetadata, {
-        message,
-        ...(message.role === "tool" ? toolFields : assistantFields),
-        text: step.text,
-        fileIds,
-      });
-    }),
+  const toolResultIndex = step.content.findIndex(
+    (c) =>
+      (c.type === "tool-result" || c.type === "tool-error") &&
+      !c.providerExecuted,
   );
-  // TODO: capture step.files separately?
+  const hasToolResults = toolResultIndex !== -1;
+  const assistantContent = hasToolResults
+    ? step.content.slice(0, toolResultIndex)
+    : step.content;
+  const { content, fileIds } = await serializeLanguageModelV2Content(
+    ctx,
+    component,
+    assistantContent,
+  );
+  const message = {
+    role: "assistant" as const,
+    content: content as Infer<typeof vAssistantContent>,
+    providerOptions: (hasToolResults
+      ? step.response.messages.at(-2)
+      : step.response.messages.at(-1)
+    )?.providerOptions,
+  } satisfies Message;
+  const messages = [
+    parse(vMessageWithMetadata, {
+      model: model ? getModelName(model) : undefined,
+      provider: model ? getProviderName(model) : undefined,
+      providerMetadata: step.providerMetadata,
+      reasoning: step.reasoningText,
+      reasoningDetails: step.reasoning,
+      usage: serializeUsage(step.usage),
+      warnings: serializeWarnings(step.warnings),
+      finishReason: step.finishReason,
+      fileIds,
+      // Only store the sources on one message
+      sources: assistantContent.filter((c) => c.type === "source"),
+      message,
+      text: extractText(message) || step.text,
+    }),
+  ];
+
+  if (hasToolResults) {
+    const toolContent = step.content.slice(toolResultIndex);
+    const { content, fileIds } = await serializeLanguageModelV2Content(
+      ctx,
+      component,
+      toolContent,
+    );
+    const toolMessage = {
+      role: "tool" as const,
+      content: content as Infer<typeof vToolContent>,
+      providerOptions: step.response.messages.at(-1)?.providerOptions,
+    } satisfies Message;
+    messages.push(
+      parse(vMessageWithMetadata, {
+        message: toolMessage,
+        sources: toolContent.filter((c) => c.type === "source"),
+        fileIds,
+        finishReason: step.finishReason,
+      }),
+    );
+  }
   return { messages };
 }
 
@@ -251,6 +284,123 @@ function getMimeOrMediaType(part: { mediaType?: string; mimeType?: string }) {
     return part.mimeType;
   }
   return undefined;
+}
+
+export async function serializeLanguageModelV2Content(
+  ctx: ActionCtx,
+  component: AgentComponent,
+  content: StepResult<ToolSet>["content"],
+): Promise<{ content: SerializedContent; fileIds?: string[] }> {
+  const fileIds: string[] = [];
+  const serialized = await Promise.all(
+    content.map(async (part) => {
+      const metadata: {
+        providerOptions?: ProviderOptions;
+        providerMetadata?: ProviderMetadata;
+      } = {};
+      if ("providerOptions" in part) {
+        metadata.providerOptions = part.providerOptions as ProviderOptions;
+      }
+      if ("providerMetadata" in part) {
+        metadata.providerMetadata = part.providerMetadata as ProviderMetadata;
+      }
+      switch (part.type) {
+        case "text": {
+          return part satisfies Infer<typeof vTextPart>;
+        }
+        case "reasoning":
+          return part satisfies Infer<typeof vReasoningPart>;
+        case "source":
+          return part satisfies Infer<typeof vSourcePart>;
+        case "tool-call": {
+          return {
+            ...pick(part, [
+              "type",
+              "toolCallId",
+              "toolName",
+              "providerExecuted",
+              "dynamic",
+              "error",
+              "invalid",
+            ]),
+            args: part.input,
+            ...metadata,
+          } satisfies Infer<typeof vToolCallPart>;
+        }
+        case "tool-result":
+          return {
+            ...pick(part, [
+              "type",
+              "toolCallId",
+              "toolName",
+              "output",
+              "dynamic",
+              "preliminary",
+              "providerExecuted",
+            ]),
+            args: part.input,
+            ...metadata,
+          } satisfies Infer<typeof vToolResultPart>;
+        case "tool-error":
+          return {
+            ...pick(part, [
+              "toolCallId",
+              "toolName",
+              "dynamic",
+              "providerExecuted",
+            ]),
+            type: "tool-result",
+            args: part.input,
+            output:
+              part.error instanceof Error
+                ? {
+                    type: "error-text",
+                    value: part.error.message,
+                  }
+                : typeof part.error === "object"
+                  ? {
+                      type: "error-json",
+                      value: part.error,
+                    }
+                  : {
+                      type: "error-text",
+                      value: String(part.error),
+                    },
+            ...metadata,
+          } satisfies Infer<typeof vToolResultPart>;
+        case "file": {
+          const uint8Array = part.file.uint8Array;
+          let data: ArrayBuffer | string = uint8Array.buffer.slice(
+            uint8Array.byteOffset,
+            uint8Array.byteOffset + uint8Array.byteLength,
+          ) as ArrayBuffer;
+          const mimeType = getMimeOrMediaType(part.file)!;
+          if (data.byteLength > MAX_FILE_SIZE) {
+            const { file } = await storeFile(
+              ctx,
+              component,
+              new Blob([data], { type: mimeType }),
+            );
+            data = file.url;
+            fileIds.push(file.fileId);
+          }
+          return {
+            type: part.type,
+            data,
+            mimeType,
+            ...metadata,
+          } satisfies Infer<typeof vFilePart>;
+        }
+
+        default:
+          return part satisfies Infer<typeof vContent>;
+      }
+    }),
+  );
+  return {
+    content: serialized as SerializedContent,
+    fileIds: fileIds.length > 0 ? fileIds : undefined,
+  };
 }
 
 export async function serializeContent(
