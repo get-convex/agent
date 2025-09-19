@@ -1,7 +1,8 @@
-import type {
-  FlexibleSchema,
-  IdGenerator,
-  InferSchema,
+import {
+  getErrorMessage,
+  type FlexibleSchema,
+  type IdGenerator,
+  type InferSchema,
 } from "@ai-sdk/provider-utils";
 import type {
   CallSettings,
@@ -537,7 +538,7 @@ export class Agent<
       };
       return Object.assign(result, metadata);
     } catch (error) {
-      await call.fail(errorToString(error));
+      await call.fail(getErrorMessage(error));
       throw error;
     }
   }
@@ -642,8 +643,8 @@ export class Agent<
       ),
       onError: async (error) => {
         console.error("onError", error);
-        await call.fail(errorToString(error.error));
-        await streamer?.fail(errorToString(error.error));
+        await call.fail(getErrorMessage(error.error));
+        await streamer?.fail(getErrorMessage(error.error));
         return streamTextArgs.onError?.(error);
       },
       prepareStep: async (options) => {
@@ -743,7 +744,7 @@ export class Agent<
       };
       return Object.assign(result, metadata);
     } catch (error) {
-      await fail(errorToString(error));
+      await fail(getErrorMessage(error));
       throw error;
     }
   }
@@ -797,7 +798,7 @@ export class Agent<
         console.error(" streamObject onError", error);
         // TODO: content that we have so far
         // content: stream.fullStream.
-        await fail(errorToString(error.error));
+        await fail(getErrorMessage(error.error));
         return args.onError?.(error);
       },
       onFinish: async (result) => {
@@ -1667,11 +1668,4 @@ async function willContinue(
     );
   }
   return !!stopWhen && !(await stopWhen({ steps }));
-}
-
-function errorToString(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }

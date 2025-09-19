@@ -24,6 +24,7 @@ import type {
   RunQueryCtx,
   SyncStreamsReturnValue,
 } from "./types.js";
+import { getErrorMessage } from "@ai-sdk/provider-utils";
 
 export const vStreamMessagesReturnValue = v.object({
   ...vPaginationResult(vMessageDoc).fields,
@@ -312,9 +313,7 @@ export class DeltaStreamer<T> {
         return;
       }
     } catch (e) {
-      await this.config.onAsyncAbort(
-        e instanceof Error ? e.message : "unknown error",
-      );
+      await this.config.onAsyncAbort(getErrorMessage(e));
       this.abortController.abort();
       throw e;
     }
