@@ -47,6 +47,7 @@ import {
   type ProviderOptions,
   type ReasoningPart,
 } from "@ai-sdk/provider-utils";
+import { type LanguageModelV2ToolResultOutput } from "@ai-sdk/provider";
 import { parse, validate } from "convex-helpers/validators";
 import {
   extractText,
@@ -296,9 +297,8 @@ export async function serializeStepContent(
       } = {};
       if ("providerOptions" in part) {
         metadata.providerOptions = part.providerOptions as ProviderOptions;
-      }
-      if ("providerMetadata" in part) {
-        metadata.providerMetadata = part.providerMetadata as ProviderMetadata;
+      } else if ("providerMetadata" in part) {
+        metadata.providerMetadata = part.providerMetadata;
       }
       switch (part.type) {
         case "text": {
@@ -323,20 +323,27 @@ export async function serializeStepContent(
             ...metadata,
           } satisfies Infer<typeof vToolCallPart>;
         }
-        case "tool-result":
+        case "tool-result": {
+          const rawOutput = part.output;
+          const output: LanguageModelV2ToolResultOutput =
+            typeof rawOutput === "string"
+              ? { type: "text", value: rawOutput }
+              : { type: "json", value: part.output ?? null };
+
           return {
             ...pick(part, [
               "type",
               "toolCallId",
               "toolName",
-              "output",
               "dynamic",
               "preliminary",
               "providerExecuted",
             ]),
             args: part.input,
+            output,
             ...metadata,
           } satisfies Infer<typeof vToolResultPart>;
+        }
         case "tool-error":
           return {
             ...pick(part, [
@@ -353,14 +360,14 @@ export async function serializeStepContent(
                     type: "error-text",
                     value: part.error.message,
                   }
-                : typeof part.error === "object"
+                : typeof part.error === "string"
                   ? {
-                      type: "error-json",
+                      type: "error-text",
                       value: part.error,
                     }
                   : {
-                      type: "error-text",
-                      value: String(part.error),
+                      type: "error-json",
+                      value: part.error ?? null,
                     },
             ...metadata,
           } satisfies Infer<typeof vToolResultPart>;
@@ -820,22 +827,3 @@ export function toUIFilePart(
     providerMetadata: part.providerOptions,
   };
 }
-
-// Currently unused
-// export function toModelMessages(args: {
-//   messages?: ModelMessage[] | AIMessageWithoutId[];
-// }): ModelMessage[] {
-//   const messages: ModelMessage[] = [];
-//   if (args.messages) {
-//     if (
-//       args.messages.every(
-//         (m) => typeof m === "object" && m !== null && "parts" in m,
-//       )
-//     ) {
-//       messages.push(...convertToModelMessages(args.messages));
-//     } else {
-//       messages.push(...modelMessageSchema.array().parse(args.messages));
-//     }
-//   }
-//   return messages;
-// }
