@@ -457,9 +457,9 @@ function createAssistantUIMessage<
         }
         case "tool-result": {
           const output =
-            contentPart.output?.type === "json"
+            typeof contentPart.output?.type === "string"
               ? contentPart.output.value
-              : contentPart.output;
+              : (contentPart.output ?? contentPart.result);
           const call = allParts.find(
             (part) =>
               part.type === `tool-${contentPart.toolName}` &&
