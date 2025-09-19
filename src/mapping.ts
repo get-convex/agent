@@ -188,7 +188,7 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   const assistantContent = hasToolResults
     ? step.content.slice(0, toolResultIndex)
     : step.content;
-  const { content, fileIds } = await serializeLanguageModelV2Content(
+  const { content, fileIds } = await serializeStepContent(
     ctx,
     component,
     assistantContent,
@@ -221,7 +221,7 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
 
   if (hasToolResults) {
     const toolContent = step.content.slice(toolResultIndex);
-    const { content, fileIds } = await serializeLanguageModelV2Content(
+    const { content, fileIds } = await serializeStepContent(
       ctx,
       component,
       toolContent,
@@ -282,7 +282,7 @@ function getMimeOrMediaType(part: { mediaType?: string; mimeType?: string }) {
   return undefined;
 }
 
-export async function serializeLanguageModelV2Content(
+export async function serializeStepContent(
   ctx: ActionCtx,
   component: AgentComponent,
   content: StepResult<ToolSet>["content"],
