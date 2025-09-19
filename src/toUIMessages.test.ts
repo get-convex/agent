@@ -132,10 +132,7 @@ describe("toUIMessages", () => {
       type: "tool-myTool",
       toolCallId: "call1",
       state: "output-available",
-      output: {
-        type: "text",
-        value: "42",
-      },
+      output: "42",
     });
   });
 
@@ -252,7 +249,7 @@ describe("toUIMessages", () => {
               type: "tool-result",
               toolName: "myTool",
               toolCallId: "call1",
-              result: {
+              output: {
                 type: "json",
                 value: { data: "wrapped result", success: true },
               },
@@ -648,10 +645,7 @@ describe("toUIMessages", () => {
       toolCallId: "call1",
       state: "output-available",
       input: { operation: "add", a: 40, b: 2 },
-      output: {
-        type: "text",
-        value: "42",
-      },
+      output: "42",
     });
 
     // Should also have text part

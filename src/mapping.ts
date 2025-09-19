@@ -35,6 +35,8 @@ import {
   type vToolResultPart,
   type SourcePart,
   vToolResultOutput,
+  vAssistantContent,
+  vToolContent,
 } from "./validators.js";
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { RunMutationCtx } from "./client/types.js";
@@ -45,12 +47,15 @@ import {
   type ProviderOptions,
   type ReasoningPart,
 } from "@ai-sdk/provider-utils";
+import { type LanguageModelV2ToolResultOutput } from "@ai-sdk/provider";
 import { parse, validate } from "convex-helpers/validators";
 import {
+  extractText,
   getModelName,
   getProviderName,
   type ModelOrMetadata,
 } from "./shared.js";
+import { omit, pick } from "convex-helpers";
 export type AIMessageWithoutId = Omit<AIMessage, "id">;
 
 export type SerializeUrlsAndUint8Arrays<T> = T extends URL
@@ -98,9 +103,7 @@ export function fromModelMessage(message: ModelMessage): Message {
   return {
     role: message.role,
     content,
-    ...(message.providerOptions
-      ? { providerOptions: message.providerOptions }
-      : {}),
+    ...pick(message, ["providerOptions"]),
   } as SerializedMessage;
 }
 
@@ -117,9 +120,7 @@ export async function serializeOrThrow(
   return {
     role: message.role,
     content,
-    ...(message.providerOptions
-      ? { providerOptions: message.providerOptions }
-      : {}),
+    ...pick(message, ["providerOptions"]),
   } as SerializedMessage;
 }
 
@@ -179,38 +180,67 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
 ): Promise<{ messages: MessageWithMetadata[] }> {
-  // If there are tool results, there's another message with the tool results
-  // ref: https://github.com/vercel/ai/blob/main/packages/ai/core/generate-text/to-response-messages.ts
-  const assistantFields = {
-    model: model ? getModelName(model) : undefined,
-    provider: model ? getProviderName(model) : undefined,
-    providerMetadata: step.providerMetadata,
-    reasoning: step.reasoningText,
-    reasoningDetails: step.reasoning,
-    usage: serializeUsage(step.usage),
-    warnings: serializeWarnings(step.warnings),
-    finishReason: step.finishReason,
-    // Only store the sources on one message
-    sources: step.toolResults.length === 0 ? step.sources : undefined,
-  } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
-  const toolFields = { sources: step.sources };
-  const messages: MessageWithMetadata[] = await Promise.all(
-    (step.toolResults.length > 0
-      ? step.response.messages.slice(-2)
-      : step.content.length
-        ? step.response.messages.slice(-1)
-        : [{ role: "assistant" as const, content: [] }]
-    ).map(async (msg): Promise<MessageWithMetadata> => {
-      const { message, fileIds } = await serializeMessage(ctx, component, msg);
-      return parse(vMessageWithMetadata, {
-        message,
-        ...(message.role === "tool" ? toolFields : assistantFields),
-        text: step.text,
-        fileIds,
-      });
-    }),
+  const toolResultIndex = step.content.findIndex(
+    (c) =>
+      (c.type === "tool-result" || c.type === "tool-error") &&
+      !c.providerExecuted,
   );
-  // TODO: capture step.files separately?
+  const hasToolResults = toolResultIndex !== -1;
+  const assistantContent = hasToolResults
+    ? step.content.slice(0, toolResultIndex)
+    : step.content;
+  const { content, fileIds } = await serializeStepContent(
+    ctx,
+    component,
+    assistantContent,
+  );
+  const message = {
+    role: "assistant" as const,
+    content: content as Infer<typeof vAssistantContent>,
+    providerOptions: (hasToolResults
+      ? step.response.messages.at(-2)
+      : step.response.messages.at(-1)
+    )?.providerOptions,
+  } satisfies Message;
+  const messages = [
+    parse(vMessageWithMetadata, {
+      model: model ? getModelName(model) : undefined,
+      provider: model ? getProviderName(model) : undefined,
+      providerMetadata: step.providerMetadata,
+      reasoning: step.reasoningText,
+      reasoningDetails: step.reasoning,
+      usage: serializeUsage(step.usage),
+      warnings: serializeWarnings(step.warnings),
+      finishReason: step.finishReason,
+      fileIds,
+      // Only store the sources on one message
+      sources: assistantContent.filter((c) => c.type === "source"),
+      message,
+      text: extractText(message) || step.text,
+    }),
+  ];
+
+  if (hasToolResults) {
+    const toolContent = step.content.slice(toolResultIndex);
+    const { content, fileIds } = await serializeStepContent(
+      ctx,
+      component,
+      toolContent,
+    );
+    const toolMessage = {
+      role: "tool" as const,
+      content: content as Infer<typeof vToolContent>,
+      providerOptions: step.response.messages.at(-1)?.providerOptions,
+    } satisfies Message;
+    messages.push(
+      parse(vMessageWithMetadata, {
+        message: toolMessage,
+        sources: toolContent.filter((c) => c.type === "source"),
+        fileIds,
+        finishReason: step.finishReason,
+      }),
+    );
+  }
   return { messages };
 }
 
@@ -251,6 +281,129 @@ function getMimeOrMediaType(part: { mediaType?: string; mimeType?: string }) {
     return part.mimeType;
   }
   return undefined;
+}
+
+export async function serializeStepContent(
+  ctx: ActionCtx,
+  component: AgentComponent,
+  content: StepResult<ToolSet>["content"],
+): Promise<{ content: SerializedContent; fileIds?: string[] }> {
+  const fileIds: string[] = [];
+  const serialized = await Promise.all(
+    content.map(async (part) => {
+      const metadata: {
+        providerOptions?: ProviderOptions;
+        providerMetadata?: ProviderMetadata;
+      } = {};
+      if ("providerOptions" in part) {
+        metadata.providerOptions = part.providerOptions as ProviderOptions;
+      } else if ("providerMetadata" in part) {
+        metadata.providerMetadata = part.providerMetadata;
+      }
+      switch (part.type) {
+        case "text": {
+          return part satisfies Infer<typeof vTextPart>;
+        }
+        case "reasoning":
+          return part satisfies Infer<typeof vReasoningPart>;
+        case "source":
+          return part satisfies Infer<typeof vSourcePart>;
+        case "tool-call": {
+          return {
+            ...pick(part, [
+              "type",
+              "toolCallId",
+              "toolName",
+              "providerExecuted",
+              "dynamic",
+              "error",
+              "invalid",
+            ]),
+            args: part.input,
+            ...metadata,
+          } satisfies Infer<typeof vToolCallPart>;
+        }
+        case "tool-result": {
+          const rawOutput = part.output;
+          const output: LanguageModelV2ToolResultOutput =
+            typeof rawOutput === "string"
+              ? { type: "text", value: rawOutput }
+              : { type: "json", value: part.output ?? null };
+
+          return {
+            ...pick(part, [
+              "type",
+              "toolCallId",
+              "toolName",
+              "dynamic",
+              "preliminary",
+              "providerExecuted",
+            ]),
+            args: part.input,
+            output,
+            ...metadata,
+          } satisfies Infer<typeof vToolResultPart>;
+        }
+        case "tool-error":
+          return {
+            ...pick(part, [
+              "toolCallId",
+              "toolName",
+              "dynamic",
+              "providerExecuted",
+            ]),
+            type: "tool-result",
+            args: part.input,
+            output:
+              part.error instanceof Error
+                ? {
+                    type: "error-text",
+                    value: part.error.message,
+                  }
+                : typeof part.error === "string"
+                  ? {
+                      type: "error-text",
+                      value: part.error,
+                    }
+                  : {
+                      type: "error-json",
+                      value: part.error ?? null,
+                    },
+            ...metadata,
+          } satisfies Infer<typeof vToolResultPart>;
+        case "file": {
+          const uint8Array = part.file.uint8Array;
+          let data: ArrayBuffer | string = uint8Array.buffer.slice(
+            uint8Array.byteOffset,
+            uint8Array.byteOffset + uint8Array.byteLength,
+          ) as ArrayBuffer;
+          const mimeType = getMimeOrMediaType(part.file)!;
+          if (data.byteLength > MAX_FILE_SIZE) {
+            const { file } = await storeFile(
+              ctx,
+              component,
+              new Blob([data], { type: mimeType }),
+            );
+            data = file.url;
+            fileIds.push(file.fileId);
+          }
+          return {
+            type: part.type,
+            data,
+            mimeType,
+            ...metadata,
+          } satisfies Infer<typeof vFilePart>;
+        }
+
+        default:
+          return part satisfies Infer<typeof vContent>;
+      }
+    }),
+  );
+  return {
+    content: serialized as SerializedContent,
+    fileIds: fileIds.length > 0 ? fileIds : undefined,
+  };
 }
 
 export async function serializeContent(
@@ -463,20 +616,20 @@ export function toModelMessageContent(
           mediaType: getMimeOrMediaType(part)!,
           ...metadata,
         } satisfies FilePart;
-      case "tool-call": {
-        const input = "input" in part ? part.input : part.args;
+      case "tool-call":
         return {
-          type: part.type,
-          input: input ?? null,
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          providerExecuted: part.providerExecuted,
-          ...metadata,
+          input: ("input" in part ? part.input : part.args) ?? null,
+          ...omit(part as Infer<typeof vToolCallPart>, ["args"]),
         } satisfies ToolCallPart;
-      }
-      case "tool-result": {
-        return normalizeToolResult(part, metadata);
-      }
+      case "tool-result":
+        return {
+          input: (part as Infer<typeof vToolResultPart>).args,
+          output: normalizeToolOutput(
+            (part as Infer<typeof vToolResultPart>).result,
+          ),
+          ...omit(part as Infer<typeof vToolResultPart>, ["result", "args"]),
+          ...metadata,
+        } satisfies ToolResultPart & { input: unknown };
       case "reasoning":
         return {
           type: part.type,
@@ -534,16 +687,13 @@ function normalizeToolResult(
     providerOptions?: ProviderOptions;
     providerMetadata?: ProviderMetadata;
   },
-): ToolResultPart & Infer<typeof vToolResultPart> {
+): ToolResultPart & Infer<typeof vToolResultPart> & { input: unknown } {
   return {
-    type: part.type,
-    output:
-      part.output ??
-      normalizeToolOutput("result" in part ? part.result : undefined),
-    toolCallId: part.toolCallId,
-    toolName: part.toolName,
+    input: (part as Infer<typeof vToolResultPart>).args,
+    output: normalizeToolOutput("result" in part ? part.result : undefined),
+    ...omit(part as Infer<typeof vToolResultPart>, ["result", "args"]),
     ...metadata,
-  } satisfies ToolResultPart;
+  } satisfies ToolResultPart & { input: unknown };
 }
 
 /**
@@ -654,37 +804,26 @@ export function toModelMessageDataOrUrl(
   return urlOrString;
 }
 
-export function toUIFilePart(part: ImagePart | FilePart): FileUIPart {
+export function toUIFilePart(
+  part:
+    | ImagePart
+    | FilePart
+    | Infer<typeof vImagePart>
+    | Infer<typeof vFilePart>,
+): FileUIPart {
   const dataOrUrl = part.type === "image" ? part.image : part.data;
   const url =
     dataOrUrl instanceof ArrayBuffer
       ? convertUint8ArrayToBase64(new Uint8Array(dataOrUrl))
       : dataOrUrl.toString();
 
+  const mediaType = getMimeOrMediaType(part);
+
   return {
     type: "file",
-    mediaType: part.mediaType!,
+    mediaType: mediaType!,
     filename: part.type === "file" ? part.filename : undefined,
     url,
     providerMetadata: part.providerOptions,
   };
 }
-
-// Currently unused
-// export function toModelMessages(args: {
-//   messages?: ModelMessage[] | AIMessageWithoutId[];
-// }): ModelMessage[] {
-//   const messages: ModelMessage[] = [];
-//   if (args.messages) {
-//     if (
-//       args.messages.every(
-//         (m) => typeof m === "object" && m !== null && "parts" in m,
-//       )
-//     ) {
-//       messages.push(...convertToModelMessages(args.messages));
-//     } else {
-//       messages.push(...modelMessageSchema.array().parse(args.messages));
-//     }
-//   }
-//   return messages;
-// }

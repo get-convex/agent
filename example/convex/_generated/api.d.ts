@@ -347,6 +347,9 @@ export declare const components: {
                           }
                         | {
                             args: any;
+                            dynamic?: boolean;
+                            error?: any;
+                            invalid?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -362,6 +365,7 @@ export declare const components: {
                           }
                         | {
                             args?: any;
+                            dynamic?: boolean;
                             experimental_content?: Array<
                               | { text: string; type: "text" }
                               | {
@@ -387,6 +391,7 @@ export declare const components: {
                                       }
                                   >;
                                 };
+                            preliminary?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -439,6 +444,7 @@ export declare const components: {
               | {
                   content: Array<{
                     args?: any;
+                    dynamic?: boolean;
                     experimental_content?: Array<
                       | { text: string; type: "text" }
                       | { data: string; mimeType?: string; type: "image" }
@@ -456,6 +462,7 @@ export declare const components: {
                             | { data: string; mediaType: string; type: "media" }
                           >;
                         };
+                    preliminary?: boolean;
                     providerExecuted?: boolean;
                     providerMetadata?: Record<string, Record<string, any>>;
                     providerOptions?: Record<string, Record<string, any>>;
@@ -650,6 +657,9 @@ export declare const components: {
                           }
                         | {
                             args: any;
+                            dynamic?: boolean;
+                            error?: any;
+                            invalid?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -665,6 +675,7 @@ export declare const components: {
                           }
                         | {
                             args?: any;
+                            dynamic?: boolean;
                             experimental_content?: Array<
                               | { text: string; type: "text" }
                               | {
@@ -690,6 +701,7 @@ export declare const components: {
                                       }
                                   >;
                                 };
+                            preliminary?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -742,6 +754,7 @@ export declare const components: {
               | {
                   content: Array<{
                     args?: any;
+                    dynamic?: boolean;
                     experimental_content?: Array<
                       | { text: string; type: "text" }
                       | { data: string; mimeType?: string; type: "image" }
@@ -759,6 +772,7 @@ export declare const components: {
                             | { data: string; mediaType: string; type: "media" }
                           >;
                         };
+                    preliminary?: boolean;
                     providerExecuted?: boolean;
                     providerMetadata?: Record<string, Record<string, any>>;
                     providerOptions?: Record<string, Record<string, any>>;
@@ -971,6 +985,9 @@ export declare const components: {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -983,6 +1000,7 @@ export declare const components: {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -1004,6 +1022,7 @@ export declare const components: {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1047,6 +1066,7 @@ export declare const components: {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -1064,6 +1084,7 @@ export declare const components: {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -1276,6 +1297,9 @@ export declare const components: {
                           }
                         | {
                             args: any;
+                            dynamic?: boolean;
+                            error?: any;
+                            invalid?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -1291,6 +1315,7 @@ export declare const components: {
                           }
                         | {
                             args?: any;
+                            dynamic?: boolean;
                             experimental_content?: Array<
                               | { text: string; type: "text" }
                               | {
@@ -1316,6 +1341,7 @@ export declare const components: {
                                       }
                                   >;
                                 };
+                            preliminary?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -1368,6 +1394,7 @@ export declare const components: {
               | {
                   content: Array<{
                     args?: any;
+                    dynamic?: boolean;
                     experimental_content?: Array<
                       | { text: string; type: "text" }
                       | { data: string; mimeType?: string; type: "image" }
@@ -1385,6 +1412,7 @@ export declare const components: {
                             | { data: string; mediaType: string; type: "media" }
                           >;
                         };
+                    preliminary?: boolean;
                     providerExecuted?: boolean;
                     providerMetadata?: Record<string, Record<string, any>>;
                     providerOptions?: Record<string, Record<string, any>>;
@@ -1578,6 +1606,9 @@ export declare const components: {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1590,6 +1621,7 @@ export declare const components: {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -1611,6 +1643,7 @@ export declare const components: {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1654,6 +1687,7 @@ export declare const components: {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -1671,6 +1705,7 @@ export declare const components: {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -1851,6 +1886,9 @@ export declare const components: {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1863,6 +1901,7 @@ export declare const components: {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -1884,6 +1923,7 @@ export declare const components: {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1927,6 +1967,7 @@ export declare const components: {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -1944,6 +1985,7 @@ export declare const components: {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;
@@ -2135,6 +2177,9 @@ export declare const components: {
                           }
                         | {
                             args: any;
+                            dynamic?: boolean;
+                            error?: any;
+                            invalid?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -2150,6 +2195,7 @@ export declare const components: {
                           }
                         | {
                             args?: any;
+                            dynamic?: boolean;
                             experimental_content?: Array<
                               | { text: string; type: "text" }
                               | {
@@ -2175,6 +2221,7 @@ export declare const components: {
                                       }
                                   >;
                                 };
+                            preliminary?: boolean;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -2227,6 +2274,7 @@ export declare const components: {
               | {
                   content: Array<{
                     args?: any;
+                    dynamic?: boolean;
                     experimental_content?: Array<
                       | { text: string; type: "text" }
                       | { data: string; mimeType?: string; type: "image" }
@@ -2244,6 +2292,7 @@ export declare const components: {
                             | { data: string; mediaType: string; type: "media" }
                           >;
                         };
+                    preliminary?: boolean;
                     providerExecuted?: boolean;
                     providerMetadata?: Record<string, Record<string, any>>;
                     providerOptions?: Record<string, Record<string, any>>;
@@ -2362,6 +2411,9 @@ export declare const components: {
                         }
                       | {
                           args: any;
+                          dynamic?: boolean;
+                          error?: any;
+                          invalid?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -2374,6 +2426,7 @@ export declare const components: {
                         }
                       | {
                           args?: any;
+                          dynamic?: boolean;
                           experimental_content?: Array<
                             | { text: string; type: "text" }
                             | { data: string; mimeType?: string; type: "image" }
@@ -2395,6 +2448,7 @@ export declare const components: {
                                     }
                                 >;
                               };
+                          preliminary?: boolean;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -2438,6 +2492,7 @@ export declare const components: {
             | {
                 content: Array<{
                   args?: any;
+                  dynamic?: boolean;
                   experimental_content?: Array<
                     | { text: string; type: "text" }
                     | { data: string; mimeType?: string; type: "image" }
@@ -2455,6 +2510,7 @@ export declare const components: {
                           | { data: string; mediaType: string; type: "media" }
                         >;
                       };
+                  preliminary?: boolean;
                   providerExecuted?: boolean;
                   providerMetadata?: Record<string, Record<string, any>>;
                   providerOptions?: Record<string, Record<string, any>>;

@@ -114,8 +114,11 @@ export const vToolCallPart = v.object({
   type: v.literal("tool-call"),
   toolCallId: v.string(),
   toolName: v.string(),
-  args: v.any(),
+  args: v.any(), // referred to as input in ai v5
   providerExecuted: v.optional(v.boolean()),
+  dynamic: v.optional(v.boolean()),
+  invalid: v.optional(v.boolean()),
+  error: v.optional(v.any()),
   providerOptions,
   providerMetadata,
 });
@@ -159,14 +162,18 @@ export const vToolResultPart = v.object({
 
   providerOptions,
   providerMetadata,
+  // In a modelMessage this is redundant with the call & stripped
+  // Referred to as input in ai v5
+  args: v.optional(v.any()),
   providerExecuted: v.optional(v.boolean()),
+  dynamic: v.optional(v.boolean()),
+  preliminary: v.optional(v.boolean()),
 
   // Deprecated in ai v5
   result: v.optional(v.any()), // either this or output will be present
   isError: v.optional(v.boolean()),
   // This is only here b/c steps include it in toolResults
   // Normal ModelMessage doesn't have this
-  args: v.optional(v.any()),
   experimental_content: v.optional(vToolResultContent),
 });
 export const vToolContent = v.array(vToolResultPart);
