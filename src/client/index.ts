@@ -192,6 +192,7 @@ export type {
   Thread,
   UsageHandler,
 };
+export { triggers } from "../component/triggers.js";
 
 export class Agent<
   /**
@@ -1675,3 +1676,4 @@ function errorToString(error: unknown): string {
   }
   return String(error);
 }
+
