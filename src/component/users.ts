@@ -6,14 +6,8 @@ import type { ObjectType } from "convex/values";
 import { vPaginationResult } from "../validators.js";
 import { internal } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
-import {
-  action,
-  internalMutation,
-  internalQuery,
-  mutation,
-  type MutationCtx,
-  query,
-} from "./_generated/server.js";
+import { mutation, internalMutation } from "./triggers.js";
+import { action, internalQuery, type MutationCtx, query } from "./_generated/server.js";
 import { deleteMessage } from "./messages.js";
 import { deleteStreamsPageForThreadId } from "./streams.js";
 import { schema, v } from "./schema.js";

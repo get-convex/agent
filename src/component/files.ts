@@ -1,6 +1,7 @@
 import { paginator } from "convex-helpers/server/pagination";
 import type { Id } from "./_generated/dataModel.js";
-import { mutation, type MutationCtx, query } from "./_generated/server.js";
+import { mutation } from "./triggers.js";
+import { query, type MutationCtx } from "./_generated/server.js";
 import { schema, v } from "./schema.js";
 import { paginationOptsValidator } from "convex/server";
 import type { Infer } from "convex/values";
