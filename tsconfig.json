@@ -14,7 +14,6 @@
     "module": "Node16",
     "moduleResolution": "NodeNext",
 
-    "assumeChangesOnlyAffectDirectDependencies": false,
     "composite": true,
     "rootDir": "./src",
     "isolatedModules": true,

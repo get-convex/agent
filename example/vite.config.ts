@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./ui"),
+      "@convex-dev/agent": path.resolve(__dirname, "../src"),
     },
   },
 });
