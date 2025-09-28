@@ -12,6 +12,7 @@ import {
 import {
   serializeNewMessagesInStep,
   serializeObjectResult,
+  serializeUsage,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
 import type {
@@ -120,6 +121,9 @@ export async function startGeneration<
   ) => Promise<void>;
   fail: (reason: string) => Promise<void>;
   getSavedMessages: () => MessageDoc[];
+  saveStepUsage: <TOOLS extends ToolSet>(
+    step: StepResult<TOOLS>,
+  ) => Promise<void>;
 }> {
   const userId =
     opts.userId ??
@@ -308,6 +312,27 @@ export async function startGeneration<
           usage: output.usage,
           providerMetadata: output.providerMetadata,
         });
+      }
+    },
+    saveStepUsage: async <TOOLS extends ToolSet>(step: StepResult<TOOLS>) => {
+      if (step.usage && threadId && userId) {
+        // Get the most recently saved message
+        const lastMessage = savedMessages[savedMessages.length - 1];
+        if (lastMessage && component.pricePerRequest.addUsage) {
+          const serializedUsage = serializeUsage(step.usage);
+
+          const model = getModelName(activeModel);
+          const provider = getProviderName(activeModel);
+
+          await ctx.runMutation(component.pricePerRequest.addUsage, {
+            messageId: lastMessage._id,
+            userId,
+            threadId,
+            usage: serializedUsage,
+            model,
+            provider,
+          });
+        }
       }
     },
   };

@@ -452,6 +452,9 @@ export class Agent<
     ) => Promise<void>;
     fail: (reason: string) => Promise<void>;
     getSavedMessages: () => MessageDoc[];
+    saveStepUsage: <TOOLS extends ToolSet>(
+      step: StepResult<TOOLS>,
+    ) => Promise<void>;
   }> {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
     return startGeneration<T, Tools, CustomCtx>(
@@ -526,6 +529,7 @@ export class Agent<
         onStepFinish: async (step) => {
           steps.push(step);
           await call.save({ step }, await willContinue(steps, args.stopWhen));
+          await call.saveStepUsage(step);
           return generateTextArgs.onStepFinish?.(step);
         },
       })) as GenerateTextResult<Tools, OUTPUT>;
@@ -664,6 +668,7 @@ export class Agent<
         steps.push(step);
         const createPendingMessage = await willContinue(steps, args.stopWhen);
         await call.save({ step }, createPendingMessage);
+        await call.saveStepUsage(step);
         return args.onStepFinish?.(step);
       },
     }) as StreamTextResult<

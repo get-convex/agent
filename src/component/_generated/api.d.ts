@@ -9,8 +9,12 @@
  */
 
 import type * as apiKeys from "../apiKeys.js";
+import type * as cronJobs from "../cronJobs.js";
+import type * as crons from "../crons.js";
 import type * as files from "../files.js";
 import type * as messages from "../messages.js";
+import type * as pricePerRequest from "../pricePerRequest.js";
+import type * as pricingTable from "../pricingTable.js";
 import type * as streams from "../streams.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
@@ -33,8 +37,12 @@ import type {
  */
 declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
+  cronJobs: typeof cronJobs;
+  crons: typeof crons;
   files: typeof files;
   messages: typeof messages;
+  pricePerRequest: typeof pricePerRequest;
+  pricingTable: typeof pricingTable;
   streams: typeof streams;
   threads: typeof threads;
   users: typeof users;
@@ -381,6 +389,7 @@ export type Mounts = {
           text?: string;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -648,6 +657,7 @@ export type Mounts = {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -919,6 +929,7 @@ export type Mounts = {
         tool: boolean;
         usage?: {
           cachedInputTokens?: number;
+          cachedWriteTokens?: number;
           completionTokens: number;
           promptTokens: number;
           reasoningTokens?: number;
@@ -1203,6 +1214,7 @@ export type Mounts = {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -1455,6 +1467,7 @@ export type Mounts = {
         tool: boolean;
         usage?: {
           cachedInputTokens?: number;
+          cachedWriteTokens?: number;
           completionTokens: number;
           promptTokens: number;
           reasoningTokens?: number;
@@ -1698,6 +1711,7 @@ export type Mounts = {
         tool: boolean;
         usage?: {
           cachedInputTokens?: number;
+          cachedWriteTokens?: number;
           completionTokens: number;
           promptTokens: number;
           reasoningTokens?: number;
@@ -2142,6 +2156,7 @@ export type Mounts = {
         tool: boolean;
         usage?: {
           cachedInputTokens?: number;
+          cachedWriteTokens?: number;
           completionTokens: number;
           promptTokens: number;
           reasoningTokens?: number;
@@ -2154,6 +2169,43 @@ export type Mounts = {
           | { message: string; type: "other" }
         >;
       }
+    >;
+  };
+  pricePerRequest: {
+    addUsage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        messageId: string;
+        model: string;
+        provider: string;
+        threadId: string;
+        usage: {
+          cachedInputTokens?: number;
+          cachedWriteTokens?: number;
+          completionTokens: number;
+          promptTokens: number;
+          reasoningTokens?: number;
+          totalTokens: number;
+        };
+        userId: string;
+      },
+      any
+    >;
+  };
+  pricingTable: {
+    debugPricingLookup: FunctionReference<
+      "query",
+      "public",
+      { modelId: string; providerId: string },
+      any
+    >;
+    getAllPricing: FunctionReference<"query", "public", {}, any>;
+    getPricing: FunctionReference<
+      "query",
+      "public",
+      { modelId: string; providerId: string },
+      any
     >;
   };
   streams: {

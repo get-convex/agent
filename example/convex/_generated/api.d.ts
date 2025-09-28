@@ -512,6 +512,7 @@ export declare const components: {
             text?: string;
             usage?: {
               cachedInputTokens?: number;
+              cachedWriteTokens?: number;
               completionTokens: number;
               promptTokens: number;
               reasoningTokens?: number;
@@ -820,6 +821,7 @@ export declare const components: {
             tool: boolean;
             usage?: {
               cachedInputTokens?: number;
+              cachedWriteTokens?: number;
               completionTokens: number;
               promptTokens: number;
               reasoningTokens?: number;
@@ -1125,6 +1127,7 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -1446,6 +1449,7 @@ export declare const components: {
             tool: boolean;
             usage?: {
               cachedInputTokens?: number;
+              cachedWriteTokens?: number;
               completionTokens: number;
               promptTokens: number;
               reasoningTokens?: number;
@@ -1732,6 +1736,7 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2005,6 +2010,7 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2516,6 +2522,7 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
+            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2528,6 +2535,43 @@ export declare const components: {
             | { message: string; type: "other" }
           >;
         }
+      >;
+    };
+    pricePerRequest: {
+      addUsage: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          messageId: string;
+          model: string;
+          provider: string;
+          threadId: string;
+          usage: {
+            cachedInputTokens?: number;
+            cachedWriteTokens?: number;
+            completionTokens: number;
+            promptTokens: number;
+            reasoningTokens?: number;
+            totalTokens: number;
+          };
+          userId: string;
+        },
+        any
+      >;
+    };
+    pricingTable: {
+      debugPricingLookup: FunctionReference<
+        "query",
+        "internal",
+        { modelId: string; providerId: string },
+        any
+      >;
+      getAllPricing: FunctionReference<"query", "internal", {}, any>;
+      getPricing: FunctionReference<
+        "query",
+        "internal",
+        { modelId: string; providerId: string },
+        any
       >;
     };
     streams: {
