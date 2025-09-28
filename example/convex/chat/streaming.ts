@@ -27,7 +27,7 @@ export const streamOneShot = action({
   args: { prompt: v.string(), threadId: v.string() },
   handler: async (ctx, { prompt, threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
-    await storyAgent.streamText(
+    const message = await storyAgent.streamText(
       ctx,
       { threadId },
       { prompt },
@@ -68,7 +68,24 @@ export const streamAsync = internalAction({
     const result = await storyAgent.streamText(
       ctx,
       { threadId },
-      { promptMessageId },
+      {
+        promptMessageId,
+        onStepFinish: async (step, test) => {
+          await ctx.runAction(components.usage.cost.addCost, {
+            messageId: test?.messageId!,
+            userId: test?.userId,
+            threadId: test?.threadId!,
+            modelId: step.response.modelId,
+            usage: {
+              reasoningTokens: step.usage.reasoningTokens,
+              cachedInputTokens: step.usage.cachedInputTokens,
+              completionTokens: step.usage.outputTokens as number,
+              promptTokens: step.usage.inputTokens as number,
+              totalTokens: step.usage.totalTokens as number,
+            },
+          });
+        },
+      },
       // more custom delta options (`true` uses defaults)
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );

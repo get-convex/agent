@@ -123,7 +123,11 @@ export async function startGeneration<
   getSavedMessages: () => MessageDoc[];
   saveStepUsage: <TOOLS extends ToolSet>(
     step: StepResult<TOOLS>,
-  ) => Promise<void>;
+  ) => Promise<{
+    messageId?: string;
+    userId?: string;
+    threadId?: string;
+  }>;
 }> {
   const userId =
     opts.userId ??
@@ -332,8 +336,20 @@ export async function startGeneration<
             model,
             provider,
           });
+
+          return {
+            messageId: lastMessage._id,
+            userId,
+            threadId,
+          };
         }
       }
+
+      return {
+        messageId: undefined,
+        userId,
+        threadId,
+      };
     },
   };
 }

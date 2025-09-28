@@ -277,7 +277,6 @@ export const vUsage = v.object({
   totalTokens: v.number(),
   reasoningTokens: v.optional(v.number()),
   cachedInputTokens: v.optional(v.number()),
-  cachedWriteTokens: v.optional(v.number()),
 });
 export type Usage = Infer<typeof vUsage>;
 

@@ -14,6 +14,7 @@ import type {
   LanguageModelResponseMetadata,
   LanguageModelUsage,
   LanguageModel,
+  StepResult,
   streamObject,
   streamText,
   StreamTextResult,
@@ -310,7 +311,7 @@ export type TextArgs<
       OUTPUT_PARTIAL
     >
   >[0],
-  "toolChoice" | "tools" | "model"
+  "toolChoice" | "tools" | "model" | "onStepFinish"
 > & {
   /**
    * If provided, this message will be used as the "prompt" for the LLM call,
@@ -334,6 +335,17 @@ export type TextArgs<
    * specified in the tools array. e.g. {toolName: "getWeather", type: "tool"}
    */
   toolChoice?: ToolChoice<TOOLS extends undefined ? AgentTools : TOOLS>;
+  /**
+   * Custom onStepFinish handler that receives additional context including messageId, userId, and threadId
+   */
+  onStepFinish?: (
+    step: StepResult<TOOLS extends undefined ? AgentTools : TOOLS>,
+    context?: {
+      messageId?: string;
+      userId?: string;
+      threadId?: string;
+    },
+  ) => void | Promise<void>;
 };
 
 export type StreamingTextArgs<
@@ -349,7 +361,7 @@ export type StreamingTextArgs<
       OUTPUT_PARTIAL
     >
   >[0],
-  "toolChoice" | "tools" | "model"
+  "toolChoice" | "tools" | "model" | "onStepFinish"
 > & {
   /**
    * If provided, this message will be used as the "prompt" for the LLM call,
@@ -373,6 +385,17 @@ export type StreamingTextArgs<
    * specified in the tools array. e.g. {toolName: "getWeather", type: "tool"}
    */
   toolChoice?: ToolChoice<TOOLS extends undefined ? AgentTools : TOOLS>;
+  /**
+   * Custom onStepFinish handler that receives additional context including messageId, userId, and threadId
+   */
+  onStepFinish?: (
+    step: StepResult<TOOLS extends undefined ? AgentTools : TOOLS>,
+    context?: {
+      messageId?: string;
+      userId?: string;
+      threadId?: string;
+    },
+  ) => void | Promise<void>;
 };
 
 export type ObjectMode = "object" | "array" | "enum" | "no-schema";

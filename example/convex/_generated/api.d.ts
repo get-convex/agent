@@ -42,6 +42,11 @@ import type * as tools_agentAsTool from "../tools/agentAsTool.js";
 import type * as tools_searchMessages from "../tools/searchMessages.js";
 import type * as tools_updateThreadTitle from "../tools/updateThreadTitle.js";
 import type * as tools_weather from "../tools/weather.js";
+import type * as usage__generated_api from "../usage/_generated/api.js";
+import type * as usage__generated_server from "../usage/_generated/server.js";
+import type * as usage_cost from "../usage/cost.js";
+import type * as usage_crons from "../usage/crons.js";
+import type * as usage_pricing from "../usage/pricing.js";
 import type * as usage_tracking_invoicing from "../usage_tracking/invoicing.js";
 import type * as usage_tracking_tables from "../usage_tracking/tables.js";
 import type * as usage_tracking_usageHandler from "../usage_tracking/usageHandler.js";
@@ -97,6 +102,11 @@ declare const fullApi: ApiFromModules<{
   "tools/searchMessages": typeof tools_searchMessages;
   "tools/updateThreadTitle": typeof tools_updateThreadTitle;
   "tools/weather": typeof tools_weather;
+  "usage/_generated/api": typeof usage__generated_api;
+  "usage/_generated/server": typeof usage__generated_server;
+  "usage/cost": typeof usage_cost;
+  "usage/crons": typeof usage_crons;
+  "usage/pricing": typeof usage_pricing;
   "usage_tracking/invoicing": typeof usage_tracking_invoicing;
   "usage_tracking/tables": typeof usage_tracking_tables;
   "usage_tracking/usageHandler": typeof usage_tracking_usageHandler;
@@ -512,7 +522,6 @@ export declare const components: {
             text?: string;
             usage?: {
               cachedInputTokens?: number;
-              cachedWriteTokens?: number;
               completionTokens: number;
               promptTokens: number;
               reasoningTokens?: number;
@@ -821,7 +830,6 @@ export declare const components: {
             tool: boolean;
             usage?: {
               cachedInputTokens?: number;
-              cachedWriteTokens?: number;
               completionTokens: number;
               promptTokens: number;
               reasoningTokens?: number;
@@ -1127,7 +1135,6 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
-            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -1449,7 +1456,6 @@ export declare const components: {
             tool: boolean;
             usage?: {
               cachedInputTokens?: number;
-              cachedWriteTokens?: number;
               completionTokens: number;
               promptTokens: number;
               reasoningTokens?: number;
@@ -1736,7 +1742,6 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
-            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2010,7 +2015,6 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
-            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2522,7 +2526,6 @@ export declare const components: {
           tool: boolean;
           usage?: {
             cachedInputTokens?: number;
-            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2548,7 +2551,6 @@ export declare const components: {
           threadId: string;
           usage: {
             cachedInputTokens?: number;
-            cachedWriteTokens?: number;
             completionTokens: number;
             promptTokens: number;
             reasoningTokens?: number;
@@ -2556,21 +2558,6 @@ export declare const components: {
           };
           userId: string;
         },
-        any
-      >;
-    };
-    pricingTable: {
-      debugPricingLookup: FunctionReference<
-        "query",
-        "internal",
-        { modelId: string; providerId: string },
-        any
-      >;
-      getAllPricing: FunctionReference<"query", "internal", {}, any>;
-      getPricing: FunctionReference<
-        "query",
-        "internal",
-        { modelId: string; providerId: string },
         any
       >;
     };
@@ -3319,6 +3306,43 @@ export declare const components: {
     };
     time: {
       getServerTime: FunctionReference<"mutation", "internal", {}, number>;
+    };
+  };
+  usage: {
+    cost: {
+      addCost: FunctionReference<
+        "action",
+        "internal",
+        {
+          messageId: string;
+          modelId: string;
+          threadId: string;
+          usage: {
+            cachedInputTokens?: number;
+            completionTokens: number;
+            promptTokens: number;
+            reasoningTokens?: number;
+            totalTokens: number;
+          };
+          userId?: string;
+        },
+        any
+      >;
+    };
+    pricing: {
+      getAllPricing: FunctionReference<"query", "internal", {}, any>;
+      getPricing: FunctionReference<
+        "query",
+        "internal",
+        { modelId: string },
+        any
+      >;
+      getPricingByProvider: FunctionReference<
+        "query",
+        "internal",
+        { providerId: string },
+        any
+      >;
     };
   };
   rag: {
