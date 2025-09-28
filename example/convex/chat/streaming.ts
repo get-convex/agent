@@ -71,7 +71,7 @@ export const streamAsync = internalAction({
       {
         promptMessageId,
         onStepFinish: async (step, test) => {
-          await ctx.runAction(components.usage.cost.addCost, {
+          await ctx.runAction(components.cost.cost.addCost, {
             messageId: test?.messageId!,
             userId: test?.userId,
             threadId: test?.threadId!,
