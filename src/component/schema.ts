@@ -166,7 +166,7 @@ export const schema = defineSchema({
   ]),
   usagePerRequest: defineTable({
     messageId: v.id("messages"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
     threadId: v.id("threads"),
     usage: vUsage,
     model: v.string(),

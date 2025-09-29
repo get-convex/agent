@@ -319,34 +319,33 @@ export async function startGeneration<
       }
     },
     saveStepUsage: async <TOOLS extends ToolSet>(step: StepResult<TOOLS>) => {
-      if (step.usage && threadId && userId) {
-        // Get the most recently saved message
-        const lastMessage = savedMessages[savedMessages.length - 1];
-        if (lastMessage && component.pricePerRequest.addUsage) {
-          const serializedUsage = serializeUsage(step.usage);
+      // Get the most recently saved message
+      const lastMessage = savedMessages[savedMessages.length - 1];
 
-          const model = getModelName(activeModel);
-          const provider = getProviderName(activeModel);
+      if (
+        step.usage &&
+        threadId &&
+        lastMessage &&
+        component.usagePerRequest.addUsage
+      ) {
+        const serializedUsage = serializeUsage(step.usage);
 
-          await ctx.runMutation(component.pricePerRequest.addUsage, {
-            messageId: lastMessage._id,
-            userId,
-            threadId,
-            usage: serializedUsage,
-            model,
-            provider,
-          });
+        const model = getModelName(activeModel);
+        const provider = getProviderName(activeModel);
 
-          return {
-            messageId: lastMessage._id,
-            userId,
-            threadId,
-          };
-        }
+        await ctx.runMutation(component.usagePerRequest.addUsage, {
+          messageId: lastMessage._id,
+          userId,
+          threadId,
+          usage: serializedUsage,
+          model,
+          provider,
+        });
       }
 
+      // Always return the available fields, including messageId when available
       return {
-        messageId: undefined,
+        messageId: lastMessage?._id,
         userId,
         threadId,
       };

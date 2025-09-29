@@ -7,7 +7,7 @@ import { mutation } from "./_generated/server.js";
 export const addUsage = mutation({
   args: {
     messageId: v.id("messages"),
-    userId: v.string(),
+    userId: v.optional(v.string()),
     threadId: v.id("threads"),
     usage: vUsage,
     model: v.string(),
