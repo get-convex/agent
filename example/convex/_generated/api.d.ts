@@ -2540,27 +2540,6 @@ export declare const components: {
         }
       >;
     };
-    pricePerRequest: {
-      addUsage: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          messageId: string;
-          model: string;
-          provider: string;
-          threadId: string;
-          usage: {
-            cachedInputTokens?: number;
-            completionTokens: number;
-            promptTokens: number;
-            reasoningTokens?: number;
-            totalTokens: number;
-          };
-          userId: string;
-        },
-        any
-      >;
-    };
     streams: {
       abort: FunctionReference<
         "mutation",
@@ -2801,6 +2780,27 @@ export declare const components: {
           title?: string;
           userId?: string;
         }
+      >;
+    };
+    usagePerRequest: {
+      addUsage: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          messageId: string;
+          model: string;
+          provider: string;
+          threadId: string;
+          usage: {
+            cachedInputTokens?: number;
+            completionTokens: number;
+            promptTokens: number;
+            reasoningTokens?: number;
+            totalTokens: number;
+          };
+          userId?: string;
+        },
+        any
       >;
     };
     users: {

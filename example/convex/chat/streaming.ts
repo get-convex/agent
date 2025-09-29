@@ -70,11 +70,11 @@ export const streamAsync = internalAction({
       { threadId },
       {
         promptMessageId,
-        onStepFinish: async (step, test) => {
+        onStepFinish: async (step, args) => {
           await ctx.runAction(components.cost.cost.addCost, {
-            messageId: test?.messageId!,
-            userId: test?.userId,
-            threadId: test?.threadId!,
+            messageId: args?.messageId!,
+            userId: args?.userId,
+            threadId: args?.threadId!,
             modelId: step.response.modelId,
             usage: {
               reasoningTokens: step.usage.reasoningTokens,
