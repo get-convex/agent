@@ -18,8 +18,8 @@
   "type": "module",
   "scripts": {
     "example": "cd example && npm run dev",
-    "dev": "run-p -r 'example' 'build:watch'",
-    "all": "run-p -r 'example' 'build:watch' 'test:watch'",
+    "dev": "run-p -r example build:watch",
+    "all": "run-p -r example build:watch 'test:watch'",
     "setup": "node setup.cjs --init",
     "dashboard": "cd example && npx convex dashboard",
     "build:watch": "npx chokidar 'tsconfig*.json' 'src/**/*.ts' -i '**/*.test.ts' -c 'npm run build' --initial",

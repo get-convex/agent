@@ -5,6 +5,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
 import { mockModel } from "@convex-dev/agent";
+import { google } from "@ai-sdk/google";
 
 let languageModel: LanguageModelV2;
 let textEmbeddingModel: EmbeddingModel<string>;
@@ -20,6 +21,8 @@ if (process.env.ANTHROPIC_API_KEY) {
   );
 } else if (process.env.OPENROUTER_API_KEY) {
   languageModel = openrouter.chat("openai/gpt-4o-mini") as LanguageModelV2;
+} else if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+  languageModel = google.chat("gemini-2.5-flash");
 } else {
   languageModel = mockModel({});
   console.warn(

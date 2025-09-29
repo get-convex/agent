@@ -13,6 +13,7 @@ import type * as files from "../files.js";
 import type * as messages from "../messages.js";
 import type * as streams from "../streams.js";
 import type * as threads from "../threads.js";
+import type * as usagePerRequest from "../usagePerRequest.js";
 import type * as users from "../users.js";
 import type * as vector_index from "../vector/index.js";
 import type * as vector_tables from "../vector/tables.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   streams: typeof streams;
   threads: typeof threads;
+  usagePerRequest: typeof usagePerRequest;
   users: typeof users;
   "vector/index": typeof vector_index;
   "vector/tables": typeof vector_tables;
@@ -2391,6 +2393,27 @@ export type Mounts = {
         title?: string;
         userId?: string;
       }
+    >;
+  };
+  usagePerRequest: {
+    addUsage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        messageId: string;
+        model: string;
+        provider: string;
+        threadId: string;
+        usage: {
+          cachedInputTokens?: number;
+          completionTokens: number;
+          promptTokens: number;
+          reasoningTokens?: number;
+          totalTokens: number;
+        };
+        userId?: string;
+      },
+      any
     >;
   };
   users: {

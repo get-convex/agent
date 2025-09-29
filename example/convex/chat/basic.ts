@@ -16,7 +16,28 @@ export const generateTextInAnAction = action({
   args: { prompt: v.string(), threadId: v.string() },
   handler: async (ctx, { prompt, threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
-    const result = await agent.generateText(ctx, { threadId }, { prompt });
+    const result = await agent.generateText(
+      ctx,
+      { threadId },
+      {
+        prompt,
+        onStepFinish: async (step, args) => {
+          await ctx.runAction(components.cost.cost.addCost, {
+            messageId: args?.messageId!,
+            userId: args?.userId,
+            threadId: args?.threadId!,
+            modelId: step.response.modelId,
+            usage: {
+              reasoningTokens: step.usage.reasoningTokens,
+              cachedInputTokens: step.usage.cachedInputTokens,
+              completionTokens: step.usage.outputTokens as number,
+              promptTokens: step.usage.inputTokens as number,
+              totalTokens: step.usage.totalTokens as number,
+            },
+          });
+        },
+      },
+    );
     return result.text;
   },
 });
@@ -48,7 +69,28 @@ export const sendMessage = mutation({
 export const generateResponse = internalAction({
   args: { promptMessageId: v.string(), threadId: v.string() },
   handler: async (ctx, { promptMessageId, threadId }) => {
-    await agent.generateText(ctx, { threadId }, { promptMessageId });
+    await agent.generateText(
+      ctx,
+      { threadId },
+      {
+        promptMessageId,
+        onStepFinish: async (step, args) => {
+          await ctx.runAction(components.cost.cost.addCost, {
+            messageId: args?.messageId!,
+            userId: args?.userId,
+            threadId: args?.threadId!,
+            modelId: step.response.modelId,
+            usage: {
+              reasoningTokens: step.usage.reasoningTokens,
+              cachedInputTokens: step.usage.cachedInputTokens,
+              completionTokens: step.usage.outputTokens as number,
+              promptTokens: step.usage.inputTokens as number,
+              totalTokens: step.usage.totalTokens as number,
+            },
+          });
+        },
+      },
+    );
   },
 });
 

@@ -164,6 +164,18 @@ export const schema = defineSchema({
   apiKeys: defineTable({ name: v.optional(v.string()) }).index("name", [
     "name",
   ]),
+  // It's a usage per api request sent to a model provider
+  usagePerRequest: defineTable({
+    messageId: v.id("messages"),
+    userId: v.optional(v.string()),
+    threadId: v.id("threads"),
+    usage: vUsage,
+    model: v.string(),
+    provider: v.string(),
+  })
+    .index("messageId", ["messageId"])
+    .index("userId", ["userId"])
+    .index("threadId", ["threadId"]),
 });
 
 export const vv = typedV(schema);

@@ -452,6 +452,13 @@ export class Agent<
     ) => Promise<void>;
     fail: (reason: string) => Promise<void>;
     getSavedMessages: () => MessageDoc[];
+    saveStepUsage: <TOOLS extends ToolSet>(
+      step: StepResult<TOOLS>,
+    ) => Promise<{
+      messageId?: string;
+      userId?: string;
+      threadId?: string;
+    }>;
   }> {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
     return startGeneration<T, Tools, CustomCtx>(
@@ -507,7 +514,7 @@ export class Agent<
     GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
       GenerationOutputMetadata
   > {
-    const { args, promptMessageId, order, ...call } = await this.start(
+    const { args, promptMessageId, order, userId, ...call } = await this.start(
       ctx,
       generateTextArgs,
       { ...threadOpts, ...options },
@@ -526,7 +533,8 @@ export class Agent<
         onStepFinish: async (step) => {
           steps.push(step);
           await call.save({ step }, await willContinue(steps, args.stopWhen));
-          return generateTextArgs.onStepFinish?.(step);
+          const context = await call.saveStepUsage(step);
+          return generateTextArgs.onStepFinish?.(step, context);
         },
       })) as GenerateTextResult<Tools, OUTPUT>;
       const metadata: GenerationOutputMetadata = {
@@ -664,7 +672,8 @@ export class Agent<
         steps.push(step);
         const createPendingMessage = await willContinue(steps, args.stopWhen);
         await call.save({ step }, createPendingMessage);
-        return args.onStepFinish?.(step);
+        const context = await call.saveStepUsage(step);
+        return args.onStepFinish?.(step, context);
       },
     }) as StreamTextResult<
       TOOLS extends undefined ? AgentTools : TOOLS,

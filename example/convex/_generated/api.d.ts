@@ -19,6 +19,11 @@ import type * as chat_streamAbort from "../chat/streamAbort.js";
 import type * as chat_streaming from "../chat/streaming.js";
 import type * as chat_streamingReasoning from "../chat/streamingReasoning.js";
 import type * as chat_withoutAgent from "../chat/withoutAgent.js";
+import type * as cost__generated_api from "../cost/_generated/api.js";
+import type * as cost__generated_server from "../cost/_generated/server.js";
+import type * as cost_cost from "../cost/cost.js";
+import type * as cost_crons from "../cost/crons.js";
+import type * as cost_pricing from "../cost/pricing.js";
 import type * as crons from "../crons.js";
 import type * as debugging_rawRequestResponseHandler from "../debugging/rawRequestResponseHandler.js";
 import type * as files_addFile from "../files/addFile.js";
@@ -74,6 +79,11 @@ declare const fullApi: ApiFromModules<{
   "chat/streaming": typeof chat_streaming;
   "chat/streamingReasoning": typeof chat_streamingReasoning;
   "chat/withoutAgent": typeof chat_withoutAgent;
+  "cost/_generated/api": typeof cost__generated_api;
+  "cost/_generated/server": typeof cost__generated_server;
+  "cost/cost": typeof cost_cost;
+  "cost/crons": typeof cost_crons;
+  "cost/pricing": typeof cost_pricing;
   crons: typeof crons;
   "debugging/rawRequestResponseHandler": typeof debugging_rawRequestResponseHandler;
   "files/addFile": typeof files_addFile;
@@ -2772,6 +2782,27 @@ export declare const components: {
         }
       >;
     };
+    usagePerRequest: {
+      addUsage: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          messageId: string;
+          model: string;
+          provider: string;
+          threadId: string;
+          usage: {
+            cachedInputTokens?: number;
+            completionTokens: number;
+            promptTokens: number;
+            reasoningTokens?: number;
+            totalTokens: number;
+          };
+          userId?: string;
+        },
+        any
+      >;
+    };
     users: {
       deleteAllForUserId: FunctionReference<
         "action",
@@ -3275,6 +3306,43 @@ export declare const components: {
     };
     time: {
       getServerTime: FunctionReference<"mutation", "internal", {}, number>;
+    };
+  };
+  cost: {
+    cost: {
+      addCost: FunctionReference<
+        "action",
+        "internal",
+        {
+          messageId: string;
+          modelId: string;
+          threadId: string;
+          usage: {
+            cachedInputTokens?: number;
+            completionTokens: number;
+            promptTokens: number;
+            reasoningTokens?: number;
+            totalTokens: number;
+          };
+          userId?: string;
+        },
+        any
+      >;
+    };
+    pricing: {
+      getAllPricing: FunctionReference<"query", "internal", {}, any>;
+      getPricing: FunctionReference<
+        "query",
+        "internal",
+        { modelId: string },
+        any
+      >;
+      getPricingByProvider: FunctionReference<
+        "query",
+        "internal",
+        { providerId: string },
+        any
+      >;
     };
   };
   rag: {

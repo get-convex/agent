@@ -12,6 +12,7 @@ import {
 import {
   serializeNewMessagesInStep,
   serializeObjectResult,
+  serializeUsage,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
 import type {
@@ -120,6 +121,13 @@ export async function startGeneration<
   ) => Promise<void>;
   fail: (reason: string) => Promise<void>;
   getSavedMessages: () => MessageDoc[];
+  saveStepUsage: <TOOLS extends ToolSet>(
+    step: StepResult<TOOLS>,
+  ) => Promise<{
+    messageId?: string;
+    userId?: string;
+    threadId?: string;
+  }>;
 }> {
   const userId =
     opts.userId ??
@@ -309,6 +317,38 @@ export async function startGeneration<
           providerMetadata: output.providerMetadata,
         });
       }
+    },
+    saveStepUsage: async <TOOLS extends ToolSet>(step: StepResult<TOOLS>) => {
+      // Get the most recently saved message
+      const lastMessage = savedMessages[savedMessages.length - 1];
+
+      if (
+        step.usage &&
+        threadId &&
+        lastMessage &&
+        component.usagePerRequest.addUsage
+      ) {
+        const serializedUsage = serializeUsage(step.usage);
+
+        const model = getModelName(activeModel);
+        const provider = getProviderName(activeModel);
+
+        await ctx.runMutation(component.usagePerRequest.addUsage, {
+          messageId: lastMessage._id,
+          userId,
+          threadId,
+          usage: serializedUsage,
+          model,
+          provider,
+        });
+      }
+
+      // Always return the available fields, including messageId when available
+      return {
+        messageId: lastMessage?._id,
+        userId,
+        threadId,
+      };
     },
   };
 }
