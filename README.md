@@ -64,7 +64,7 @@ Play with the [example](./example/):
 git clone https://github.com/get-convex/agent.git
 cd agent
 npm run setup
-npm run example
+npm run dev
 ```
 
 Found a bug? Feature request?

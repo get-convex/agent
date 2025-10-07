@@ -9,9 +9,6 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    // See these docs to get this working:
-    //https://github.com/xixixao/convex-typescript-plugin/
-    "plugins": [{ "name": "@xixixao/convex-typescript-plugin" }],
     "noImplicitAny": false,
     "noUnusedParameters": false,
     "skipLibCheck": true,

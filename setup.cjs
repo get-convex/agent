@@ -20,22 +20,14 @@ execSync("npm install", {
   stdio: "inherit",
 });
 console.log("✅\n");
-console.log("Installing dependencies for the example...");
-execSync("npm install", {
-  cwd: join(__dirname, "./example"),
-  stdio: "inherit",
-});
-console.log("✅\n");
 
 if (initFlag) {
   console.log("🚀 Starting interactive setup...\n");
 
-  const exampleDir = join(__dirname, "./example");
-
   try {
     console.log("Checking backend configuration...");
     execSync("npm run dev:backend -- --once", {
-      cwd: exampleDir,
+      cwd: __dirname,
       stdio: "inherit",
     });
     console.log("✅ Backend setup complete! No API key needed.\n");
@@ -98,7 +90,7 @@ if (initFlag) {
         // check .env.local - if CONVEX_DEPLOYMENT starts with "local", we need to start a process
         const fs = require("fs");
         const envContent = fs.readFileSync(
-          join(exampleDir, ".env.local"),
+          join(__dirname, ".env.local"),
           "utf8",
         );
         const isLocal = !!envContent
@@ -106,14 +98,14 @@ if (initFlag) {
           .find((line) => line.startsWith("CONVEX_DEPLOYMENT=local"));
         let convexProcess;
         if (!isLocal) {
-          setEnvironmentVariable(exampleDir, envVarName, apiKey);
+          setEnvironmentVariable(__dirname, envVarName, apiKey);
           return;
         }
         console.log(
           "🔧 Starting Convex dev server to set environment variables...",
         );
         convexProcess = spawn("npx", ["convex", "dev"], {
-          cwd: exampleDir,
+          cwd: __dirname,
           stdio: ["inherit", "inherit", "pipe"],
         });
 
@@ -125,7 +117,7 @@ if (initFlag) {
               "⏰ Timeout waiting for Convex to be ready. Continuing anyway...",
             );
             convexProcess.kill();
-            setEnvironmentVariable(exampleDir, envVarName, apiKey);
+            setEnvironmentVariable(__dirname, envVarName, apiKey);
           }
         }, 30_000);
 
@@ -136,7 +128,7 @@ if (initFlag) {
             clearTimeout(setupTimeout);
             console.log("✅ Convex is ready!");
 
-            setEnvironmentVariable(exampleDir, envVarName, apiKey);
+            setEnvironmentVariable(__dirname, envVarName, apiKey);
 
             // Stop the convex dev process
             convexProcess.kill();

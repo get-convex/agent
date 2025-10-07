@@ -16,19 +16,13 @@
     "allowSyntheticDefaultImports": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    // See these docs to get this working:
-    //https://github.com/xixixao/convex-typescript-plugin/
-    // "plugins": [{ "name": "@xixixao/convex-typescript-plugin" }],
-    "noEmit": true,
-    "paths": {
-      "@example/*": ["../../examples/*"]
-    }
 
     /* This should only be used in this example. Real apps should not attempt
      * to compile TypeScript because differences between tsconfig.json files can
      * cause the code to be compiled differently.
      */
     // "customConditions": ["@convex-dev/component-source"]
+    "noEmit": true
   },
   "include": ["./**/*"],
   "exclude": ["./_generated"]
