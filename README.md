@@ -58,7 +58,7 @@ workflows.
 [![Powerful AI Apps Made Easy with the Agent Component](https://thumbs.video-to-markdown.com/b323ac24.jpg)](https://youtu.be/tUKMPUlOCHY)
 **Read the [docs](https://docs.convex.dev/agents) for more details.**
 
-Play with the [example](./example/):
+Play with the example:
 
 ```sh
 git clone https://github.com/get-convex/agent.git
