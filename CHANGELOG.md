@@ -10,6 +10,7 @@
 - Exports a `docsToModelMessages` to convert MessageDoc to ModelMessage taking
   into account omitting missing messages or empty content.
 - Fixes playground UI showing follow-up messages.
+- Adds a /test entrypoint to make adding tests with the agent easier.
 
 ## 0.2.10
 
