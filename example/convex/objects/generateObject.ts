@@ -6,7 +6,7 @@ import z from "zod/v4";
 
 export const createObject = action({
   args: {},
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     const agent = new Agent(components.agent, {
       ...defaultConfig,
       name: "object-agent",

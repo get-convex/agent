@@ -37,6 +37,7 @@ export const generateAsync = internalAction({
       },
       {
         agentName: "My Agent",
+        threadId,
         ...defaultConfig, // the same Config you'd use for the Agent.
       },
     );

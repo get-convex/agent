@@ -33,6 +33,7 @@ export default tseslint.config(
           "./tsconfig.app.json",
           "./convex/tsconfig.json",
         ],
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     plugins: {

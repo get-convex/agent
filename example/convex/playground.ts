@@ -26,7 +26,7 @@ export const {
   generateText,
   fetchPromptContext,
 } = definePlaygroundAPI(components.agent, {
-  agents: async (ctx, { userId, threadId }) => [
+  agents: async (/*ctx, { userId, threadId }*/) => [
     weatherAgent,
     fashionAgent,
     basicAgent,

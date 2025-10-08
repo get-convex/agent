@@ -1,7 +1,6 @@
 // See the docs at https://docs.convex.dev/agents/rate-limiting
 import { Agent, saveMessage, UsageHandler } from "@convex-dev/agent";
 import { components, internal } from "../_generated/api";
-import { languageModel, textEmbeddingModel } from "../modelsForDemo";
 import { internalAction, mutation } from "../_generated/server";
 import { v } from "convex/values";
 import { MINUTE, RateLimiter, SECOND } from "@convex-dev/rate-limiter";

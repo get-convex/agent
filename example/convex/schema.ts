@@ -1,5 +1,4 @@
-import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { defineSchema } from "convex/server";
 import ragTables from "./rag/tables.js";
 import usageTables from "./usage_tracking/tables.js";
 
