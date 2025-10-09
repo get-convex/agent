@@ -88,7 +88,7 @@
     "@convex-dev/agent": "file:..",
     "@convex-dev/rag": "0.5.2",
     "@convex-dev/rate-limiter": "0.2.12",
-    "@convex-dev/workflow": "0.2.6-alpha.1",
+    "@convex-dev/workflow": "0.2.8-alpha.3",
     "@edge-runtime/vm": "5.0.0",
     "@eslint/js": "9.33.0",
     "@hookform/resolvers": "5.0.1",

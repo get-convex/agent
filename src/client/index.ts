@@ -250,10 +250,6 @@ export class Agent<
        * determines when to stop. Defaults to the AI SDK default.
        */
       stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
-      /**
-       * @deprecated Use `languageEmbeddingModel` instead.
-       */
-      chat?: LanguageModel;
     },
   ) {}
 
