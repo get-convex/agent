@@ -98,6 +98,7 @@ import type {
   UsageHandler,
   UserActionCtx,
   QueryCtx,
+  AgentPrompt,
 } from "./types.js";
 
 export { stepCountIs } from "ai";
@@ -377,54 +378,23 @@ export class Agent<
      * The type of the arguments returned infers from the type of the arguments
      * you pass here.
      */
-    args: T & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-      /**
-       * The model to use for the LLM calls. This will override the model specified
-       * in the Agent constructor.
-       */
-      model?: LanguageModel;
-      /**
-       * The tools to use for the tool calls. This will override tools specified
-       * in the Agent constructor or createThread / continueThread.
-       */
-      tools?: TOOLS;
-      /**
-       * The single prompt message to use for the LLM call. This will be the
-       * last message in the context. If it's a string, it will be a user role.
-       */
-      prompt?: string | (ModelMessage | Message)[];
-      /**
-       * If provided alongside prompt, the ordering will be:
-       * 1. system prompt
-       * 2. search context
-       * 3. recent messages
-       * 4. these messages
-       * 5. prompt messages, including those already on the same `order` as
-       *   the promptMessageId message, if provided.
-       */
-      messages?: (ModelMessage | Message)[];
-      /**
-       * This will be the first message in the context, and overrides the
-       * agent's instructions.
-       */
-      system?: string;
-      /**
-       * The abort signal to be passed to the LLM call. If triggered, it will
-       * mark the pending message as failed. If the generation is asynchronously
-       * aborted, it will trigger this signal when detected.
-       */
-      abortSignal?: AbortSignal;
-      stopWhen?:
-        | StopCondition<TOOLS extends undefined ? AgentTools : TOOLS>
-        | Array<StopCondition<TOOLS extends undefined ? AgentTools : TOOLS>>;
-    },
+    args: T &
+      AgentPrompt & {
+        /**
+         * The tools to use for the tool calls. This will override tools specified
+         * in the Agent constructor or createThread / continueThread.
+         */
+        tools?: TOOLS;
+        /**
+         * The abort signal to be passed to the LLM call. If triggered, it will
+         * mark the pending message as failed. If the generation is asynchronously
+         * aborted, it will trigger this signal when detected.
+         */
+        abortSignal?: AbortSignal;
+        stopWhen?:
+          | StopCondition<TOOLS extends undefined ? AgentTools : TOOLS>
+          | Array<StopCondition<TOOLS extends undefined ? AgentTools : TOOLS>>;
+      },
     options?: Options & { userId?: string | null; threadId?: string },
   ): Promise<{
     args: T & {
@@ -476,9 +446,10 @@ export class Agent<
    * Use {@link continueThread} to get a version of this function already scoped
    * to a thread (and optionally userId).
    * @param ctx The context passed from the action function calling this.
-   * @param { userId, threadId }: The user and thread to associate the message with
-   * @param generateTextArgs The arguments to the generateText function, along with extra controls
-   * for the {@link ContextOptions} and {@link StorageOptions}.
+   * @param scope: The user and thread to associate the message with
+   * @param generateTextArgs The arguments to the generateText function, along
+   * with {@link AgentPrompt} options, such as promptMessageId.
+   * @param options Extra controls for the {@link ContextOptions} and {@link StorageOptions}.
    * @returns The result of the generateText function.
    */
   async generateText<
@@ -488,15 +459,12 @@ export class Agent<
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
-    generateTextArgs: TextArgs<AgentTools, TOOLS, OUTPUT, OUTPUT_PARTIAL> & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    /**
+     * The arguments to the generateText function, similar to the ai sdk's
+     * {@link generateText} function, along with Agent prompt options.
+     */
+    generateTextArgs: AgentPrompt &
+      TextArgs<AgentTools, TOOLS, OUTPUT, OUTPUT_PARTIAL>,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
@@ -552,22 +520,11 @@ export class Agent<
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
-     * The arguments to the streamText function, similar to the ai `streamText` function.
+     * The arguments to the streamText function, similar to the ai sdk's
+     * {@link streamText} function, along with Agent prompt options.
      */
-    streamTextArgs: StreamingTextArgs<
-      AgentTools,
-      TOOLS,
-      OUTPUT,
-      PARTIAL_OUTPUT
-    > & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    streamTextArgs: AgentPrompt &
+      StreamingTextArgs<AgentTools, TOOLS, OUTPUT, PARTIAL_OUTPUT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -704,17 +661,11 @@ export class Agent<
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
-     * The arguments to the generateObject function, similar to the ai.generateObject function.
+     * The arguments to the generateObject function, similar to the ai sdk's
+     * {@link generateObject} function, along with Agent prompt options.
      */
-    generateObjectArgs: GenerateObjectArgs<SCHEMA, OUTPUT, RESULT> & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    generateObjectArgs: AgentPrompt &
+      GenerateObjectArgs<SCHEMA, OUTPUT, RESULT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -762,17 +713,10 @@ export class Agent<
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
-     * The arguments to the streamObject function, similar to the ai `streamObject` function.
+     * The arguments to the streamObject function, similar to the ai sdk's
+     * {@link streamObject} function, along with Agent prompt options.
      */
-    streamObjectArgs: StreamObjectArgs<SCHEMA, OUTPUT, RESULT> & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    streamObjectArgs: AgentPrompt & StreamObjectArgs<SCHEMA, OUTPUT, RESULT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -1558,7 +1502,7 @@ export class Agent<
    * and stopWhen.
    */
   asObjectAction<T, DataModel extends GenericDataModel>(
-    objectArgs: GenerateObjectArgs<FlexibleSchema<T>>,
+    objectArgs: GenerateObjectArgs<FlexibleSchema<T>> & Partial<AgentPrompt>,
     options?: Options & MaybeCustomCtx<CustomCtx, DataModel, AgentTools>,
   ) {
     return internalActionGeneric({
@@ -1599,24 +1543,7 @@ export class Agent<
   }
 
   /**
-   * Save messages to the thread.
-   * Useful as a step in Workflows, e.g.
-   * ```ts
-   * const saveMessages = agent.asSaveMessagesMutation();
-   *
-   * const myWorkflow = workflow.define({
-   *   args: {...},
-   *   handler: async (step, args) => {
-   *     // do things to create (but not save)messages
-   *     const { messageIds } = await step.runMutation(internal.foo.saveMessages, {
-   *       threadId: args.threadId,
-   *       messages: args.messages,
-   *     });
-   *     // ...
-   *   },
-   * })
-   * ```
-   * @returns A mutation that can be used to save messages to the thread.
+   * @deprecated Use {@link saveMessages} directly instead.
    */
   asSaveMessagesMutation() {
     return internalMutationGeneric({

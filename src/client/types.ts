@@ -19,11 +19,8 @@ import type {
   StreamTextResult,
   ToolChoice,
   ToolSet,
-  RepairTextFunction,
-  TelemetrySettings,
   CallSettings,
-  Prompt,
-  Experimental_DownloadFunction,
+  generateObject,
 } from "ai";
 import type {
   Auth,
@@ -47,6 +44,48 @@ import type {
   ThreadDoc,
 } from "../validators.js";
 import type { StreamingOptions } from "./streaming.js";
+
+export type AgentPrompt = {
+  /**
+   * System message to include in the prompt. Overwrites Agent instructions.
+   */
+  system?: string;
+  /**
+   * A prompt. It can be either a text prompt or a list of messages.
+   * If used with `promptMessageId`, it will be used in place of that
+   * prompt message and no input messages will be saved.
+   * Otherwise, if used with the storageOptions "promptAndOutput" (default),
+   * it will be the only message saved.
+   * If a string is provided, it will be a user message.
+   */
+  prompt?: string | Array<ModelMessage> | undefined;
+  /**
+   * A list of messages to use as context before the prompt.
+   * If used with `prompt`, these will precede the prompt.
+   * If used with the storageOptions "promptAndOutput" (default),
+   * none of these messages will be saved.
+   */
+  messages?: Array<ModelMessage> | undefined;
+  /**
+   * If provided, it uses this existing message to anchor the prompt:
+   * - The specified message will be included, unless `prompt` is also
+   *   provided, in which case that will be inserted in place of this
+   *   specified message.
+   * - Recent and search messages will not include messages after this
+   *   message's order.
+   * - If there are already responses on the same order,
+   *   for example, tool calls and responses,
+   *   those will be included automatically.
+   *
+   * Note: if this is provided, no input messages will be saved by default.
+   */
+  promptMessageId?: string | undefined;
+  /**
+   * The model to use for the LLM calls. This will override the languageModel
+   * specified in the Agent config.
+   */
+  model?: LanguageModel;
+};
 
 export type Config = {
   /**
@@ -308,31 +347,14 @@ export type TextArgs<
       OUTPUT_PARTIAL
     >
   >[0],
-  "toolChoice" | "tools" | "model"
+  "model" | "prompt" | "messages"
 > & {
-  /**
-   * If provided, this message will be used as the "prompt" for the LLM call,
-   * instead of the prompt or messages.
-   * This is useful if you want to first save a user message, then use it as
-   * the prompt for the LLM call in another call.
-   */
-  promptMessageId?: string;
-  /**
-   * The model to use for the LLM calls. This will override the model specified
-   * in the Agent constructor.
-   */
-  model?: LanguageModel;
   /**
    * The tools to use for the tool calls. This will override tools specified
    * in the Agent constructor or createThread / continueThread.
    */
   tools?: TOOLS;
-  /**
-   * The tool choice to use for the tool calls. This must be one of the tools
-   * specified in the tools array. e.g. {toolName: "getWeather", type: "tool"}
-   */
-  toolChoice?: ToolChoice<TOOLS extends undefined ? AgentTools : TOOLS>;
-};
+} & AgentPrompt;
 
 export type StreamingTextArgs<
   AgentTools extends ToolSet,
@@ -347,39 +369,17 @@ export type StreamingTextArgs<
       OUTPUT_PARTIAL
     >
   >[0],
-  "toolChoice" | "tools" | "model"
+  "model" | "prompt" | "messages"
 > & {
-  /**
-   * If provided, this message will be used as the "prompt" for the LLM call,
-   * instead of the prompt or messages.
-   * This is useful if you want to first save a user message, then use it as
-   * the prompt for the LLM call in another call.
-   */
-  promptMessageId?: string;
-  /**
-   * The model to use for the tool calls. This will override the model specified
-   * in the Agent constructor.
-   */
-  model?: LanguageModel;
   /**
    * The tools to use for the tool calls. This will override tools specified
    * in the Agent constructor or createThread / continueThread.
    */
   tools?: TOOLS;
-  /**
-   * The tool choice to use for the tool calls. This must be one of the tools
-   * specified in the tools array. e.g. {toolName: "getWeather", type: "tool"}
-   */
-  toolChoice?: ToolChoice<TOOLS extends undefined ? AgentTools : TOOLS>;
-};
+} & AgentPrompt;
 
 export type ObjectMode = "object" | "array" | "enum" | "no-schema";
 
-/**
- * Due to some issues with the type inference of the ai sdk, we need to
- * manually type the arguments for the generateObject function.
- * This is a workaround to allow the model to be optional.
- */
 export type GenerateObjectArgs<
   SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
   OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
@@ -388,89 +388,13 @@ export type GenerateObjectArgs<
   RESULT = OUTPUT extends "array"
     ? Array<InferSchema<SCHEMA>>
     : InferSchema<SCHEMA>,
-> = Omit<CallSettings, "stopSequences"> &
-  Partial<Prompt> & {
-    /**
-     * If provided, this message will be used as the "prompt" for the LLM call,
-     * instead of the prompt or messages.
-     * This is useful if you want to first save a user message, then use it as
-     * the prompt for the LLM call in another call.
-     */
-    promptMessageId?: string;
-  } & (OUTPUT extends "enum"
-    ? {
-        /**
-The enum values that the model should use.
-*/
-        enum: Array<RESULT>;
-        mode?: "json";
-        output: "enum";
-      }
-    : OUTPUT extends "no-schema"
-      ? // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-        {}
-      : {
-          /**
-The schema of the object that the model should generate.
-*/
-          schema: SCHEMA;
-          /**
-Optional name of the output that should be generated.
-Used by some providers for additional LLM guidance, e.g.
-via tool or schema name.
-*/
-          schemaName?: string;
-          /**
-Optional description of the output that should be generated.
-Used by some providers for additional LLM guidance, e.g.
-via tool or schema description.
-*/
-          schemaDescription?: string;
-          /**
-The mode to use for object generation.
-
-The schema is converted into a JSON schema and used in one of the following ways
-
-- 'auto': The provider will choose the best mode for the model.
-- 'tool': A tool with the JSON schema as parameters is provided and the provider is instructed to use it.
-- 'json': The JSON schema and an instruction are injected into the prompt. If the provider supports JSON mode, it is enabled. If the provider supports JSON grammars, the grammar is used.
-
-Please note that most providers do not support all modes.
-
-Default and recommended: 'auto' (best mode for the model).
-*/
-          mode?: "auto" | "json" | "tool";
-        }) & {
-    output?: OUTPUT;
-    /**
-The language model to use.
-   */
-    model?: LanguageModel;
-    /**
-A function that attempts to repair the raw output of the model
-to enable JSON parsing.
-   */
-    experimental_repairText?: RepairTextFunction;
-    /**
-Optional telemetry configuration (experimental).
-     */
-    experimental_telemetry?: TelemetrySettings;
-    /**
-Custom download function to use for URLs.
-
-By default, files are downloaded if the model does not support the URL for the given media type.
-     */
-    experimental_download?: Experimental_DownloadFunction | undefined;
-    /**
-Additional provider-specific options. They are passed through
-to the provider from the AI SDK and enable provider-specific
-functionality that can be fully encapsulated in the provider.
-*/
-    providerOptions?: ProviderOptions;
-    /**
-     * Internal. For test use only. May change without notice.
-     */
-    _internal?: { generateId?: () => string; currentDate?: () => Date };
+> = AgentPrompt &
+  Omit<
+    Parameters<typeof generateObject<SCHEMA, OUTPUT, RESULT>>[0],
+    "model" | "prompt" | "messages"
+  > & {
+    schema?: SCHEMA;
+    enum?: Array<RESULT>;
   };
 
 export type StreamObjectArgs<
@@ -481,11 +405,14 @@ export type StreamObjectArgs<
   RESULT = OUTPUT extends "array"
     ? Array<InferSchema<SCHEMA>>
     : InferSchema<SCHEMA>,
-> = GenerateObjectArgs<SCHEMA, OUTPUT, RESULT> &
-  Pick<
+> = AgentPrompt &
+  Omit<
     Parameters<typeof streamObject<SCHEMA, OUTPUT, RESULT>>[0],
-    "onError" | "onFinish" | "_internal"
-  >;
+    "model" | "prompt" | "messages"
+  > & {
+    schema?: SCHEMA;
+    enum?: Array<RESULT>;
+  };
 
 export type MaybeCustomCtx<
   CustomCtx,
@@ -557,20 +484,13 @@ export interface Thread<DefaultTools extends ToolSet> {
     OUTPUT = never,
     OUTPUT_PARTIAL = never,
   >(
-    generateTextArgs: TextArgs<
-      TOOLS extends undefined ? DefaultTools : TOOLS,
-      TOOLS,
-      OUTPUT,
-      OUTPUT_PARTIAL
-    > & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    generateTextArgs: AgentPrompt &
+      TextArgs<
+        TOOLS extends undefined ? DefaultTools : TOOLS,
+        TOOLS,
+        OUTPUT,
+        OUTPUT_PARTIAL
+      >,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
@@ -592,20 +512,13 @@ export interface Thread<DefaultTools extends ToolSet> {
     OUTPUT = never,
     PARTIAL_OUTPUT = never,
   >(
-    streamTextArgs: StreamingTextArgs<
-      TOOLS extends undefined ? DefaultTools : TOOLS,
-      TOOLS,
-      OUTPUT,
-      PARTIAL_OUTPUT
-    > & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    streamTextArgs: AgentPrompt &
+      StreamingTextArgs<
+        TOOLS extends undefined ? DefaultTools : TOOLS,
+        TOOLS,
+        OUTPUT,
+        PARTIAL_OUTPUT
+      >,
     options?: Options & {
       /**
        * Whether to save incremental data (deltas) from streaming responses.
@@ -645,15 +558,8 @@ export interface Thread<DefaultTools extends ToolSet> {
       ? Array<InferSchema<SCHEMA>>
       : InferSchema<SCHEMA>,
   >(
-    generateObjectArgs: GenerateObjectArgs<SCHEMA, OUTPUT, RESULT> & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    generateObjectArgs: AgentPrompt &
+      GenerateObjectArgs<SCHEMA, OUTPUT, RESULT>,
     options?: Options,
   ): Promise<GenerateObjectResult<RESULT> & ThreadOutputMetadata>;
   /**
@@ -678,15 +584,7 @@ export interface Thread<DefaultTools extends ToolSet> {
     /**
      * The same arguments you'd pass to "ai" sdk {@link streamObject}.
      */
-    streamObjectArgs: StreamObjectArgs<SCHEMA, OUTPUT, RESULT> & {
-      /**
-       * If provided, this message will be used as the "prompt" for the LLM call,
-       * instead of the prompt or messages.
-       * This is useful if you want to first save a user message, then use it as
-       * the prompt for the LLM call in another call.
-       */
-      promptMessageId?: string;
-    },
+    streamObjectArgs: AgentPrompt & StreamObjectArgs<SCHEMA, OUTPUT, RESULT>,
     options?: Options,
   ): Promise<
     ReturnType<typeof streamObject<SCHEMA, OUTPUT, RESULT>> &
