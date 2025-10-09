@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-// "setup": "npm i && npm run build && cd example && npm i",
 const { join } = require("path");
 const { execSync, spawn } = require("child_process");
 const readline = require("readline");

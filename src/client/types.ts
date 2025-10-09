@@ -1,8 +1,8 @@
 import type {
+  FlexibleSchema,
   InferSchema,
   ModelMessage,
   ProviderOptions,
-  Schema,
 } from "@ai-sdk/provider-utils";
 import type { JSONValue } from "@ai-sdk/provider";
 import type {
@@ -47,8 +47,6 @@ import type {
   ThreadDoc,
 } from "../validators.js";
 import type { StreamingOptions } from "./streaming.js";
-import type * as z3 from "zod/v3";
-import type * as z4 from "zod/v4";
 
 export type Config = {
   /**
@@ -376,8 +374,6 @@ export type StreamingTextArgs<
 };
 
 export type ObjectMode = "object" | "array" | "enum" | "no-schema";
-export type ObjectSchema = z3.Schema | z4.core.$ZodType | Schema;
-export type DefaultObjectSchema = z4.core.$ZodType<JSONValue>;
 
 /**
  * Due to some issues with the type inference of the ai sdk, we need to
@@ -385,7 +381,7 @@ export type DefaultObjectSchema = z4.core.$ZodType<JSONValue>;
  * This is a workaround to allow the model to be optional.
  */
 export type GenerateObjectArgs<
-  SCHEMA extends ObjectSchema = DefaultObjectSchema,
+  SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
   OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
     ? "enum"
     : "object",
@@ -478,7 +474,7 @@ functionality that can be fully encapsulated in the provider.
   };
 
 export type StreamObjectArgs<
-  SCHEMA extends ObjectSchema = DefaultObjectSchema,
+  SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
   OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
     ? "enum"
     : "object",
@@ -641,7 +637,7 @@ export interface Thread<DefaultTools extends ToolSet> {
    * @returns The result of the generateObject function.
    */
   generateObject<
-    SCHEMA extends ObjectSchema = DefaultObjectSchema,
+    SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
     OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
       ? "enum"
       : "object",
@@ -671,7 +667,7 @@ export interface Thread<DefaultTools extends ToolSet> {
    * @returns The result of the streamObject function.
    */
   streamObject<
-    SCHEMA extends ObjectSchema = DefaultObjectSchema,
+    SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
     OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
       ? "enum"
       : "object",

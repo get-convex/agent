@@ -1,3 +1,4 @@
+import type { JSONValue } from "@ai-sdk/provider";
 import type {
   FlexibleSchema,
   IdGenerator,
@@ -81,12 +82,10 @@ import type {
   AgentComponent,
   Config,
   ContextOptions,
-  DefaultObjectSchema,
   GenerateObjectArgs,
   GenerationOutputMetadata,
   MaybeCustomCtx,
   ObjectMode,
-  ObjectSchema,
   Options,
   RawRequestResponseHandler,
   MutationCtx,
@@ -694,7 +693,7 @@ export class Agent<
    * to a thread (and optionally userId).
    */
   async generateObject<
-    SCHEMA extends ObjectSchema = DefaultObjectSchema,
+    SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
     OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
       ? "enum"
       : "object",
@@ -752,7 +751,7 @@ export class Agent<
    * to a thread (and optionally userId).
    */
   async streamObject<
-    SCHEMA extends ObjectSchema = DefaultObjectSchema,
+    SCHEMA extends FlexibleSchema<unknown> = FlexibleSchema<JSONValue>,
     OUTPUT extends ObjectMode = InferSchema<SCHEMA> extends string
       ? "enum"
       : "object",
