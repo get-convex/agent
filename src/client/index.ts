@@ -249,7 +249,9 @@ export class Agent<
        * When generating or streaming text with tools available, this
        * determines when to stop. Defaults to the AI SDK default.
        */
-      stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
+      stopWhen?:
+        | StopCondition<NoInfer<AgentTools>>
+        | Array<StopCondition<NoInfer<AgentTools>>>;
     },
   ) {}
 
