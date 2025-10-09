@@ -17,7 +17,6 @@ import type {
   streamObject,
   streamText,
   StreamTextResult,
-  ToolChoice,
   ToolSet,
   CallSettings,
   generateObject,
