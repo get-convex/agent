@@ -34,7 +34,7 @@ import type {
   WithoutSystemFields,
 } from "convex/server";
 import type { GenericId } from "convex/values";
-import type { Mounts } from "../component/_generated/api.js";
+import type { api } from "../component/_generated/api.js";
 import type {
   MessageDoc,
   ProviderMetadata,
@@ -331,7 +331,7 @@ export type RawRequestResponseHandler = (
   },
 ) => void | Promise<void>;
 
-export type AgentComponent = UseApi<Mounts>;
+export type AgentComponent = UseApi<typeof api>;
 
 export type TextArgs<
   AgentTools extends ToolSet,

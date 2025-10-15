@@ -414,7 +414,14 @@ export const deleteAllStreamsForThreadIdAsync = mutation({
     streamOrder: v.optional(v.number()),
     deltaCursor: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    isDone: boolean;
+    streamOrder?: number;
+    deltaCursor?: string;
+  }> => {
     const result = await deleteStreamsPageForThreadId(ctx, args);
     if (!result.isDone) {
       await ctx.scheduler.runAfter(

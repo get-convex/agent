@@ -93,7 +93,14 @@ export const deleteByOrder = mutation({
     lastOrder: v.optional(v.number()),
     lastStepOrder: v.optional(v.number()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    isDone: boolean;
+    lastOrder?: number;
+    lastStepOrder?: number;
+  }> => {
     const messages = await orderedMessagesStream(
       ctx,
       args.threadId,
@@ -770,7 +777,14 @@ export const getMessageSearchFields = query({
     embedding: v.optional(v.array(v.number())),
     embeddingModel: v.optional(v.string()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    text?: string | undefined;
+    embedding?: number[] | undefined;
+    embeddingModel?: string | undefined;
+  }> => {
     const message = await ctx.db.get(args.messageId);
     const text = message?.text;
     let embedding = undefined;
