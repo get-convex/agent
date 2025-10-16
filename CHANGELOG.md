@@ -11,6 +11,8 @@
   into account omitting missing messages or empty content.
 - Fixes playground UI showing follow-up messages.
 - Adds a /test entrypoint to make adding tests with the agent easier.
+- Simplifies the types for generating object & text to more closely match the AI
+  SDK.
 
 ## 0.2.10
 
