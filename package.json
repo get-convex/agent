@@ -85,7 +85,6 @@
     "@ai-sdk/openai": "2.0.52",
     "@ai-sdk/provider": "2.0.0",
     "@arethetypeswrong/cli": "0.18.2",
-    "@convex-dev/agent": "file:..",
     "@convex-dev/rag": "0.5.4",
     "@convex-dev/rate-limiter": "^0.2.14",
     "@convex-dev/workflow": "0.2.8-alpha.5",
