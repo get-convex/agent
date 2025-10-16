@@ -106,16 +106,16 @@
   "devDependencies": {
     "@convex-dev/agent": "../",
     "@eslint/js": "9.37.0",
-    "@types/node": "20.19.20",
+    "@types/node": "20.19.21",
     "@types/react": "19.2.2",
-    "@types/react-dom": "19.2.1",
+    "@types/react-dom": "19.2.2",
     "convex": "../node_modules/convex",
     "eslint": "9.37.0",
     "eslint-plugin-react-hooks": "5.2.0",
-    "eslint-plugin-react-refresh": "0.4.23",
+    "eslint-plugin-react-refresh": "0.4.24",
     "globals": "16.4.0",
     "react": "../node_modules/react",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.46.0"
+    "typescript-eslint": "8.46.1"
   }
 }
