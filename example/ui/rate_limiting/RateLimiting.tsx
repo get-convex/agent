@@ -3,8 +3,7 @@ import { Toaster } from "../components/ui/toaster";
 import { api } from "../../convex/_generated/api";
 import {
   SmoothText,
-  toUIMessages,
-  useThreadMessages,
+  useUIMessages,
   type UIMessage,
 } from "@convex-dev/agent/react";
 import { useCallback, useEffect, useState, useRef, useReducer } from "react";
@@ -47,7 +46,7 @@ export default function Example() {
   const submitQuestion = useMutation(
     api.rate_limiting.rateLimiting.submitQuestion,
   );
-  const messages = useThreadMessages(
+  const messages = useUIMessages(
     api.chat.streaming.listThreadMessages,
     threadId ? { threadId } : "skip",
     { initialNumItems: 10, stream: true },
@@ -190,7 +189,7 @@ export default function Example() {
             <div className="flex-1 overflow-y-auto p-6">
               {messages.results?.length > 0 ? (
                 <div className="flex flex-col gap-4 pb-4">
-                  {toUIMessages(messages.results ?? []).map((m) => (
+                  {messages.results.map((m) => (
                     <Message key={m.key} message={m} />
                   ))}
                   <div className="h-100" ref={messagesEndRef} />
