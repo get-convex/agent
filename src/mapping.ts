@@ -204,7 +204,7 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
   const toolFields = { sources: step.sources };
   const messages: MessageWithMetadata[] = await Promise.all(
-    (step.toolResults.length > 0
+    (step.finishReason === "tool-calls"
       ? step.response.messages.slice(-2)
       : step.content.length
         ? step.response.messages.slice(-1)
