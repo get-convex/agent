@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.11 alpha
+## 0.2.11
 
 - Filters out empty content arrays when prompting the LLM.
 - Fixes combining sequential user messages in useUIMessages
