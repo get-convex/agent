@@ -13,6 +13,7 @@
 - Adds a /test entrypoint to make adding tests with the agent easier.
 - Simplifies the types for generating object & text to more closely match the AI
   SDK.
+- Allows passing a `promptMessageId` to `saveMessage` to match `saveMessages`.
 
 ## 0.2.10
 

@@ -798,6 +798,7 @@ export class Agent<
           : [args.message],
       metadata: args.metadata ? [args.metadata] : undefined,
       skipEmbeddings: args.skipEmbeddings,
+      promptMessageId: args.promptMessageId,
       pendingMessageId: args.pendingMessageId,
     });
     const message = messages.at(-1)!;

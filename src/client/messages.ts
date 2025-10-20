@@ -161,6 +161,11 @@ export type SaveMessageArgs = {
   threadId: string;
   userId?: string | null;
   /**
+   * The message that these messages are in response to. They will be
+   * the same "order" as this message, at increasing stepOrder(s).
+   */
+  promptMessageId?: string;
+  /**
    * Metadata to save with the messages. Each element corresponds to the
    * message at the same index.
    */
@@ -218,6 +223,7 @@ export async function saveMessage(
     threadId: args.threadId,
     userId: args.userId ?? undefined,
     agentName: args.agentName,
+    promptMessageId: args.promptMessageId,
     pendingMessageId: args.pendingMessageId,
     messages:
       args.prompt !== undefined
