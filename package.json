@@ -84,6 +84,7 @@
     "@ai-sdk/groq": "2.0.24",
     "@ai-sdk/openai": "2.0.52",
     "@ai-sdk/provider": "2.0.0",
+    "@ai-sdk/provider-utils": "3.0.12",
     "@arethetypeswrong/cli": "0.18.2",
     "@convex-dev/rag": "0.5.4",
     "@convex-dev/rate-limiter": "^0.2.14",
