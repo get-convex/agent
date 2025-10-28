@@ -11,7 +11,7 @@
     "email": "support@convex.dev",
     "url": "https://github.com/get-convex/agent/issues"
   },
-  "version": "0.0.19",
+  "version": "0.0.20",
   "license": "Apache-2.0",
   "type": "module",
   "keywords": [
