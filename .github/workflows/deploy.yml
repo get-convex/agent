@@ -3,7 +3,6 @@ name: Deploy Playground to GitHub Pages
 on:
   push:
     branches:
-      - main
       - playground
 
 permissions:
