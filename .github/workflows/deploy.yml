@@ -30,7 +30,7 @@ jobs:
         run: npm ci && npm run build
 
       - name: Install playground dependencies
-        run: cd playground && npm ci
+        run: cd playground && npm i
 
       - name: Build Vite project
         run: cd playground && VITE_BASE=/agent/ npm run build
