@@ -189,7 +189,8 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   model: ModelOrMetadata | undefined,
 ): Promise<{ messages: MessageWithMetadata[] }> {
   // If there are tool results, there's another message with the tool results
-  // ref: https://github.com/vercel/ai/blob/main/packages/ai/core/generate-text/to-response-messages.ts
+  // ref: https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/to-response-messages.ts#L120
+  const hasToolMessage = step.response.messages.at(-1)?.role === "tool";
   const assistantFields = {
     model: model ? getModelName(model) : undefined,
     provider: model ? getProviderName(model) : undefined,
@@ -200,11 +201,11 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
     warnings: serializeWarnings(step.warnings),
     finishReason: step.finishReason,
     // Only store the sources on one message
-    sources: step.toolResults.length === 0 ? step.sources : undefined,
+    sources: hasToolMessage ? undefined : step.sources,
   } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
   const toolFields = { sources: step.sources };
   const messages: MessageWithMetadata[] = await Promise.all(
-    (step.toolResults.length > 0
+    (hasToolMessage
       ? step.response.messages.slice(-2)
       : step.content.length
         ? step.response.messages.slice(-1)
