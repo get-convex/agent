@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.12
+
+- Capture tool errors in the message
+
 ## 0.2.11
 
 - Filters out empty content arrays when prompting the LLM.
