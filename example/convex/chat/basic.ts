@@ -53,7 +53,7 @@ export const generateResponse = internalAction({
 });
 
 // Equivalent:
-// export const generateResponse = agent.asTextAction();
+export const generateResponseEquivalent = agent.asTextAction({});
 
 /**
  * Query & subscribe to messages & threads

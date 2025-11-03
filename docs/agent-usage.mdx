@@ -172,15 +172,6 @@ Note that the action doesn't need to return anything. All messages are saved by
 default, so any client subscribed to the thread messages will receive the new
 message as it is generated asynchronously.
 
-The Step 2 code is common enough that there's a utility to save you some typing.
-It takes in some parameters to control streaming, etc. For more details, see
-[the code](../src/client/index.ts#L1475-L1557).
-
-```ts
-// Equivalent to Step 2 above.
-export const generateResponseAsync = agent.asTextAction();
-```
-
 ### Generating an object
 
 Similar to the AI SDK, you can generate or stream an object. The same arguments
