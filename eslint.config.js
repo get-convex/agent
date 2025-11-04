@@ -8,14 +8,23 @@ export default [
   {
     ignores: [
       "dist/**",
-      "eslint.config.js",
-      "vitest.config.ts",
+      "example/dist/**",
+      "playground/dist/**",
+      "*.config.js",
+      "setup.cjs",
+      "example/**/*.config.{cjs,js,ts}",
+      "playground/**/*.config.{js,ts}",
+      "playground/bin/agent-playground.cjs",
       "**/_generated/",
       "node10stubs.mjs",
     ],
   },
   {
-    files: ["src/**/*.{js,mjs,cjs,ts,tsx}", "example/**/*.{js,mjs,cjs,ts,tsx}", "playground/**/*.{js,mjs,cjs,ts,tsx}"],
+    files: [
+      "src/**/*.{js,mjs,cjs,ts,tsx}",
+      "example/**/*.{js,mjs,cjs,ts,tsx}",
+      "playground/**/*.{js,mjs,cjs,ts,tsx}",
+    ],
     languageOptions: {
       parser: tseslint.parser,
       parserOptions: {
@@ -23,8 +32,8 @@ export default [
           "./tsconfig.json",
           "./example/tsconfig.json",
           "./example/convex/tsconfig.json",
-          "./playground/tsconfig.json",
-          "./playground/convex/tsconfig.json",
+          "./playground/tsconfig.app.json",
+          "./playground/tsconfig.node.json",
         ],
         tsconfigRootDir: import.meta.dirname,
       },
@@ -34,7 +43,11 @@ export default [
   ...tseslint.configs.recommended,
   // Convex code - Worker environment
   {
-    files: ["src/**/*.{ts,tsx}", "example/convex/**/*.{ts,tsx}", "playground/convex/**/*.{ts,tsx}"],
+    files: [
+      "src/**/*.{ts,tsx}",
+      "example/convex/**/*.{ts,tsx}",
+      "playground/convex/**/*.{ts,tsx}",
+    ],
     ignores: ["src/react/**"],
     languageOptions: {
       globals: globals.worker,
@@ -62,7 +75,11 @@ export default [
   },
   // React app code - Browser environment
   {
-    files: ["src/react/**/*.{ts,tsx}", "example/src/**/*.{ts,tsx}", "playground/src/**/*.{ts,tsx}"],
+    files: [
+      "src/react/**/*.{ts,tsx}",
+      "example/ui/**/*.{ts,tsx}",
+      "playground/src/**/*.{ts,tsx}",
+    ],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
@@ -73,10 +90,7 @@ export default [
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
+      "react-refresh/only-export-components": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": [
@@ -86,16 +100,6 @@ export default [
           varsIgnorePattern: "^_",
         },
       ],
-    },
-  },
-  // Example config files (vite.config.ts, etc.) - Node environment
-  {
-    files: ["example/vite.config.ts", "example/**/*.config.{js,ts}", "playground/vite.config.ts", "playground/**/*.config.{js,ts}"],
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.browser,
-      },
     },
   },
 ];

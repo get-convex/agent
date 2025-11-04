@@ -1,9 +1,8 @@
 import React, { useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
-import { Infer, Validator, Value, VObject } from "convex/values";
+import { Infer, Validator } from "convex/values";
 import { validate, ValidationError } from "convex-helpers/validators";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const JsonEditor = <V extends Validator<any, "required", any>>({
   defaultValue,
   onChange,

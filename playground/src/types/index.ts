@@ -29,9 +29,7 @@ export interface ToolCall {
   id: string;
   type: string;
   name: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   args: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   returnValue?: any;
 }
 

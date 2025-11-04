@@ -2,7 +2,6 @@ import { useAction, useMutation, usePaginatedQuery } from "convex/react";
 import {
   optimisticallySendMessage,
   SmoothText,
-  useSmoothText,
   useThreadMessages,
 } from "@convex-dev/agent/react";
 import { api } from "../../convex/_generated/api";
