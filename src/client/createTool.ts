@@ -109,7 +109,7 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
   return t;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function getCtx<Ctx extends ToolCtx>(tool: any): Ctx {
   return (tool as { ctx: Ctx }).ctx;
 }

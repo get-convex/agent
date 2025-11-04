@@ -4,6 +4,7 @@
     "paths": {
       "@/*": ["ui/*"]
     },
+    "baseUrl": ".",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "skipLibCheck": false,
     "allowSyntheticDefaultImports": true,
@@ -12,7 +13,6 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "exactOptionalPropertyTypes": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
     "noEmit": true
