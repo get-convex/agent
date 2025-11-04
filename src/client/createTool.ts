@@ -109,7 +109,6 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
   return t;
 }
 
- 
 function getCtx<Ctx extends ToolCtx>(tool: any): Ctx {
   return (tool as { ctx: Ctx }).ctx;
 }
@@ -124,7 +123,6 @@ export function wrapTools(
       continue;
     }
     for (const [name, tool] of Object.entries(toolSet)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (tool && !(tool as any).__acceptsCtx) {
         output[name] = tool;
       } else {

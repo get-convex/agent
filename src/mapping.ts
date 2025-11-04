@@ -60,8 +60,7 @@ export type SerializeUrlsAndUint8Arrays<T> = T extends URL
     ? ArrayBuffer
     : T extends Array<infer Inner>
       ? Array<SerializeUrlsAndUint8Arrays<Inner>>
-      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        T extends Record<string, any>
+      : T extends Record<string, any>
         ? { [K in keyof T]: SerializeUrlsAndUint8Arrays<T[K]> }
         : T;
 
@@ -109,9 +108,7 @@ export async function serializeOrThrow(
   message: ModelMessage | Message,
 ): Promise<SerializedMessage> {
   const { content } = await serializeContent(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     {} as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     {} as any,
     message.content,
   );

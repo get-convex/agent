@@ -29,7 +29,6 @@ import { saveMessages } from "./messages.js";
 const createMockMessageDoc = (
   id: string,
   role: "user" | "assistant" | "tool" | "system",
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any,
   order: number = 1,
 ): MessageDoc => ({

@@ -122,10 +122,7 @@ export type UIMessagesQueryResult<
  *   The streaming messages are materialized as UIMessages. The rest are passed
  *   through from the query.
  */
-export function useUIMessages<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Query extends UIMessagesQuery<any, any>,
->(
+export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   query: Query,
   args: UIMessagesQueryArgs<Query> | "skip",
   options: {
@@ -153,8 +150,7 @@ export function useUIMessages<
       args === "skip" ||
       paginated.status === "LoadingFirstPage"
       ? "skip"
-      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ({ ...args, paginationOpts: { cursor: null, numItems: 0 } } as any),
+      : ({ ...args, paginationOpts: { cursor: null, numItems: 0 } } as any),
     { startOrder, skipStreamIds: options.skipStreamIds },
   );
 

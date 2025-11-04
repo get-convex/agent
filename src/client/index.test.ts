@@ -163,7 +163,6 @@ const testApi: ApiFromModules<{
     generateObjectAction: typeof generateObjectAction;
     saveMessageMutation: typeof saveMessageMutation;
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }>["fns"] = anyApi["index.test"] as any;
 
 describe("Agent thick client", () => {

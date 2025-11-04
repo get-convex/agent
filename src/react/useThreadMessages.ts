@@ -116,10 +116,7 @@ export type ThreadMessagesResult<
  * @returns The messages. If stream is true, it will return a list of messages
  *   that includes both full messages and streaming messages.
  */
-export function useThreadMessages<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Query extends ThreadMessagesQuery<any, any>,
->(
+export function useThreadMessages<Query extends ThreadMessagesQuery<any, any>>(
   query: Query,
   args: ThreadMessagesArgs<Query> | "skip",
   options: {
@@ -154,8 +151,7 @@ export function useThreadMessages<
       args === "skip" ||
       paginated.status === "LoadingFirstPage"
       ? "skip"
-      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ({ ...args, paginationOpts: { cursor: null, numItems: 0 } } as any),
+      : ({ ...args, paginationOpts: { cursor: null, numItems: 0 } } as any),
     { startOrder },
   );
 
@@ -222,10 +218,7 @@ export function useThreadMessages<
  * you want to pass to the query.
  * @returns The streaming messages.
  */
-export function useStreamingThreadMessages<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Query extends StreamQuery<any>,
->(
+export function useStreamingThreadMessages<Query extends StreamQuery<any>>(
   query: Query,
   args:
     | (StreamQueryArgs<Query> & {
