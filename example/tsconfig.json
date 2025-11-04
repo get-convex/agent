@@ -2,22 +2,18 @@
   "compilerOptions": {
     "target": "ESNext",
     "paths": {
-      "@/*": ["./ui/*"]
+      "@/*": ["ui/*"]
     },
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "skipLibCheck": false,
     "allowSyntheticDefaultImports": true,
     "strict": true,
-    "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "exactOptionalPropertyTypes": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
     "isolatedModules": true,
-    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "noEmit": true
   },

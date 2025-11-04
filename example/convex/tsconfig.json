@@ -8,12 +8,7 @@
     "strict": true,
     "skipLibCheck": true,
     "target": "ESNext",
-    "lib": [
-      "ES2021",
-      "dom",
-      "DOM.Iterable",
-      "ESNext.Array"
-    ],
+    "lib": ["ES2021", "dom", "DOM.Iterable", "ESNext.Array"],
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
     "verbatimModuleSyntax": true,
