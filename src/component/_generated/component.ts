@@ -1,6 +1,6 @@
 /* eslint-disable */
 /**
- * Generated `api` utility.
+ * Generated `ComponentApi` utility.
  *
  * THIS CODE IS AUTOMATICALLY GENERATED.
  *
@@ -8,122 +8,21 @@
  * @module
  */
 
-import type * as agents_config from "../agents/config.js";
-import type * as agents_fashion from "../agents/fashion.js";
-import type * as agents_simple from "../agents/simple.js";
-import type * as agents_story from "../agents/story.js";
-import type * as agents_weather from "../agents/weather.js";
-import type * as chat_basic from "../chat/basic.js";
-import type * as chat_human from "../chat/human.js";
-import type * as chat_streamAbort from "../chat/streamAbort.js";
-import type * as chat_streaming from "../chat/streaming.js";
-import type * as chat_streamingReasoning from "../chat/streamingReasoning.js";
-import type * as chat_withoutAgent from "../chat/withoutAgent.js";
-import type * as crons from "../crons.js";
-import type * as debugging_rawRequestResponseHandler from "../debugging/rawRequestResponseHandler.js";
-import type * as files_addFile from "../files/addFile.js";
-import type * as files_autoSave from "../files/autoSave.js";
-import type * as files_generateImage from "../files/generateImage.js";
-import type * as files_vacuum from "../files/vacuum.js";
-import type * as http from "../http.js";
-import type * as modelsForDemo from "../modelsForDemo.js";
-import type * as objects_generateObject from "../objects/generateObject.js";
-import type * as objects_streamArray from "../objects/streamArray.js";
-import type * as playground from "../playground.js";
-import type * as rag_ragAsPrompt from "../rag/ragAsPrompt.js";
-import type * as rag_ragAsTools from "../rag/ragAsTools.js";
-import type * as rag_tables from "../rag/tables.js";
-import type * as rag_utils from "../rag/utils.js";
-import type * as rate_limiting_rateLimiting from "../rate_limiting/rateLimiting.js";
-import type * as rate_limiting_tables from "../rate_limiting/tables.js";
-import type * as rate_limiting_utils from "../rate_limiting/utils.js";
-import type * as threads from "../threads.js";
-import type * as tools_agentAsTool from "../tools/agentAsTool.js";
-import type * as tools_searchMessages from "../tools/searchMessages.js";
-import type * as tools_updateThreadTitle from "../tools/updateThreadTitle.js";
-import type * as tools_weather from "../tools/weather.js";
-import type * as usage_tracking_invoicing from "../usage_tracking/invoicing.js";
-import type * as usage_tracking_tables from "../usage_tracking/tables.js";
-import type * as usage_tracking_usageHandler from "../usage_tracking/usageHandler.js";
-import type * as utils from "../utils.js";
-import type * as workflows_chaining from "../workflows/chaining.js";
-
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
-
-declare const fullApi: ApiFromModules<{
-  "agents/config": typeof agents_config;
-  "agents/fashion": typeof agents_fashion;
-  "agents/simple": typeof agents_simple;
-  "agents/story": typeof agents_story;
-  "agents/weather": typeof agents_weather;
-  "chat/basic": typeof chat_basic;
-  "chat/human": typeof chat_human;
-  "chat/streamAbort": typeof chat_streamAbort;
-  "chat/streaming": typeof chat_streaming;
-  "chat/streamingReasoning": typeof chat_streamingReasoning;
-  "chat/withoutAgent": typeof chat_withoutAgent;
-  crons: typeof crons;
-  "debugging/rawRequestResponseHandler": typeof debugging_rawRequestResponseHandler;
-  "files/addFile": typeof files_addFile;
-  "files/autoSave": typeof files_autoSave;
-  "files/generateImage": typeof files_generateImage;
-  "files/vacuum": typeof files_vacuum;
-  http: typeof http;
-  modelsForDemo: typeof modelsForDemo;
-  "objects/generateObject": typeof objects_generateObject;
-  "objects/streamArray": typeof objects_streamArray;
-  playground: typeof playground;
-  "rag/ragAsPrompt": typeof rag_ragAsPrompt;
-  "rag/ragAsTools": typeof rag_ragAsTools;
-  "rag/tables": typeof rag_tables;
-  "rag/utils": typeof rag_utils;
-  "rate_limiting/rateLimiting": typeof rate_limiting_rateLimiting;
-  "rate_limiting/tables": typeof rate_limiting_tables;
-  "rate_limiting/utils": typeof rate_limiting_utils;
-  threads: typeof threads;
-  "tools/agentAsTool": typeof tools_agentAsTool;
-  "tools/searchMessages": typeof tools_searchMessages;
-  "tools/updateThreadTitle": typeof tools_updateThreadTitle;
-  "tools/weather": typeof tools_weather;
-  "usage_tracking/invoicing": typeof usage_tracking_invoicing;
-  "usage_tracking/tables": typeof usage_tracking_tables;
-  "usage_tracking/usageHandler": typeof usage_tracking_usageHandler;
-  utils: typeof utils;
-  "workflows/chaining": typeof workflows_chaining;
-}>;
+import type { FunctionReference } from "convex/server";
 
 /**
- * A utility for referencing Convex functions in your app's public API.
+ * A utility for referencing a Convex component's exposed API.
  *
+ * Useful when expecting a parameter like `components.myComponent`.
  * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
+ * ```ts
+ * async function myFunction(ctx: QueryCtx, component: ComponentApi) {
+ *   return ctx.runQuery(component.someFile.someQuery, { ...args });
+ * }
  * ```
  */
-export declare const api: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "public">
->;
-
-/**
- * A utility for referencing Convex functions in your app's internal API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = internal.myModule.myFunction;
- * ```
- */
-export declare const internal: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "internal">
->;
-
-export declare const components: {
-  agent: {
+export type ComponentApi<Name extends string | undefined = string | undefined> =
+  {
     apiKeys: {
       destroy: FunctionReference<
         "mutation",
@@ -132,19 +31,22 @@ export declare const components: {
         | "missing"
         | "deleted"
         | "name mismatch"
-        | "must provide either apiKey or name"
+        | "must provide either apiKey or name",
+        Name
       >;
       issue: FunctionReference<
         "mutation",
         "internal",
         { name?: string },
-        string
+        string,
+        Name
       >;
       validate: FunctionReference<
         "query",
         "internal",
         { apiKey: string },
-        boolean
+        boolean,
+        Name
       >;
     };
     files: {
@@ -157,19 +59,22 @@ export declare const components: {
           mimeType: string;
           storageId: string;
         },
-        { fileId: string; storageId: string }
+        { fileId: string; storageId: string },
+        Name
       >;
       copyFile: FunctionReference<
         "mutation",
         "internal",
         { fileId: string },
-        null
+        null,
+        Name
       >;
       deleteFiles: FunctionReference<
         "mutation",
         "internal",
         { fileIds: Array<string>; force?: boolean },
-        Array<string>
+        Array<string>,
+        Name
       >;
       get: FunctionReference<
         "query",
@@ -184,7 +89,8 @@ export declare const components: {
           mimeType: string;
           refcount: number;
           storageId: string;
-        }
+        },
+        Name
       >;
       getFilesToDelete: FunctionReference<
         "query",
@@ -212,13 +118,15 @@ export declare const components: {
             refcount: number;
             storageId: string;
           }>;
-        }
+        },
+        Name
       >;
       useExistingFile: FunctionReference<
         "mutation",
         "internal",
         { filename?: string; hash: string },
-        null | { fileId: string; storageId: string }
+        null | { fileId: string; storageId: string },
+        Name
       >;
     };
     messages: {
@@ -243,7 +151,6 @@ export declare const components: {
             vectors: Array<Array<number> | null>;
           };
           failPendingSteps?: boolean;
-          hideFromUserIdSearch?: boolean;
           messages: Array<{
             error?: string;
             fileIds?: Array<string>;
@@ -845,29 +752,15 @@ export declare const components: {
               | { message: string; type: "other" }
             >;
           }>;
-        }
-      >;
-      cloneThread: FunctionReference<
-        "action",
-        "internal",
-        {
-          batchSize?: number;
-          copyUserIdForVectorSearch?: boolean;
-          excludeToolMessages?: boolean;
-          insertAtOrder?: number;
-          limit?: number;
-          sourceThreadId: string;
-          statuses?: Array<"pending" | "success" | "failed">;
-          targetThreadId: string;
-          upToAndIncludingMessageId?: string;
         },
-        number
+        Name
       >;
       deleteByIds: FunctionReference<
         "mutation",
         "internal",
         { messageIds: Array<string> },
-        Array<string>
+        Array<string>,
+        Name
       >;
       deleteByOrder: FunctionReference<
         "mutation",
@@ -879,7 +772,8 @@ export declare const components: {
           startStepOrder?: number;
           threadId: string;
         },
-        { isDone: boolean; lastOrder?: number; lastStepOrder?: number }
+        { isDone: boolean; lastOrder?: number; lastStepOrder?: number },
+        Name
       >;
       finalizeMessage: FunctionReference<
         "mutation",
@@ -888,13 +782,15 @@ export declare const components: {
           messageId: string;
           result: { status: "success" } | { error: string; status: "failed" };
         },
-        null
+        null,
+        Name
       >;
       getMessageSearchFields: FunctionReference<
         "query",
         "internal",
         { messageId: string },
-        { embedding?: Array<number>; embeddingModel?: string; text?: string }
+        { embedding?: Array<number>; embeddingModel?: string; text?: string },
+        Name
       >;
       getMessagesByIds: FunctionReference<
         "query",
@@ -1161,7 +1057,8 @@ export declare const components: {
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
           >;
-        }>
+        }>,
+        Name
       >;
       listMessagesByThreadId: FunctionReference<
         "query",
@@ -1489,7 +1386,8 @@ export declare const components: {
           }>;
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
           splitCursor?: string | null;
-        }
+        },
+        Name
       >;
       searchMessages: FunctionReference<
         "action",
@@ -1768,7 +1666,8 @@ export declare const components: {
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
           >;
-        }>
+        }>,
+        Name
       >;
       textSearch: FunctionReference<
         "query",
@@ -2041,7 +1940,8 @@ export declare const components: {
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
           >;
-        }>
+        }>,
+        Name
       >;
       updateMessage: FunctionReference<
         "mutation",
@@ -2552,7 +2452,8 @@ export declare const components: {
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
           >;
-        }
+        },
+        Name
       >;
     };
     streams: {
@@ -2569,19 +2470,22 @@ export declare const components: {
           reason: string;
           streamId: string;
         },
-        boolean
+        boolean,
+        Name
       >;
       abortByOrder: FunctionReference<
         "mutation",
         "internal",
         { order: number; reason: string; threadId: string },
-        boolean
+        boolean,
+        Name
       >;
       addDelta: FunctionReference<
         "mutation",
         "internal",
         { end: number; parts: Array<any>; start: number; streamId: string },
-        boolean
+        boolean,
+        Name
       >;
       create: FunctionReference<
         "mutation",
@@ -2597,31 +2501,36 @@ export declare const components: {
           threadId: string;
           userId?: string;
         },
-        string
+        string,
+        Name
       >;
       deleteAllStreamsForThreadIdAsync: FunctionReference<
         "mutation",
         "internal",
         { deltaCursor?: string; streamOrder?: number; threadId: string },
-        { deltaCursor?: string; isDone: boolean; streamOrder?: number }
+        { deltaCursor?: string; isDone: boolean; streamOrder?: number },
+        Name
       >;
       deleteAllStreamsForThreadIdSync: FunctionReference<
         "action",
         "internal",
         { threadId: string },
-        null
+        null,
+        Name
       >;
       deleteStreamAsync: FunctionReference<
         "mutation",
         "internal",
         { cursor?: string; streamId: string },
-        null
+        null,
+        Name
       >;
       deleteStreamSync: FunctionReference<
         "mutation",
         "internal",
         { streamId: string },
-        null
+        null,
+        Name
       >;
       finish: FunctionReference<
         "mutation",
@@ -2635,13 +2544,15 @@ export declare const components: {
           };
           streamId: string;
         },
-        null
+        null,
+        Name
       >;
       heartbeat: FunctionReference<
         "mutation",
         "internal",
         { streamId: string },
-        null
+        null,
+        Name
       >;
       list: FunctionReference<
         "query",
@@ -2662,7 +2573,8 @@ export declare const components: {
           stepOrder: number;
           streamId: string;
           userId?: string;
-        }>
+        }>,
+        Name
       >;
       listDeltas: FunctionReference<
         "query",
@@ -2676,7 +2588,8 @@ export declare const components: {
           parts: Array<any>;
           start: number;
           streamId: string;
-        }>
+        }>,
+        Name
       >;
     };
     threads: {
@@ -2697,7 +2610,8 @@ export declare const components: {
           summary?: string;
           title?: string;
           userId?: string;
-        }
+        },
+        Name
       >;
       deleteAllForThreadIdAsync: FunctionReference<
         "mutation",
@@ -2711,13 +2625,15 @@ export declare const components: {
           streamsDone?: boolean;
           threadId: string;
         },
-        { isDone: boolean }
+        { isDone: boolean },
+        Name
       >;
       deleteAllForThreadIdSync: FunctionReference<
         "action",
         "internal",
         { limit?: number; threadId: string },
-        null
+        null,
+        Name
       >;
       getThread: FunctionReference<
         "query",
@@ -2730,7 +2646,8 @@ export declare const components: {
           summary?: string;
           title?: string;
           userId?: string;
-        } | null
+        } | null,
+        Name
       >;
       listThreadsByUserId: FunctionReference<
         "query",
@@ -2760,7 +2677,8 @@ export declare const components: {
           }>;
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
           splitCursor?: string | null;
-        }
+        },
+        Name
       >;
       searchThreadTitles: FunctionReference<
         "query",
@@ -2773,7 +2691,8 @@ export declare const components: {
           summary?: string;
           title?: string;
           userId?: string;
-        }>
+        }>,
+        Name
       >;
       updateThread: FunctionReference<
         "mutation",
@@ -2794,7 +2713,8 @@ export declare const components: {
           summary?: string;
           title?: string;
           userId?: string;
-        }
+        },
+        Name
       >;
     };
     users: {
@@ -2802,13 +2722,15 @@ export declare const components: {
         "action",
         "internal",
         { userId: string },
-        null
+        null,
+        Name
       >;
       deleteAllForUserIdAsync: FunctionReference<
         "mutation",
         "internal",
         { userId: string },
-        boolean
+        boolean,
+        Name
       >;
       listUsersWithThreads: FunctionReference<
         "query",
@@ -2829,7 +2751,8 @@ export declare const components: {
           page: Array<string>;
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
           splitCursor?: string | null;
-        }
+        },
+        Name
       >;
     };
     vector: {
@@ -2851,7 +2774,8 @@ export declare const components: {
               | string
             >;
           },
-          null
+          null,
+          Name
         >;
         deleteBatchForThread: FunctionReference<
           "mutation",
@@ -2873,7 +2797,8 @@ export declare const components: {
               | 3072
               | 4096;
           },
-          { continueCursor: string; isDone: boolean }
+          { continueCursor: string; isDone: boolean },
+          Name
         >;
         insertBatch: FunctionReference<
           "mutation",
@@ -2910,7 +2835,8 @@ export declare const components: {
             | string
             | string
             | string
-          >
+          >,
+          Name
         >;
         paginate: FunctionReference<
           "query",
@@ -2947,7 +2873,8 @@ export declare const components: {
               | string
             >;
             isDone: boolean;
-          }
+          },
+          Name
         >;
         updateBatch: FunctionReference<
           "mutation",
@@ -2969,930 +2896,9 @@ export declare const components: {
               vector: Array<number>;
             }>;
           },
-          null
+          null,
+          Name
         >;
       };
     };
   };
-  workflow: {
-    event: {
-      create: FunctionReference<
-        "mutation",
-        "internal",
-        { name: string; workflowId: string },
-        string
-      >;
-      send: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          eventId?: string;
-          name?: string;
-          result:
-            | { kind: "success"; returnValue: any }
-            | { error: string; kind: "failed" }
-            | { kind: "canceled" };
-          workflowId?: string;
-          workpoolOptions?: {
-            defaultRetryBehavior?: {
-              base: number;
-              initialBackoffMs: number;
-              maxAttempts: number;
-            };
-            logLevel?: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
-            maxParallelism?: number;
-            retryActionsByDefault?: boolean;
-          };
-        },
-        string
-      >;
-    };
-    journal: {
-      load: FunctionReference<
-        "query",
-        "internal",
-        { shortCircuit?: boolean; workflowId: string },
-        {
-          blocked?: boolean;
-          journalEntries: Array<{
-            _creationTime: number;
-            _id: string;
-            step:
-              | {
-                  args: any;
-                  argsSize: number;
-                  completedAt?: number;
-                  functionType: "query" | "mutation" | "action";
-                  handle: string;
-                  inProgress: boolean;
-                  kind?: "function";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                  workId?: string;
-                }
-              | {
-                  args: any;
-                  argsSize: number;
-                  completedAt?: number;
-                  handle: string;
-                  inProgress: boolean;
-                  kind: "workflow";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                  workflowId?: string;
-                }
-              | {
-                  args: { eventId?: string };
-                  argsSize: number;
-                  completedAt?: number;
-                  eventId?: string;
-                  inProgress: boolean;
-                  kind: "event";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                };
-            stepNumber: number;
-            workflowId: string;
-          }>;
-          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
-          ok: boolean;
-          workflow: {
-            _creationTime: number;
-            _id: string;
-            args: any;
-            generationNumber: number;
-            logLevel?: any;
-            name?: string;
-            onComplete?: { context?: any; fnHandle: string };
-            runResult?:
-              | { kind: "success"; returnValue: any }
-              | { error: string; kind: "failed" }
-              | { kind: "canceled" };
-            startedAt?: any;
-            state?: any;
-            workflowHandle: string;
-          };
-        }
-      >;
-      startSteps: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          generationNumber: number;
-          steps: Array<{
-            retry?:
-              | boolean
-              | { base: number; initialBackoffMs: number; maxAttempts: number };
-            schedulerOptions?: { runAt?: number } | { runAfter?: number };
-            step:
-              | {
-                  args: any;
-                  argsSize: number;
-                  completedAt?: number;
-                  functionType: "query" | "mutation" | "action";
-                  handle: string;
-                  inProgress: boolean;
-                  kind?: "function";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                  workId?: string;
-                }
-              | {
-                  args: any;
-                  argsSize: number;
-                  completedAt?: number;
-                  handle: string;
-                  inProgress: boolean;
-                  kind: "workflow";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                  workflowId?: string;
-                }
-              | {
-                  args: { eventId?: string };
-                  argsSize: number;
-                  completedAt?: number;
-                  eventId?: string;
-                  inProgress: boolean;
-                  kind: "event";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                };
-          }>;
-          workflowId: string;
-          workpoolOptions?: {
-            defaultRetryBehavior?: {
-              base: number;
-              initialBackoffMs: number;
-              maxAttempts: number;
-            };
-            logLevel?: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
-            maxParallelism?: number;
-            retryActionsByDefault?: boolean;
-          };
-        },
-        Array<{
-          _creationTime: number;
-          _id: string;
-          step:
-            | {
-                args: any;
-                argsSize: number;
-                completedAt?: number;
-                functionType: "query" | "mutation" | "action";
-                handle: string;
-                inProgress: boolean;
-                kind?: "function";
-                name: string;
-                runResult?:
-                  | { kind: "success"; returnValue: any }
-                  | { error: string; kind: "failed" }
-                  | { kind: "canceled" };
-                startedAt: number;
-                workId?: string;
-              }
-            | {
-                args: any;
-                argsSize: number;
-                completedAt?: number;
-                handle: string;
-                inProgress: boolean;
-                kind: "workflow";
-                name: string;
-                runResult?:
-                  | { kind: "success"; returnValue: any }
-                  | { error: string; kind: "failed" }
-                  | { kind: "canceled" };
-                startedAt: number;
-                workflowId?: string;
-              }
-            | {
-                args: { eventId?: string };
-                argsSize: number;
-                completedAt?: number;
-                eventId?: string;
-                inProgress: boolean;
-                kind: "event";
-                name: string;
-                runResult?:
-                  | { kind: "success"; returnValue: any }
-                  | { error: string; kind: "failed" }
-                  | { kind: "canceled" };
-                startedAt: number;
-              };
-          stepNumber: number;
-          workflowId: string;
-        }>
-      >;
-    };
-    workflow: {
-      cancel: FunctionReference<
-        "mutation",
-        "internal",
-        { workflowId: string },
-        null
-      >;
-      cleanup: FunctionReference<
-        "mutation",
-        "internal",
-        { workflowId: string },
-        boolean
-      >;
-      complete: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          generationNumber: number;
-          runResult:
-            | { kind: "success"; returnValue: any }
-            | { error: string; kind: "failed" }
-            | { kind: "canceled" };
-          workflowId: string;
-        },
-        null
-      >;
-      create: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          maxParallelism?: number;
-          onComplete?: { context?: any; fnHandle: string };
-          startAsync?: boolean;
-          workflowArgs: any;
-          workflowHandle: string;
-          workflowName: string;
-        },
-        string
-      >;
-      getStatus: FunctionReference<
-        "query",
-        "internal",
-        { workflowId: string },
-        {
-          inProgress: Array<{
-            _creationTime: number;
-            _id: string;
-            step:
-              | {
-                  args: any;
-                  argsSize: number;
-                  completedAt?: number;
-                  functionType: "query" | "mutation" | "action";
-                  handle: string;
-                  inProgress: boolean;
-                  kind?: "function";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                  workId?: string;
-                }
-              | {
-                  args: any;
-                  argsSize: number;
-                  completedAt?: number;
-                  handle: string;
-                  inProgress: boolean;
-                  kind: "workflow";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                  workflowId?: string;
-                }
-              | {
-                  args: { eventId?: string };
-                  argsSize: number;
-                  completedAt?: number;
-                  eventId?: string;
-                  inProgress: boolean;
-                  kind: "event";
-                  name: string;
-                  runResult?:
-                    | { kind: "success"; returnValue: any }
-                    | { error: string; kind: "failed" }
-                    | { kind: "canceled" };
-                  startedAt: number;
-                };
-            stepNumber: number;
-            workflowId: string;
-          }>;
-          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
-          workflow: {
-            _creationTime: number;
-            _id: string;
-            args: any;
-            generationNumber: number;
-            logLevel?: any;
-            name?: string;
-            onComplete?: { context?: any; fnHandle: string };
-            runResult?:
-              | { kind: "success"; returnValue: any }
-              | { error: string; kind: "failed" }
-              | { kind: "canceled" };
-            startedAt?: any;
-            state?: any;
-            workflowHandle: string;
-          };
-        }
-      >;
-      listSteps: FunctionReference<
-        "query",
-        "internal",
-        {
-          order: "asc" | "desc";
-          paginationOpts: {
-            cursor: string | null;
-            endCursor?: string | null;
-            id?: number;
-            maximumBytesRead?: number;
-            maximumRowsRead?: number;
-            numItems: number;
-          };
-          workflowId: string;
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            args: any;
-            completedAt?: number;
-            eventId?: string;
-            kind: "function" | "workflow" | "event";
-            name: string;
-            nestedWorkflowId?: string;
-            runResult?:
-              | { kind: "success"; returnValue: any }
-              | { error: string; kind: "failed" }
-              | { kind: "canceled" };
-            startedAt: number;
-            stepId: string;
-            stepNumber: number;
-            workId?: string;
-            workflowId: string;
-          }>;
-          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
-          splitCursor?: string | null;
-        }
-      >;
-    };
-  };
-  rateLimiter: {
-    lib: {
-      checkRateLimit: FunctionReference<
-        "query",
-        "internal",
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          count?: number;
-          key?: string;
-          name: string;
-          reserve?: boolean;
-          throws?: boolean;
-        },
-        { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
-      >;
-      clearAll: FunctionReference<
-        "mutation",
-        "internal",
-        { before?: number },
-        null
-      >;
-      getServerTime: FunctionReference<"mutation", "internal", {}, number>;
-      getValue: FunctionReference<
-        "query",
-        "internal",
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          key?: string;
-          name: string;
-          sampleShards?: number;
-        },
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          shard: number;
-          ts: number;
-          value: number;
-        }
-      >;
-      rateLimit: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          count?: number;
-          key?: string;
-          name: string;
-          reserve?: boolean;
-          throws?: boolean;
-        },
-        { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
-      >;
-      resetRateLimit: FunctionReference<
-        "mutation",
-        "internal",
-        { key?: string; name: string },
-        null
-      >;
-    };
-    time: {
-      getServerTime: FunctionReference<"mutation", "internal", {}, number>;
-    };
-  };
-  rag: {
-    chunks: {
-      insert: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          chunks: Array<{
-            content: { metadata?: Record<string, any>; text: string };
-            embedding: Array<number>;
-            searchableText?: string;
-          }>;
-          entryId: string;
-          startOrder: number;
-        },
-        { status: "pending" | "ready" | "replaced" }
-      >;
-      list: FunctionReference<
-        "query",
-        "internal",
-        {
-          entryId: string;
-          order: "desc" | "asc";
-          paginationOpts: {
-            cursor: string | null;
-            endCursor?: string | null;
-            id?: number;
-            maximumBytesRead?: number;
-            maximumRowsRead?: number;
-            numItems: number;
-          };
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            metadata?: Record<string, any>;
-            order: number;
-            state: "pending" | "ready" | "replaced";
-            text: string;
-          }>;
-          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
-          splitCursor?: string | null;
-        }
-      >;
-      replaceChunksPage: FunctionReference<
-        "mutation",
-        "internal",
-        { entryId: string; startOrder: number },
-        { nextStartOrder: number; status: "pending" | "ready" | "replaced" }
-      >;
-    };
-    entries: {
-      add: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          allChunks?: Array<{
-            content: { metadata?: Record<string, any>; text: string };
-            embedding: Array<number>;
-            searchableText?: string;
-          }>;
-          entry: {
-            contentHash?: string;
-            filterValues: Array<{ name: string; value: any }>;
-            importance: number;
-            key?: string;
-            metadata?: Record<string, any>;
-            namespaceId: string;
-            title?: string;
-          };
-          onComplete?: string;
-        },
-        {
-          created: boolean;
-          entryId: string;
-          status: "pending" | "ready" | "replaced";
-        }
-      >;
-      addAsync: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          chunker: string;
-          entry: {
-            contentHash?: string;
-            filterValues: Array<{ name: string; value: any }>;
-            importance: number;
-            key?: string;
-            metadata?: Record<string, any>;
-            namespaceId: string;
-            title?: string;
-          };
-          onComplete?: string;
-        },
-        { created: boolean; entryId: string; status: "pending" | "ready" }
-      >;
-      deleteAsync: FunctionReference<
-        "mutation",
-        "internal",
-        { entryId: string; startOrder: number },
-        null
-      >;
-      deleteByKeyAsync: FunctionReference<
-        "mutation",
-        "internal",
-        { beforeVersion?: number; key: string; namespaceId: string },
-        null
-      >;
-      deleteByKeySync: FunctionReference<
-        "action",
-        "internal",
-        { key: string; namespaceId: string },
-        null
-      >;
-      deleteSync: FunctionReference<
-        "action",
-        "internal",
-        { entryId: string },
-        null
-      >;
-      findByContentHash: FunctionReference<
-        "query",
-        "internal",
-        {
-          contentHash: string;
-          dimension: number;
-          filterNames: Array<string>;
-          key: string;
-          modelId: string;
-          namespace: string;
-        },
-        {
-          contentHash?: string;
-          entryId: string;
-          filterValues: Array<{ name: string; value: any }>;
-          importance: number;
-          key?: string;
-          metadata?: Record<string, any>;
-          replacedAt?: number;
-          status: "pending" | "ready" | "replaced";
-          title?: string;
-        } | null
-      >;
-      get: FunctionReference<
-        "query",
-        "internal",
-        { entryId: string },
-        {
-          contentHash?: string;
-          entryId: string;
-          filterValues: Array<{ name: string; value: any }>;
-          importance: number;
-          key?: string;
-          metadata?: Record<string, any>;
-          replacedAt?: number;
-          status: "pending" | "ready" | "replaced";
-          title?: string;
-        } | null
-      >;
-      list: FunctionReference<
-        "query",
-        "internal",
-        {
-          namespaceId?: string;
-          order?: "desc" | "asc";
-          paginationOpts: {
-            cursor: string | null;
-            endCursor?: string | null;
-            id?: number;
-            maximumBytesRead?: number;
-            maximumRowsRead?: number;
-            numItems: number;
-          };
-          status: "pending" | "ready" | "replaced";
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            contentHash?: string;
-            entryId: string;
-            filterValues: Array<{ name: string; value: any }>;
-            importance: number;
-            key?: string;
-            metadata?: Record<string, any>;
-            replacedAt?: number;
-            status: "pending" | "ready" | "replaced";
-            title?: string;
-          }>;
-          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
-          splitCursor?: string | null;
-        }
-      >;
-      promoteToReady: FunctionReference<
-        "mutation",
-        "internal",
-        { entryId: string },
-        {
-          replacedEntry: {
-            contentHash?: string;
-            entryId: string;
-            filterValues: Array<{ name: string; value: any }>;
-            importance: number;
-            key?: string;
-            metadata?: Record<string, any>;
-            replacedAt?: number;
-            status: "pending" | "ready" | "replaced";
-            title?: string;
-          } | null;
-        }
-      >;
-    };
-    namespaces: {
-      deleteNamespace: FunctionReference<
-        "mutation",
-        "internal",
-        { namespaceId: string },
-        {
-          deletedNamespace: null | {
-            createdAt: number;
-            dimension: number;
-            filterNames: Array<string>;
-            modelId: string;
-            namespace: string;
-            namespaceId: string;
-            status: "pending" | "ready" | "replaced";
-            version: number;
-          };
-        }
-      >;
-      deleteNamespaceSync: FunctionReference<
-        "action",
-        "internal",
-        { namespaceId: string },
-        null
-      >;
-      get: FunctionReference<
-        "query",
-        "internal",
-        {
-          dimension: number;
-          filterNames: Array<string>;
-          modelId: string;
-          namespace: string;
-        },
-        null | {
-          createdAt: number;
-          dimension: number;
-          filterNames: Array<string>;
-          modelId: string;
-          namespace: string;
-          namespaceId: string;
-          status: "pending" | "ready" | "replaced";
-          version: number;
-        }
-      >;
-      getOrCreate: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          dimension: number;
-          filterNames: Array<string>;
-          modelId: string;
-          namespace: string;
-          onComplete?: string;
-          status: "pending" | "ready";
-        },
-        { namespaceId: string; status: "pending" | "ready" }
-      >;
-      list: FunctionReference<
-        "query",
-        "internal",
-        {
-          paginationOpts: {
-            cursor: string | null;
-            endCursor?: string | null;
-            id?: number;
-            maximumBytesRead?: number;
-            maximumRowsRead?: number;
-            numItems: number;
-          };
-          status: "pending" | "ready" | "replaced";
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            createdAt: number;
-            dimension: number;
-            filterNames: Array<string>;
-            modelId: string;
-            namespace: string;
-            namespaceId: string;
-            status: "pending" | "ready" | "replaced";
-            version: number;
-          }>;
-          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
-          splitCursor?: string | null;
-        }
-      >;
-      listNamespaceVersions: FunctionReference<
-        "query",
-        "internal",
-        {
-          namespace: string;
-          paginationOpts: {
-            cursor: string | null;
-            endCursor?: string | null;
-            id?: number;
-            maximumBytesRead?: number;
-            maximumRowsRead?: number;
-            numItems: number;
-          };
-        },
-        {
-          continueCursor: string;
-          isDone: boolean;
-          page: Array<{
-            createdAt: number;
-            dimension: number;
-            filterNames: Array<string>;
-            modelId: string;
-            namespace: string;
-            namespaceId: string;
-            status: "pending" | "ready" | "replaced";
-            version: number;
-          }>;
-          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
-          splitCursor?: string | null;
-        }
-      >;
-      lookup: FunctionReference<
-        "query",
-        "internal",
-        {
-          dimension: number;
-          filterNames: Array<string>;
-          modelId: string;
-          namespace: string;
-        },
-        null | string
-      >;
-      promoteToReady: FunctionReference<
-        "mutation",
-        "internal",
-        { namespaceId: string },
-        {
-          replacedNamespace: null | {
-            createdAt: number;
-            dimension: number;
-            filterNames: Array<string>;
-            modelId: string;
-            namespace: string;
-            namespaceId: string;
-            status: "pending" | "ready" | "replaced";
-            version: number;
-          };
-        }
-      >;
-    };
-    search: {
-      search: FunctionReference<
-        "action",
-        "internal",
-        {
-          chunkContext?: { after: number; before: number };
-          embedding: Array<number>;
-          filters: Array<{ name: string; value: any }>;
-          limit: number;
-          modelId: string;
-          namespace: string;
-          vectorScoreThreshold?: number;
-        },
-        {
-          entries: Array<{
-            contentHash?: string;
-            entryId: string;
-            filterValues: Array<{ name: string; value: any }>;
-            importance: number;
-            key?: string;
-            metadata?: Record<string, any>;
-            replacedAt?: number;
-            status: "pending" | "ready" | "replaced";
-            title?: string;
-          }>;
-          results: Array<{
-            content: Array<{ metadata?: Record<string, any>; text: string }>;
-            entryId: string;
-            order: number;
-            score: number;
-            startOrder: number;
-          }>;
-        }
-      >;
-    };
-  };
-};

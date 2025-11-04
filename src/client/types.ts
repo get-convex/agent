@@ -23,7 +23,6 @@ import type {
 } from "ai";
 import type {
   Auth,
-  Expand,
   FunctionArgs,
   FunctionReference,
   FunctionReturnType,
@@ -33,8 +32,6 @@ import type {
   StorageReader,
   WithoutSystemFields,
 } from "convex/server";
-import type { GenericId } from "convex/values";
-import type { api } from "../component/_generated/api.js";
 import type {
   MessageDoc,
   ProviderMetadata,
@@ -43,6 +40,7 @@ import type {
   ThreadDoc,
 } from "../validators.js";
 import type { StreamingOptions } from "./streaming.js";
+import type { ComponentApi } from "../component/_generated/component.js";
 
 export type AgentPrompt = {
   /**
@@ -331,7 +329,7 @@ export type RawRequestResponseHandler = (
   },
 ) => void | Promise<void>;
 
-export type AgentComponent = UseApi<typeof api>;
+export type AgentComponent = ComponentApi;
 
 export type TextArgs<
   AgentTools extends ToolSet,
@@ -642,32 +640,3 @@ export type ActionCtx = MutationCtx & {
   storage: StorageActionWriter;
 };
 export type QueryCtx = RunQueryCtx & { storage: StorageReader };
-
-export type OpaqueIds<T> =
-  T extends GenericId<infer _T>
-    ? string
-    : T extends (infer U)[]
-      ? OpaqueIds<U>[]
-      : T extends ArrayBuffer
-        ? ArrayBuffer
-        : T extends object
-          ? { [K in keyof T]: OpaqueIds<T[K]> }
-          : T;
-
-export type UseApi<API> = Expand<{
-  [mod in keyof API]: API[mod] extends FunctionReference<
-    infer FType,
-    "public",
-    infer FArgs,
-    infer FReturnType,
-    infer FComponentPath
-  >
-    ? FunctionReference<
-        FType,
-        "internal",
-        OpaqueIds<FArgs>,
-        OpaqueIds<FReturnType>,
-        FComponentPath
-      >
-    : UseApi<API[mod]>;
-}>;
