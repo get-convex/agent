@@ -131,7 +131,7 @@ const result = await agent.generateText(
       const related = await getRelatedThreadMessages(ctx, args.threadId);
       return [
         // Summarize or truncate context messages if they are too long.
-        ...await summarizeOrTruncateIfTooLong(related),
+        ...(await summarizeOrTruncateIfTooLong(related)),
         ...relevantSearch,
         ...userMemories,
         ...sampleMessages,

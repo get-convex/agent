@@ -48,45 +48,48 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
   const [isValid, setIsValid] = useState(false);
 
   // Validation function
-  const validateDeploymentUrl = useCallback(async (url: string) => {
-    if (loading) return;
-    if (!url) {
-      setIsValid(false);
+  const validateDeploymentUrl = useCallback(
+    async (url: string) => {
+      if (loading) return;
+      if (!url) {
+        setIsValid(false);
+        setInstanceName(null);
+        setError("Please enter a URL");
+        setLoading(false);
+        return;
+      }
+      if (!isValidHttpUrl(url)) {
+        setIsValid(false);
+        setInstanceName(null);
+        setError("Please enter a valid HTTP or HTTPS URL");
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       setInstanceName(null);
-      setError("Please enter a URL");
-      setLoading(false);
-      return;
-    }
-    if (!isValidHttpUrl(url)) {
-      setIsValid(false);
-      setInstanceName(null);
-      setError("Please enter a valid HTTP or HTTPS URL");
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setInstanceName(null);
-    setError(null);
-    try {
-      const res = await fetch(url + "/instance_name");
-      if (!res.ok) throw new Error("Invalid response");
-      const name = await res.text();
-      setInstanceName(name);
       setError(null);
-      setLoading(false);
-      setIsValid(true);
-      localStorage.setItem(DEPLOYMENT_URL_STORAGE_KEY, url);
-      // Navigate to the validated URL
-      navigate(`/play/${encodeURIComponent(url.replace(/\/$/, ""))}`);
-    } catch {
-      setInstanceName(null);
-      setError(
-        "Could not validate deployment URL. Please check the URL and try again.",
-      );
-      setLoading(false);
-      setIsValid(false);
-    }
-  }, [loading, navigate]);
+      try {
+        const res = await fetch(url + "/instance_name");
+        if (!res.ok) throw new Error("Invalid response");
+        const name = await res.text();
+        setInstanceName(name);
+        setError(null);
+        setLoading(false);
+        setIsValid(true);
+        localStorage.setItem(DEPLOYMENT_URL_STORAGE_KEY, url);
+        // Navigate to the validated URL
+        navigate(`/play/${encodeURIComponent(url.replace(/\/$/, ""))}`);
+      } catch {
+        setInstanceName(null);
+        setError(
+          "Could not validate deployment URL. Please check the URL and try again.",
+        );
+        setLoading(false);
+        setIsValid(false);
+      }
+    },
+    [loading, navigate],
+  );
 
   // Auto-validate deployment URL from path when it changes
   useEffect(() => {
@@ -100,7 +103,14 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
     if (!isValid && !error && !instanceName && !loading) {
       validateDeploymentUrl(deploymentUrl);
     }
-  }, [deploymentUrl, validateDeploymentUrl, isValid, error, instanceName, loading]);
+  }, [
+    deploymentUrl,
+    validateDeploymentUrl,
+    isValid,
+    error,
+    instanceName,
+    loading,
+  ]);
 
   // Handle input changes and validation
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

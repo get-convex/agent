@@ -8,8 +8,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src")
-    }
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
-  base: process.env.VITE_BASE || "/"
+  base: process.env.VITE_BASE || "/",
 }));

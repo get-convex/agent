@@ -7,9 +7,5 @@
     "example/src/**/*.tsx",
     "example/convex/**/*.ts"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/_generated"
-  ]
+  "exclude": ["node_modules", "dist", "**/_generated"]
 }

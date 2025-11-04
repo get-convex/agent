@@ -34,7 +34,7 @@ const npxBin = process.platform === "win32" ? "npx.cmd" : "npx";
 const child = spawn(npxBin, ["vite", "preview", ...args], {
   cwd: playgroundDir,
   stdio: "inherit",
-  env: process.env, 
+  env: process.env,
   shell: process.platform === "win32", // ✅ needed for Windows
 });
 
