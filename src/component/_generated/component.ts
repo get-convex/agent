@@ -151,6 +151,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             vectors: Array<Array<number> | null>;
           };
           failPendingSteps?: boolean;
+          hideFromUserIdSearch?: boolean;
           messages: Array<{
             error?: string;
             fileIds?: Array<string>;
@@ -755,6 +756,23 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         },
         Name
       >;
+      cloneThread: FunctionReference<
+        "action",
+        "internal",
+        {
+          batchSize?: number;
+          copyUserIdForVectorSearch?: boolean;
+          excludeToolMessages?: boolean;
+          insertAtOrder?: number;
+          limit?: number;
+          sourceThreadId: string;
+          statuses?: Array<"pending" | "success" | "failed">;
+          targetThreadId: string;
+          upToAndIncludingMessageId?: string;
+        },
+        number,
+        Name
+      >;
       deleteByIds: FunctionReference<
         "mutation",
         "internal",
@@ -783,13 +801,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           result: { status: "success" } | { error: string; status: "failed" };
         },
         null,
-        Name
-      >;
-      getMessageSearchFields: FunctionReference<
-        "query",
-        "internal",
-        { messageId: string },
-        { embedding?: Array<number>; embeddingModel?: string; text?: string },
         Name
       >;
       getMessagesByIds: FunctionReference<
@@ -1058,6 +1069,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | { message: string; type: "other" }
           >;
         }>,
+        Name
+      >;
+      getMessageSearchFields: FunctionReference<
+        "query",
+        "internal",
+        { messageId: string },
+        { embedding?: Array<number>; embeddingModel?: string; text?: string },
         Name
       >;
       listMessagesByThreadId: FunctionReference<

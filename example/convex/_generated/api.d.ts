@@ -890,12 +890,6 @@ export declare const components: {
         },
         null
       >;
-      getMessageSearchFields: FunctionReference<
-        "query",
-        "internal",
-        { messageId: string },
-        { embedding?: Array<number>; embeddingModel?: string; text?: string }
-      >;
       getMessagesByIds: FunctionReference<
         "query",
         "internal",
@@ -1162,6 +1156,12 @@ export declare const components: {
             | { message: string; type: "other" }
           >;
         }>
+      >;
+      getMessageSearchFields: FunctionReference<
+        "query",
+        "internal",
+        { messageId: string },
+        { embedding?: Array<number>; embeddingModel?: string; text?: string }
       >;
       listMessagesByThreadId: FunctionReference<
         "query",
