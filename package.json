@@ -7,7 +7,7 @@
     "email": "support@convex.dev",
     "url": "https://github.com/get-convex/agent/issues"
   },
-  "version": "0.2.12",
+  "version": "0.3.0",
   "license": "Apache-2.0",
   "keywords": [
     "convex",
