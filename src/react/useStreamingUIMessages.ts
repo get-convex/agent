@@ -13,7 +13,6 @@ import { useDeltaStreams } from "./useDeltaStreams.js";
 
 // Polyfill structuredClone to support readUIMessageStream on ReactNative
 if (!("structuredClone" in globalThis)) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   void import("@ungap/structured-clone" as any).then(
     ({ default: structuredClone }) =>
       (globalThis.structuredClone = structuredClone),
@@ -38,7 +37,6 @@ export function useStreamingUIMessages<
   METADATA = unknown,
   DATA_PARTS extends UIDataTypes = UIDataTypes,
   TOOLS extends UITools = UITools,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Query extends StreamQuery<any> = StreamQuery<object>,
 >(
   query: Query,

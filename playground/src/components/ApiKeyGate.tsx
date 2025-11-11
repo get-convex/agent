@@ -97,7 +97,7 @@ function ApiKeyGate({
         }
         setIsConnected(true);
       })
-      .catch((err) => {
+      .catch(() => {
         if (!convex.connectionState().isWebSocketConnected) {
           setIsConnected(false);
         } else {

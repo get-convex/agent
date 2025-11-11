@@ -214,7 +214,6 @@ export class Agent<
    * });
    */
   CustomCtx extends object = object,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   AgentTools extends ToolSet = any,
 > {
   constructor(
@@ -732,7 +731,6 @@ export class Agent<
       await this.start(ctx, streamObjectArgs, { ...threadOpts, ...options });
 
     const stream = streamObject<SCHEMA, OUTPUT, RESULT>({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ...(args as any),
       onError: async (error) => {
         console.error(" streamObject onError", error);
@@ -1461,7 +1459,6 @@ export class Agent<
             : ctx_
         ) as UserActionCtx & CustomCtx;
         if (stream) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = await this.streamText<any>(
             ctx,
             targetArgs,
@@ -1478,7 +1475,6 @@ export class Agent<
             savedMessageIds: result.savedMessages?.map((m) => m._id) ?? [],
           };
         } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const res = await this.generateText<any>(
             ctx,
             targetArgs,
@@ -1575,9 +1571,8 @@ export class Agent<
 }
 
 async function willContinue(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   steps: StepResult<any>[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   stopWhen: StopCondition<any> | Array<StopCondition<any>> | undefined,
 ): Promise<boolean> {
   const step = steps.at(-1)!;

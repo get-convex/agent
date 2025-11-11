@@ -34,7 +34,6 @@ vi.mock("./search.js", async () => {
 const createMockMessageDoc = (
   id: string,
   role: "user" | "assistant" | "tool" | "system",
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any,
 ): MessageDoc => ({
   _id: id,

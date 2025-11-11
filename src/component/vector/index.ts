@@ -35,11 +35,9 @@ export const paginate = query({
     const tableName = getVectorTableName(args.vectorDimension);
     const vectors = await paginator(ctx.db, schema)
       .query(tableName)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .withIndex("model_table_threadId" as any, (q) =>
         args.table
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (q.eq("model", args.targetModel) as any).eq("table", args.table)
+          ? (q.eq("model", args.targetModel) as any).eq("table", args.table)
           : q.eq("model", args.targetModel),
       )
       .paginate({

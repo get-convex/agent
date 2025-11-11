@@ -1,0 +1,38 @@
+name: Test and lint
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  check:
+    name: Test and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - name: Node setup
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          cache-dependency-path: package.json
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install and build
+        run: |
+          npm i
+          npm run build
+      - name: Publish package for testing branch
+        run: npx pkg-pr-new publish || echo "Have you set up pkg-pr-new for this repo?"
+      - name: Test
+        run: |
+          npm run test
+          npm run typecheck
+          npm run lint

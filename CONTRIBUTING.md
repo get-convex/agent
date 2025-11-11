@@ -3,7 +3,7 @@
 ## Running locally
 
 ```sh
-npm run setup
+npm i
 npm run dev
 ```
 
@@ -12,9 +12,9 @@ npm run dev
 ```sh
 npm run clean
 npm run build
-npm run test
 npm run typecheck
 npm run lint
+npm run test
 ```
 
 ## Deploying
@@ -23,50 +23,18 @@ npm run lint
 
 ```sh
 npm run clean
-npm run build
+npm ci
 npm pack
 ```
 
 ### Deploying a new version
 
-Patch release:
-
 ```sh
 npm run release
 ```
 
-#### Alpha release
-
-The same as above, but it requires extra flags so the release is only installed
-with `@alpha`:
+or for alpha release:
 
 ```sh
 npm run alpha
 ```
-
-# Idea/ feature backlog:
-
-- Convenience function to create a thread by copying an existing thread (fork)
-- Allow aborting normal generateText
-- Improve the demo to show more of the features & have nicer UI
-  - Add an example of using tracing / telemetry.
-- Add an example of using MCP with the Agent.
-- Automatically turn big text content into a file when saving a message and keep
-  as a fileId. Re-hydrate it when reading out for generation.
-
-## Playground feature wishlist (contributions welcome!)
-
-- List all threads instead of user dropdown.
-  - If a user is logged in, use their userId instead of the apiKey for auth &
-    return only their threads.
-- Show threads that aren't associated with a user as "no user" in the dropdown.
-- Add a "fork thread" button in the right message detail sidebar.
-- Add a "retry" button to regenerate a response while tuning the prompt/context.
-- Show the contextual messages with their rank in vector & text search, to get a
-  sense of what is being found via text vs. vector vs. recency search.
-- Show the agent's default context & storage options.
-- Show tools and allow calling them directly.
-- Generate objects from the UI, not just text.
-- Archive messages
-- Configure which tools are available when doing one-off messaging.
-- Trace older messages for what exact context they used.

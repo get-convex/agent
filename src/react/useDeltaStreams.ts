@@ -10,7 +10,6 @@ import { useState } from "react";
 import { assert } from "convex-helpers";
 
 export function useDeltaStreams<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Query extends StreamQuery<any> = StreamQuery<object>,
 >(
   query: Query,
