@@ -16,7 +16,6 @@ export default [
       "playground/**/*.config.{js,ts}",
       "playground/bin/agent-playground.cjs",
       "**/_generated/",
-      "node10stubs.mjs",
     ],
   },
   {
