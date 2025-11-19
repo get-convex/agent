@@ -14,13 +14,7 @@ import {
   serializeObjectResult,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
-import type {
-  AnyActionCtx,
-  AgentComponent,
-  Config,
-  Options,
-  UserActionCtx,
-} from "./types.js";
+import type { ActionCtx, AgentComponent, Config, Options } from "./types.js";
 import type { Message, MessageDoc } from "../validators.js";
 import {
   getModelName,
@@ -31,13 +25,14 @@ import { wrapTools, type ToolCtx } from "./createTool.js";
 import type { Agent } from "./index.js";
 import { omit } from "convex-helpers";
 import { saveInputMessages } from "./saveInputMessages.js";
+import type { GenericActionCtx, GenericDataModel } from "convex/server";
 
 export async function startGeneration<
   T,
   Tools extends ToolSet = ToolSet,
   CustomCtx extends object = object,
 >(
-  ctx: AnyActionCtx & CustomCtx,
+  ctx: ActionCtx & CustomCtx,
   component: AgentComponent,
   /**
    * These are the arguments you'll pass to the LLM call such as
@@ -181,7 +176,7 @@ export async function startGeneration<
     );
   }
   const toolCtx = {
-    ...(ctx as UserActionCtx & CustomCtx),
+    ...(ctx as GenericActionCtx<GenericDataModel> & CustomCtx),
     userId,
     threadId,
     promptMessageId,

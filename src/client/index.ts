@@ -28,6 +28,7 @@ import { assert, omit, pick } from "convex-helpers";
 import {
   internalActionGeneric,
   internalMutationGeneric,
+  type GenericActionCtx,
   type GenericDataModel,
   type PaginationOptions,
   type PaginationResult,
@@ -78,7 +79,7 @@ import {
 } from "./streaming.js";
 import { createThread, getThreadMetadata } from "./threads.js";
 import type {
-  AnyActionCtx,
+  ActionCtx,
   AgentComponent,
   Config,
   ContextOptions,
@@ -88,7 +89,7 @@ import type {
   ObjectMode,
   Options,
   RawRequestResponseHandler,
-  AnyMutationCtx,
+  MutationCtx,
   StorageOptions,
   StreamingTextArgs,
   StreamObjectArgs,
@@ -96,8 +97,7 @@ import type {
   TextArgs,
   Thread,
   UsageHandler,
-  UserActionCtx,
-  AnyQueryCtx,
+  QueryCtx,
   AgentPrompt,
 } from "./types.js";
 
@@ -265,7 +265,7 @@ export class Agent<
    * @returns The threadId of the new thread and the thread object.
    */
   async createThread(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     args?: {
       /**
        * The userId to associate with the thread. If not provided, the thread will be
@@ -292,7 +292,7 @@ export class Agent<
    * @returns The threadId of the new thread.
    */
   async createThread(
-    ctx: AnyMutationCtx,
+    ctx: MutationCtx,
     args?: {
       /**
        * The userId to associate with the thread. If not provided, the thread will be
@@ -310,7 +310,7 @@ export class Agent<
     },
   ): Promise<{ threadId: string }>;
   async createThread(
-    ctx: (AnyActionCtx & CustomCtx) | AnyMutationCtx,
+    ctx: (ActionCtx & CustomCtx) | MutationCtx,
     args?: { userId: string | null; title?: string; summary?: string },
   ): Promise<{ threadId: string; thread?: Thread<AgentTools> }> {
     const threadId = await createThread(ctx, this.component, args);
@@ -333,7 +333,7 @@ export class Agent<
    * @returns Functions bound to the userId and threadId on a `{thread}` object.
    */
   async continueThread(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     args: {
       /**
        * The associated thread created by {@link createThread}
@@ -371,7 +371,7 @@ export class Agent<
       _internal?: { generateId?: IdGenerator };
     },
   >(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     /**
      * These are the arguments you'll pass to the LLM call such as
      * `generateText` or `streamText`. This function will look up the context
@@ -458,7 +458,7 @@ export class Agent<
     OUTPUT = never,
     OUTPUT_PARTIAL = never,
   >(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
      * The arguments to the generateText function, similar to the ai sdk's
@@ -518,7 +518,7 @@ export class Agent<
     OUTPUT = never,
     PARTIAL_OUTPUT = never,
   >(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
      * The arguments to the streamText function, similar to the ai sdk's
@@ -659,7 +659,7 @@ export class Agent<
       ? Array<InferSchema<SCHEMA>>
       : InferSchema<SCHEMA>,
   >(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
      * The arguments to the generateObject function, similar to the ai sdk's
@@ -711,7 +711,7 @@ export class Agent<
       ? Array<InferSchema<SCHEMA>>
       : InferSchema<SCHEMA>,
   >(
-    ctx: AnyActionCtx & CustomCtx,
+    ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
     /**
      * The arguments to the streamObject function, similar to the ai sdk's
@@ -773,7 +773,7 @@ export class Agent<
    * @returns The messageId of the saved message.
    */
   async saveMessage(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: SaveMessageArgs & {
       /**
        * If true, it will not generate embeddings for the message.
@@ -812,7 +812,7 @@ export class Agent<
    * @returns
    */
   async saveMessages(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: SaveMessagesArgs & {
       /**
        * Skip generating embeddings for the messages. Useful if you're
@@ -868,7 +868,7 @@ export class Agent<
    * @returns The MessageDoc's in a format compatible with usePaginatedQuery.
    */
   async listMessages(
-    ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+    ctx: QueryCtx | MutationCtx | ActionCtx,
     args: {
       threadId: string;
       paginationOpts: PaginationOptions;
@@ -888,7 +888,7 @@ export class Agent<
    * @returns The deltas for each stream from their existing cursor.
    */
   async syncStreams(
-    ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+    ctx: QueryCtx | MutationCtx | ActionCtx,
     args: {
       threadId: string;
       streamArgs: StreamArgs | undefined;
@@ -908,7 +908,7 @@ export class Agent<
    * @returns
    */
   async fetchContextMessages(
-    ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+    ctx: QueryCtx | MutationCtx | ActionCtx,
     args: {
       userId: string | undefined;
       threadId: string | undefined;
@@ -970,7 +970,7 @@ export class Agent<
    * @returns The metadata for the thread.
    */
   async getThreadMetadata(
-    ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+    ctx: QueryCtx | MutationCtx | ActionCtx,
     args: { threadId: string },
   ): Promise<ThreadDoc> {
     return getThreadMetadata(ctx, this.component, args);
@@ -984,7 +984,7 @@ export class Agent<
    * @returns The updated thread metadata.
    */
   async updateThreadMetadata(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: {
       threadId: string;
       patch: Partial<
@@ -1005,7 +1005,7 @@ export class Agent<
    * @returns The embeddings for the messages.
    */
   async generateEmbeddings(
-    ctx: AnyActionCtx,
+    ctx: ActionCtx,
     args: { userId: string | undefined; threadId: string | undefined },
     messages: (ModelMessage | Message)[],
   ): Promise<
@@ -1031,7 +1031,7 @@ export class Agent<
    * @param args The messageIds to generate embeddings for.
    */
   async generateAndSaveEmbeddings(
-    ctx: AnyActionCtx,
+    ctx: ActionCtx,
     args: { messageIds: string[] },
   ) {
     const messages = (
@@ -1082,7 +1082,7 @@ export class Agent<
    * @param args The Step generated by the AI SDK.
    */
   async saveStep<TOOLS extends ToolSet>(
-    ctx: AnyActionCtx,
+    ctx: ActionCtx,
     args: {
       userId?: string;
       threadId: string;
@@ -1139,7 +1139,7 @@ export class Agent<
    * @param args The arguments to the saveObject function.
    */
   async saveObject(
-    ctx: AnyActionCtx,
+    ctx: ActionCtx,
     args: {
       userId: string | undefined;
       threadId: string;
@@ -1191,7 +1191,7 @@ export class Agent<
    *   the generateText call.
    */
   async finalizeMessage(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: {
       messageId: string;
       result: { status: "failed"; error: string } | { status: "success" };
@@ -1209,7 +1209,7 @@ export class Agent<
    * @param args The message fields to update.
    */
   async updateMessage(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: {
       /** The id of the message to update. */
       messageId: string;
@@ -1259,7 +1259,7 @@ export class Agent<
    * @param args The ids of the messages to delete.
    */
   async deleteMessages(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: { messageIds: string[] },
   ): Promise<void> {
     await ctx.runMutation(this.component.messages.deleteByIds, args);
@@ -1272,7 +1272,7 @@ export class Agent<
    * @param args The id of the message to delete.
    */
   async deleteMessage(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: { messageId: string },
   ): Promise<void> {
     await ctx.runMutation(this.component.messages.deleteByIds, {
@@ -1318,7 +1318,7 @@ export class Agent<
    * @param args The range of messages to delete.
    */
   async deleteMessageRange(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: {
       threadId: string;
       startOrder: number;
@@ -1344,7 +1344,7 @@ export class Agent<
    * @param args The id of the thread to delete and optionally the page size to use for the delete.
    */
   async deleteThreadAsync(
-    ctx: AnyMutationCtx | AnyActionCtx,
+    ctx: MutationCtx | ActionCtx,
     args: { threadId: string; pageSize?: number },
   ): Promise<void> {
     await ctx.runMutation(this.component.threads.deleteAllForThreadIdAsync, {
@@ -1361,7 +1361,7 @@ export class Agent<
    * @param args The id of the thread to delete and optionally the page size to use for the delete.
    */
   async deleteThreadSync(
-    ctx: AnyActionCtx,
+    ctx: ActionCtx,
     args: { threadId: string; pageSize?: number },
   ): Promise<void> {
     await ctx.runAction(this.component.threads.deleteAllForThreadIdSync, {
@@ -1457,7 +1457,7 @@ export class Agent<
           spec?.customCtx
             ? { ...ctx_, ...spec.customCtx(ctx_, targetArgs, llmArgs) }
             : ctx_
-        ) as UserActionCtx & CustomCtx;
+        ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         if (stream) {
           const result = await this.streamText<any>(
             ctx,
@@ -1523,7 +1523,7 @@ export class Agent<
           options?.customCtx
             ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs) }
             : ctx_
-        ) as UserActionCtx & CustomCtx;
+        ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         const value = await this.generateObject(ctx, targetArgs, llmArgs, {
           ...this.options,
           ...options,

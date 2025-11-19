@@ -9,7 +9,7 @@ import {
   toModelMessageContent,
 } from "./mapping.js";
 import { api } from "./component/_generated/api.js";
-import type { AgentComponent, AnyActionCtx } from "./client/types.js";
+import type { AgentComponent, ActionCtx } from "./client/types.js";
 import { vMessage, vToolResultPart } from "./validators.js";
 import fs from "fs";
 import path from "path";
@@ -78,7 +78,7 @@ describe("mapping", () => {
         getUrl: async () => "https://example.com/file",
         delete: async () => undefined,
       },
-    } as unknown as AnyActionCtx;
+    } as unknown as ActionCtx;
     const component = api as unknown as AgentComponent;
     const { message: ser } = await serializeMessage(ctx, component, message);
     // Use is for type validation
@@ -101,7 +101,7 @@ describe("mapping", () => {
     expect(result).toMatchObject(toolResult);
     const {
       content: [roundtrip],
-    } = await serializeContent({} as AnyActionCtx, {} as AgentComponent, [
+    } = await serializeContent({} as ActionCtx, {} as AgentComponent, [
       result as ToolResultPart,
     ]);
     expect(roundtrip).toMatchObject(toolResult);
@@ -127,7 +127,7 @@ describe("mapping", () => {
     expect(deserialized).toMatchObject(expected);
     const {
       content: [serialized],
-    } = await serializeContent({} as AnyActionCtx, {} as AgentComponent, [
+    } = await serializeContent({} as ActionCtx, {} as AgentComponent, [
       toolResult,
     ]);
     expect(serialized).toMatchObject(expected);
@@ -152,7 +152,7 @@ describe("mapping", () => {
         getUrl: async () => "https://example.com/file",
         delete: async () => undefined,
       },
-    } as unknown as AnyActionCtx;
+    } as unknown as ActionCtx;
     const component = api as unknown as AgentComponent;
     const content = [
       {
@@ -195,7 +195,7 @@ describe("mapping", () => {
         getUrl: async () => "https://example.com/file",
         delete: async () => undefined,
       },
-    } as unknown as AnyActionCtx;
+    } as unknown as ActionCtx;
     const component = api as unknown as AgentComponent;
     const content = [
       {
