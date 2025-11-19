@@ -1,10 +1,10 @@
 import type { WithoutSystemFields } from "convex/server";
 import type { ThreadDoc } from "../validators.js";
 import type {
-  AnyActionCtx,
+  ActionCtx,
   AgentComponent,
-  AnyMutationCtx,
-  AnyQueryCtx,
+  MutationCtx,
+  QueryCtx,
 } from "./types.js";
 
 /**
@@ -15,7 +15,7 @@ import type {
  * @returns The id of the created thread.
  */
 export async function createThread(
-  ctx: AnyMutationCtx | AnyActionCtx,
+  ctx: MutationCtx | ActionCtx,
   component: AgentComponent,
   args?: { userId?: string | null; title?: string; summary?: string },
 ) {
@@ -37,7 +37,7 @@ export async function createThread(
  * @returns The metadata for the thread.
  */
 export async function getThreadMetadata(
-  ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+  ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
   args: { threadId: string },
 ): Promise<ThreadDoc> {
@@ -51,7 +51,7 @@ export async function getThreadMetadata(
 }
 
 export async function updateThreadMetadata(
-  ctx: AnyMutationCtx | AnyActionCtx,
+  ctx: MutationCtx | ActionCtx,
   component: AgentComponent,
   args: { threadId: string; patch: Partial<WithoutSystemFields<ThreadDoc>> },
 ) {
@@ -67,7 +67,7 @@ export async function updateThreadMetadata(
  * @returns The threads matching the search, paginated.
  */
 export async function searchThreadTitles(
-  ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+  ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
   {
     userId,

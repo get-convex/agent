@@ -24,9 +24,9 @@ import type {
   Config,
   ContextOptions,
   Options,
-  AnyQueryCtx,
-  AnyMutationCtx,
-  AnyActionCtx,
+  QueryCtx,
+  MutationCtx,
+  ActionCtx,
 } from "./types.js";
 import { inlineMessagesFiles } from "./files.js";
 import { docsToModelMessages, toModelMessage } from "../mapping.js";
@@ -50,7 +50,7 @@ export type GetEmbedding = (text: string) => Promise<{
  * @returns
  */
 export async function fetchContextMessages(
-  ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+  ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
   args: {
     userId: string | undefined;
@@ -86,7 +86,7 @@ export async function fetchContextMessages(
 }
 
 export async function fetchRecentAndSearchMessages(
-  ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
+  ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
   args: {
     userId: string | undefined;
@@ -285,7 +285,7 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
  * This will not save the embeddings to the database.
  */
 export async function embedMessages(
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   {
     userId,
     threadId,
@@ -354,7 +354,7 @@ export async function embedMessages(
  * @returns The embeddings for the strings, matching the order of the values.
  */
 export async function embedMany(
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   {
     userId,
     threadId,
@@ -412,7 +412,7 @@ export async function embedMany(
  * @param messages The messages to embed, in the Agent MessageDoc format.
  */
 export async function generateAndSaveEmbeddings(
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   component: AgentComponent,
   args: {
     threadId: string | undefined;
@@ -457,7 +457,7 @@ export async function generateAndSaveEmbeddings(
  * promptMessageId message.
  */
 export async function fetchContextWithPrompt(
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   component: AgentComponent,
   args: {
     prompt: string | (ModelMessage | Message)[] | undefined;

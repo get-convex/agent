@@ -253,7 +253,7 @@ export type GenerationOutputMetadata = {
 };
 
 export type UsageHandler = (
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   args: {
     userId: string | undefined;
     threadId: string | undefined;
@@ -272,7 +272,7 @@ export type UsageHandler = (
  * out, add in, or reorder messages.
  */
 export type ContextHandler = (
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   args: {
     /**
      * All messages in the default order.
@@ -315,7 +315,7 @@ export type ContextHandler = (
 ) => ModelMessage[] | Promise<ModelMessage[]>;
 
 export type RawRequestResponseHandler = (
-  ctx: AnyActionCtx,
+  ctx: ActionCtx,
   args: {
     userId: string | undefined;
     threadId: string | undefined;
@@ -614,18 +614,12 @@ export type SyncStreamsReturnValue =
   | undefined;
 
 /* Type utils follow */
-export type AnyQueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
-export type AnyMutationCtx = Pick<
+export type QueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
+export type MutationCtx = Pick<
   GenericMutationCtx<GenericDataModel>,
   "runQuery" | "runMutation"
 >;
-export type AnyActionCtx = Pick<
+export type ActionCtx = Pick<
   GenericActionCtx<GenericDataModel>,
   "runQuery" | "runMutation" | "runAction" | "storage" | "auth"
->;
-
-export type UserActionCtx = GenericActionCtx<GenericDataModel>;
-export type QueryCtx = Pick<
-  GenericQueryCtx<GenericDataModel>,
-  "runQuery" | "storage"
 >;
