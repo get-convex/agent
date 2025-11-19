@@ -22,14 +22,10 @@ import type {
   generateObject,
 } from "ai";
 import type {
-  Auth,
-  FunctionArgs,
-  FunctionReference,
-  FunctionReturnType,
   GenericActionCtx,
   GenericDataModel,
-  StorageActionWriter,
-  StorageReader,
+  GenericMutationCtx,
+  GenericQueryCtx,
   WithoutSystemFields,
 } from "convex/server";
 import type {
@@ -257,7 +253,7 @@ export type GenerationOutputMetadata = {
 };
 
 export type UsageHandler = (
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   args: {
     userId: string | undefined;
     threadId: string | undefined;
@@ -276,7 +272,7 @@ export type UsageHandler = (
  * out, add in, or reorder messages.
  */
 export type ContextHandler = (
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   args: {
     /**
      * All messages in the default order.
@@ -319,7 +315,7 @@ export type ContextHandler = (
 ) => ModelMessage[] | Promise<ModelMessage[]>;
 
 export type RawRequestResponseHandler = (
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   args: {
     userId: string | undefined;
     threadId: string | undefined;
@@ -618,25 +614,18 @@ export type SyncStreamsReturnValue =
   | undefined;
 
 /* Type utils follow */
-type RunQueryCtx = {
-  runQuery: <Query extends FunctionReference<"query", "internal">>(
-    query: Query,
-    args: FunctionArgs<Query>,
-  ) => Promise<FunctionReturnType<Query>>;
-};
-export type MutationCtx = RunQueryCtx & {
-  runMutation: <Mutation extends FunctionReference<"mutation", "internal">>(
-    mutation: Mutation,
-    args: FunctionArgs<Mutation>,
-  ) => Promise<FunctionReturnType<Mutation>>;
-};
+export type AnyQueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
+export type AnyMutationCtx = Pick<
+  GenericMutationCtx<GenericDataModel>,
+  "runQuery" | "runMutation"
+>;
+export type AnyActionCtx = Pick<
+  GenericActionCtx<GenericDataModel>,
+  "runQuery" | "runMutation" | "runAction" | "storage" | "auth"
+>;
+
 export type UserActionCtx = GenericActionCtx<GenericDataModel>;
-export type ActionCtx = MutationCtx & {
-  runAction<Action extends FunctionReference<"action", "internal">>(
-    action: Action,
-    args: FunctionArgs<Action>,
-  ): Promise<FunctionReturnType<Action>>;
-  auth: Auth;
-  storage: StorageActionWriter;
-};
-export type QueryCtx = RunQueryCtx & { storage: StorageReader };
+export type QueryCtx = Pick<
+  GenericQueryCtx<GenericDataModel>,
+  "runQuery" | "storage"
+>;
