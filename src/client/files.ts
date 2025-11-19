@@ -7,10 +7,10 @@ import type {
 } from "ai";
 import type { Id } from "../component/_generated/dataModel.js";
 import type {
-  ActionCtx,
+  AnyActionCtx,
   AgentComponent,
+  AnyMutationCtx,
   QueryCtx,
-  MutationCtx,
 } from "./types.js";
 import type { Message } from "../validators.js";
 import { assert } from "convex-helpers";
@@ -37,7 +37,7 @@ type File = {
  * @returns The URL, fileId, and storageId of the stored file.
  */
 export async function storeFile(
-  ctx: ActionCtx | MutationCtx,
+  ctx: AnyActionCtx | AnyMutationCtx,
   component: AgentComponent,
   blob: Blob,
   { filename, sha256 }: { filename?: string; sha256?: string } = {},
@@ -129,7 +129,7 @@ export async function storeFile(
  * @returns The file metadata and content parts.
  */
 export async function getFile(
-  ctx: ActionCtx | QueryCtx,
+  ctx: AnyActionCtx | QueryCtx,
   component: AgentComponent,
   fileId: string,
 ) {

@@ -14,7 +14,7 @@ import {
   type StorageReader,
 } from "convex/server";
 import type { MessageDoc } from "../validators.js";
-import type { ActionCtx, QueryCtx } from "./types.js";
+import type { AnyActionCtx, AnyQueryCtx } from "./types.js";
 import {
   fetchContextWithPrompt,
   fetchContextMessages,
@@ -47,8 +47,8 @@ const schema = defineSchema({});
 
 describe("search.ts", () => {
   let t = initConvexTest(schema);
-  let mockCtx: ActionCtx;
-  let ctx: ActionCtx;
+  let mockCtx: AnyActionCtx;
+  let ctx: AnyActionCtx;
 
   // Shared helper functions
   async function createTestThread(userId: string) {
@@ -92,7 +92,7 @@ describe("search.ts", () => {
       runQuery: t.query,
       runAction: t.action,
       runMutation: t.mutation,
-    } as ActionCtx;
+    } as AnyActionCtx;
 
     mockCtx = {
       runQuery: vi.fn(),
@@ -100,7 +100,7 @@ describe("search.ts", () => {
       runMutation: vi.fn(),
       auth: {} as Auth,
       storage: {} as StorageActionWriter,
-    } satisfies ActionCtx;
+    } satisfies AnyActionCtx;
 
     // Mock process.env to avoid file inlining in tests
     process.env.CONVEX_CLOUD_URL = "https://example.convex.cloud";
@@ -254,7 +254,7 @@ describe("search.ts", () => {
       ];
 
       (
-        mockCtx.runQuery as MockedFunction<ActionCtx["runQuery"]>
+        mockCtx.runQuery as MockedFunction<AnyActionCtx["runQuery"]>
       ).mockResolvedValue({
         page: mockPage,
       });
@@ -296,7 +296,7 @@ describe("search.ts", () => {
       ];
 
       (
-        mockCtx.runAction as MockedFunction<ActionCtx["runAction"]>
+        mockCtx.runAction as MockedFunction<AnyActionCtx["runAction"]>
       ).mockResolvedValue(searchResults);
 
       const result = await fetchContextMessages(mockCtx, components.agent, {
@@ -321,7 +321,7 @@ describe("search.ts", () => {
         runQuery: vi.fn().mockResolvedValue({ page: [] }),
         // No runAction method
         storage: {} as StorageReader,
-      } as QueryCtx;
+      } as AnyQueryCtx;
 
       await expect(
         fetchContextMessages(mockQueryCtx, components.agent, {

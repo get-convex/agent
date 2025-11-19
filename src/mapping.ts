@@ -37,8 +37,8 @@ import {
   vToolResultOutput,
   type MessageDoc,
 } from "./validators.js";
-import type { ActionCtx, AgentComponent } from "./client/types.js";
-import type { MutationCtx } from "./client/types.js";
+import type { AnyActionCtx, AgentComponent } from "./client/types.js";
+import type { AnyMutationCtx } from "./client/types.js";
 import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
 import type { Infer } from "convex/values";
 import {
@@ -70,7 +70,7 @@ export type SerializedContent = Message["content"];
 export type SerializedMessage = Message;
 
 export async function serializeMessage(
-  ctx: ActionCtx | MutationCtx,
+  ctx: AnyActionCtx | AnyMutationCtx,
   component: AgentComponent,
   message: ModelMessage | Message,
 ): Promise<{ message: SerializedMessage; fileIds?: string[] }> {
@@ -180,7 +180,7 @@ export function toModelMessageWarnings(
 }
 
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   component: AgentComponent,
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
@@ -222,7 +222,7 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
 }
 
 export async function serializeObjectResult(
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   component: AgentComponent,
   result: GenerateObjectResult<unknown>,
   model: ModelOrMetadata | undefined,
@@ -261,7 +261,7 @@ function getMimeOrMediaType(part: { mediaType?: string; mimeType?: string }) {
 }
 
 export async function serializeContent(
-  ctx: ActionCtx | MutationCtx,
+  ctx: AnyActionCtx | AnyMutationCtx,
   component: AgentComponent,
   content: Content | Message["content"],
 ): Promise<{ content: SerializedContent; fileIds?: string[] }> {

@@ -20,13 +20,13 @@ import {
 } from "../shared.js";
 import type { Message } from "../validators.js";
 import type {
-  ActionCtx,
   AgentComponent,
   Config,
   ContextOptions,
   Options,
-  QueryCtx,
-  MutationCtx,
+  AnyQueryCtx,
+  AnyMutationCtx,
+  AnyActionCtx,
 } from "./types.js";
 import { inlineMessagesFiles } from "./files.js";
 import { docsToModelMessages, toModelMessage } from "../mapping.js";
@@ -50,7 +50,7 @@ export type GetEmbedding = (text: string) => Promise<{
  * @returns
  */
 export async function fetchContextMessages(
-  ctx: QueryCtx | MutationCtx | ActionCtx,
+  ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
   component: AgentComponent,
   args: {
     userId: string | undefined;
@@ -86,7 +86,7 @@ export async function fetchContextMessages(
 }
 
 export async function fetchRecentAndSearchMessages(
-  ctx: QueryCtx | MutationCtx | ActionCtx,
+  ctx: AnyQueryCtx | AnyMutationCtx | AnyActionCtx,
   component: AgentComponent,
   args: {
     userId: string | undefined;
@@ -285,7 +285,7 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
  * This will not save the embeddings to the database.
  */
 export async function embedMessages(
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   {
     userId,
     threadId,
@@ -354,7 +354,7 @@ export async function embedMessages(
  * @returns The embeddings for the strings, matching the order of the values.
  */
 export async function embedMany(
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   {
     userId,
     threadId,
@@ -412,7 +412,7 @@ export async function embedMany(
  * @param messages The messages to embed, in the Agent MessageDoc format.
  */
 export async function generateAndSaveEmbeddings(
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   component: AgentComponent,
   args: {
     threadId: string | undefined;
@@ -457,7 +457,7 @@ export async function generateAndSaveEmbeddings(
  * promptMessageId message.
  */
 export async function fetchContextWithPrompt(
-  ctx: ActionCtx,
+  ctx: AnyActionCtx,
   component: AgentComponent,
   args: {
     prompt: string | (ModelMessage | Message)[] | undefined;

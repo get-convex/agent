@@ -15,7 +15,7 @@ import {
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
 import type {
-  ActionCtx,
+  AnyActionCtx,
   AgentComponent,
   Config,
   Options,
@@ -37,7 +37,7 @@ export async function startGeneration<
   Tools extends ToolSet = ToolSet,
   CustomCtx extends object = object,
 >(
-  ctx: ActionCtx & CustomCtx,
+  ctx: AnyActionCtx & CustomCtx,
   component: AgentComponent,
   /**
    * These are the arguments you'll pass to the LLM call such as
