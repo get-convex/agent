@@ -15,15 +15,8 @@ import type {
   StreamTextResult,
   ToolChoice,
   ToolSet,
-  UIMessage as AIUIMessage,
 } from "ai";
-import {
-  generateObject,
-  generateText,
-  stepCountIs,
-  streamObject,
-  streamText,
-} from "ai";
+import { generateObject, generateText, stepCountIs, streamObject } from "ai";
 import { assert, omit, pick } from "convex-helpers";
 import {
   internalActionGeneric,
@@ -70,13 +63,7 @@ import {
   generateAndSaveEmbeddings,
 } from "./search.js";
 import { startGeneration } from "./start.js";
-import {
-  compressUIMessageChunks,
-  DeltaStreamer,
-  mergeTransforms,
-  syncStreams,
-  type StreamingOptions,
-} from "./streaming.js";
+import { syncStreams, type StreamingOptions } from "./streaming.js";
 import { createThread, getThreadMetadata } from "./threads.js";
 import type {
   ActionCtx,
@@ -100,6 +87,8 @@ import type {
   QueryCtx,
   AgentPrompt,
 } from "./types.js";
+import { streamText } from "./streamText.js";
+import { errorToString, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
 export {
@@ -550,97 +539,27 @@ export class Agent<
     > &
       GenerationOutputMetadata
   > {
-    const { threadId } = threadOpts;
-    const { args, userId, order, stepOrder, promptMessageId, ...call } =
-      await this.start(ctx, streamTextArgs, { ...threadOpts, ...options });
-
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    const steps: StepResult<Tools>[] = [];
-
-    const opts = { ...this.options, ...options };
-    const streamer =
-      threadId && opts.saveStreamDeltas
-        ? new DeltaStreamer(
-            this.component,
-            ctx,
-            {
-              throttleMs:
-                typeof opts.saveStreamDeltas === "object"
-                  ? opts.saveStreamDeltas.throttleMs
-                  : undefined,
-              onAsyncAbort: call.fail,
-              compress: compressUIMessageChunks,
-              abortSignal: args.abortSignal,
-            },
-            {
-              threadId,
-              userId,
-              agentName: this.options.name,
-              model: getModelName(args.model),
-              provider: getProviderName(args.model),
-              providerOptions: args.providerOptions,
-              format: "UIMessageChunk",
-              order,
-              stepOrder,
-            },
-          )
-        : undefined;
-
-    const result = streamText({
-      ...args,
-      abortSignal: streamer?.abortController.signal ?? args.abortSignal,
-      experimental_transform: mergeTransforms(
-        options?.saveStreamDeltas,
-        streamTextArgs.experimental_transform,
-      ),
-      onError: async (error) => {
-        console.error("onError", error);
-        await call.fail(errorToString(error.error));
-        await streamer?.fail(errorToString(error.error));
-        return streamTextArgs.onError?.(error);
+    return streamText<Tools, OUTPUT, PARTIAL_OUTPUT>(
+      ctx,
+      this.component,
+      {
+        ...streamTextArgs,
+        model: streamTextArgs.model ?? this.options.languageModel,
+        tools: (streamTextArgs.tools ?? this.options.tools) as Tools,
+        system: streamTextArgs.system ?? this.options.instructions,
+        stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as
+          | StopCondition<Tools>
+          | Array<StopCondition<Tools>>,
       },
-      prepareStep: async (options) => {
-        const result = await streamTextArgs.prepareStep?.(options);
-        if (result) {
-          const model = result.model ?? options.model;
-          call.updateModel(model);
-          // streamer?.updateMetadata({
-          //   model: getModelName(model),
-          //   provider: getProviderName(model),
-          //   providerOptions: options.messages.at(-1)?.providerOptions,
-          // });
-          return result;
-        }
-        return undefined;
+      {
+        ...threadOpts,
+        ...this.options,
+        agentName: this.options.name,
+        agentForToolCtx: this,
+        ...options,
       },
-      onStepFinish: async (step) => {
-        steps.push(step);
-        const createPendingMessage = await willContinue(steps, args.stopWhen);
-        await call.save({ step }, createPendingMessage);
-        return args.onStepFinish?.(step);
-      },
-    }) as StreamTextResult<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      PARTIAL_OUTPUT
-    >;
-    const stream = streamer?.consumeStream(
-      result.toUIMessageStream<AIUIMessage<Tools>>(),
     );
-    if (
-      (typeof options?.saveStreamDeltas === "object" &&
-        !options.saveStreamDeltas.returnImmediately) ||
-      options?.saveStreamDeltas === true
-    ) {
-      await stream;
-      await result.consumeStream();
-    }
-    const metadata: GenerationOutputMetadata = {
-      promptMessageId,
-      order,
-      savedMessages: call.getSavedMessages(),
-      messageId: promptMessageId,
-    };
-    return Object.assign(result, metadata);
   }
 
   /**
@@ -1568,30 +1487,4 @@ export class Agent<
       },
     });
   }
-}
-
-async function willContinue(
-  steps: StepResult<any>[],
-
-  stopWhen: StopCondition<any> | Array<StopCondition<any>> | undefined,
-): Promise<boolean> {
-  const step = steps.at(-1)!;
-  // we aren't doing another round after a tool result
-  // TODO: whether to handle continuing after too much context used..
-  if (step.finishReason !== "tool-calls") return false;
-  // we don't have a tool result, so we'll wait for more
-  if (step.toolCalls.length > step.toolResults.length) return false;
-  if (Array.isArray(stopWhen)) {
-    return (await Promise.all(stopWhen.map(async (s) => s({ steps })))).every(
-      (stop) => !stop,
-    );
-  }
-  return !!stopWhen && !(await stopWhen({ steps }));
-}
-
-function errorToString(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }
