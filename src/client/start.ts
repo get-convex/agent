@@ -23,7 +23,7 @@ import {
 } from "../shared.js";
 import { wrapTools, type ToolCtx } from "./createTool.js";
 import type { Agent } from "./index.js";
-import { omit } from "convex-helpers";
+import { assert, omit } from "convex-helpers";
 import { saveInputMessages } from "./saveInputMessages.js";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 
@@ -90,7 +90,7 @@ export async function startGeneration<
     Config & {
       userId?: string | null;
       threadId?: string;
-      languageModel: LanguageModel;
+      languageModel?: LanguageModel;
       agentName: string;
       agentForToolCtx?: Agent;
     },
@@ -155,6 +155,7 @@ export async function startGeneration<
   let pendingMessageId = pendingMessage?._id;
 
   const model = args.model ?? opts.languageModel;
+  assert(model, "model is required");
   let activeModel: ModelOrMetadata = model;
 
   const fail = async (reason: string) => {
