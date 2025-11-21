@@ -88,6 +88,7 @@ export async function saveInputMessages(
       { status: "pending" },
     ],
     failPendingSteps: !!args.promptMessageId,
+    promptMessageId: args.promptMessageId,
     embeddings,
   });
   return {
