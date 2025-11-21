@@ -47,6 +47,13 @@ import type * as usage_tracking_tables from "../usage_tracking/tables.js";
 import type * as usage_tracking_usageHandler from "../usage_tracking/usageHandler.js";
 import type * as utils from "../utils.js";
 import type * as workflows_chaining from "../workflows/chaining.js";
+import type * as workflows_human_in_the_loop from "../workflows/human_in_the_loop.js";
+import type * as workflows_orchestrator from "../workflows/orchestrator.js";
+import type * as workflows_parallel from "../workflows/parallel.js";
+import type * as workflows_rateLimiting from "../workflows/rateLimiting.js";
+import type * as workflows_reason_act_cycle from "../workflows/reason_act_cycle.js";
+import type * as workflows_routing from "../workflows/routing.js";
+import type * as workflows_vector_routing from "../workflows/vector_routing.js";
 
 import type {
   ApiFromModules,
@@ -94,6 +101,13 @@ declare const fullApi: ApiFromModules<{
   "usage_tracking/usageHandler": typeof usage_tracking_usageHandler;
   utils: typeof utils;
   "workflows/chaining": typeof workflows_chaining;
+  "workflows/human_in_the_loop": typeof workflows_human_in_the_loop;
+  "workflows/orchestrator": typeof workflows_orchestrator;
+  "workflows/parallel": typeof workflows_parallel;
+  "workflows/rateLimiting": typeof workflows_rateLimiting;
+  "workflows/reason_act_cycle": typeof workflows_reason_act_cycle;
+  "workflows/routing": typeof workflows_routing;
+  "workflows/vector_routing": typeof workflows_vector_routing;
 }>;
 
 /**
