@@ -87,7 +87,7 @@
     "@ai-sdk/provider-utils": "3.0.14",
     "@convex-dev/rag": "0.6.0",
     "@convex-dev/rate-limiter": "0.3.0",
-    "@convex-dev/workflow": "0.3.1",
+    "@convex-dev/workflow": "0.3.2",
     "@edge-runtime/vm": "5.0.0",
     "@eslint/js": "9.38.0",
     "@hookform/resolvers": "5.2.2",
