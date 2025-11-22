@@ -55,21 +55,21 @@ const workflow = new WorkflowManager(components.workflow);
 
 export const weatherAgentWorkflow = workflow.define({
   args: { location: v.string(), threadId: v.string() },
-  handler: async (step, { location, threadId }): Promise<void> => {
-    const weatherQ = await saveMessage(step, components.agent, {
+  handler: async (ctx, { location, threadId }): Promise<void> => {
+    const weatherQ = await saveMessage(ctx, components.agent, {
       threadId,
       prompt: `What is the weather in ${location}?`,
     });
-    const forecast = await step.runAction(
+    const forecast = await ctx.runAction(
       internal.workflows.chaining.getForecast,
       { promptMessageId: weatherQ.messageId, threadId },
       { retry: true },
     );
-    const fashionQ = await saveMessage(step, components.agent, {
+    const fashionQ = await saveMessage(ctx, components.agent, {
       threadId,
       prompt: `What should I wear based on the weather?`,
     });
-    const fashion = await step.runAction(
+    const fashion = await ctx.runAction(
       internal.workflows.chaining.getFashionAdvice,
       { promptMessageId: fashionQ.messageId, threadId },
       {
