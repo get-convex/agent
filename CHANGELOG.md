@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Avoid JSON.stringify in the render path for logging in useUIMessages.
+- Ensures input messages are saved associated with promptMessageId. This
+  generally happens by default, but if the promptMessageId wasn't latest, it
+  would have previously saved them as the newest messages.
+
 ## 0.3.0
 
 - Adds /test and /\_generated/component.js entrypoints
