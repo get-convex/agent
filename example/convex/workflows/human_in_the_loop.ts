@@ -53,7 +53,7 @@ export const askForApproval = tool({
 export const humanInTheLoopWorkflow = workflow.define({
   args: { task: v.string(), threadId: v.string() },
   returns: v.string(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<string> => {
     console.log("Starting human-in-the-loop workflow for task:", args.task);
 
     // Step 1: Do initial generation with the tool available
@@ -92,28 +92,39 @@ export const humanInTheLoopWorkflow = workflow.define({
         console.log("Human response received:", humanInput);
 
         // Save the human's response as a tool result
-        await ctx.runAction(
-          internal.workflows.human_in_the_loop.saveHumanResponse,
-          {
-            threadId: args.threadId,
-            toolCallId: humanInput.toolCallId,
-            response: humanInput.response,
+        await simpleAgent.saveMessage(ctx, {
+          threadId: args.threadId,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                output: { type: "text", value: humanInput.response },
+                toolCallId: humanInput.toolCallId,
+                toolName: "askForApproval",
+              },
+            ],
           },
-          { retry: true },
-        );
+          metadata: {
+            provider: "human",
+            providerMetadata: {
+              human: { role: "approver" },
+            },
+          },
+        });
       }
 
       // Step 3: Continue generation with the human's responses
       const finalResult = await ctx.runAction(
         internal.workflows.human_in_the_loop.continueGeneration,
         {
-          promptMessageId: initialResult.promptMessageId,
+          promptMessageId: initialResult.promptMessageId!,
           threadId: args.threadId,
         },
         { retry: true },
       );
 
-      return finalResult;
+      return finalResult.text;
     } else {
       // No approval needed, return the initial response
       return initialResult.text;
@@ -135,7 +146,7 @@ export const generateWithApprovalTool = internalAction({
       {
         promptMessageId: args.promptMessageId,
         tools: { askForApproval },
-        instructions: `You are a helpful assistant. If the task involves sensitive actions like deleting data, modifying important settings, or making irreversible changes, you MUST use the askForApproval tool to get human approval before proceeding. Be specific about what action you're requesting approval for.`,
+        prompt: `You are a helpful assistant. If the task involves sensitive actions like deleting data, modifying important settings, or making irreversible changes, you MUST use the askForApproval tool to get human approval before proceeding. Be specific about what action you're requesting approval for.`,
         stopWhen: stepCountIs(3),
       },
     );
@@ -195,54 +206,9 @@ export const notifyHumanApproval = internalMutation({
   },
 });
 
-// Save human's response as a tool result
-export const saveHumanResponse = internalAction({
-  args: {
-    threadId: v.string(),
-    toolCallId: v.string(),
-    response: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await simpleAgent.saveMessage(ctx, {
-      threadId: args.threadId,
-      message: {
-        role: "tool",
-        content: [
-          {
-            type: "tool-result",
-            output: { type: "text", value: args.response },
-            toolCallId: args.toolCallId,
-            toolName: "askForApproval",
-          },
-        ],
-      },
-      metadata: {
-        provider: "human",
-        providerMetadata: {
-          human: { role: "approver" },
-        },
-      },
-    });
-  },
-});
-
 // Continue generation after human input
-export const continueGeneration = internalAction({
-  args: {
-    promptMessageId: v.string(),
-    threadId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const result = await simpleAgent.generateText(
-      ctx,
-      { threadId: args.threadId },
-      {
-        promptMessageId: args.promptMessageId,
-        stopWhen: stepCountIs(2),
-      },
-    );
-    return result.text;
-  },
+export const continueGeneration = simpleAgent.asTextAction({
+  stopWhen: stepCountIs(2),
 });
 
 // Public mutation for humans to provide their response
