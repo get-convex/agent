@@ -24,11 +24,14 @@ export const parallelWorkflow = workflow.define({
     fashion: v.string(),
     summary: v.string(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ weather: string; fashion: string; summary: string }> => {
     console.log("Starting parallel workflow for", args.location);
 
     // Kick off multiple nested workflows in parallel
-    const [weatherWorkflowId, fashionWorkflowId] = await Promise.all([
+    const [weather, fashion] = await Promise.all([
       ctx.runWorkflow(internal.workflows.parallel.weatherSubWorkflow, {
         location: args.location,
         threadId: args.threadId,
@@ -39,24 +42,27 @@ export const parallelWorkflow = workflow.define({
       }),
     ]);
 
-    console.log("Weather result:", weatherWorkflowId);
-    console.log("Fashion result:", fashionWorkflowId);
+    console.log("Weather result:", weather);
+    console.log("Fashion result:", fashion);
 
     // Now combine the results with a summary
     const summary = await ctx.runAction(
       internal.workflows.parallel.summarizeResults,
       {
         threadId: args.threadId,
-        weather: weatherWorkflowId,
-        fashion: fashionWorkflowId,
+        prompt: `Summarize the weather and fashion advice from the conversation history into a concise travel recommendation:
+        Weather: ${weather}
+        Fashion: ${fashion}
+        Travel recommendation:
+        `,
       },
       { retry: true },
     );
 
     return {
-      weather: weatherWorkflowId,
-      fashion: fashionWorkflowId,
-      summary,
+      weather,
+      fashion,
+      summary: summary.text,
     };
   },
 });
@@ -80,7 +86,7 @@ export const weatherSubWorkflow = workflow.define({
       { retry: true },
     );
 
-    return result;
+    return result.text;
   },
 });
 
@@ -103,7 +109,7 @@ export const fashionSubWorkflow = workflow.define({
       { retry: true },
     );
 
-    return result;
+    return result.text;
   },
 });
 
@@ -117,8 +123,6 @@ export const getFashion = fashionAgent.asTextAction({
 });
 
 export const summarizeResults = weatherAgent.asTextAction({
-  instructions:
-    "You are a helpful assistant. Summarize the weather and fashion advice from the conversation history into a concise travel recommendation.",
   stopWhen: stepCountIs(2),
 });
 
