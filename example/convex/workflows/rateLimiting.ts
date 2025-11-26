@@ -31,7 +31,10 @@ export const rateLimitedWorkflow = workflow.define({
   args: { locations: v.array(v.string()), threadId: v.string() },
   returns: v.array(v.string()),
   handler: async (ctx, args) => {
-    console.log("Starting rate-limited workflow for locations:", args.locations);
+    console.log(
+      "Starting rate-limited workflow for locations:",
+      args.locations,
+    );
 
     const results: string[] = [];
 
@@ -40,10 +43,9 @@ export const rateLimitedWorkflow = workflow.define({
       console.log("Processing location:", location);
 
       // Check the rate limit before making the API call
-      const rateLimit = await ctx.runMutation(
-        internal.workflows.rateLimiting.checkRateLimit,
-        { userId: "workflow-user" },
-      );
+      const rateLimit = await apiRateLimiter.check(ctx, "weatherApiCalls", {
+        key: "workflow-user",
+      });
 
       console.log("Rate limit check:", rateLimit);
 
@@ -63,7 +65,11 @@ export const rateLimitedWorkflow = workflow.define({
       });
 
       // Make the API call with rate limiting
-      const result = await ctx.runAction(
+      await apiRateLimiter.limit(ctx, "weatherApiCalls", {
+        key: "workflow-user",
+        reserve: true,
+      });
+      const { text: result } = await ctx.runAction(
         internal.workflows.rateLimiting.getWeatherWithRateLimit,
         {
           promptMessageId: questionMsg.messageId,
@@ -86,7 +92,7 @@ export const rateLimitedWorkflow = workflow.define({
       prompt: "Summarize all the weather information from our conversation.",
     });
 
-    const summary = await ctx.runAction(
+    const { text: summary } = await ctx.runAction(
       internal.workflows.rateLimiting.summarize,
       {
         promptMessageId: summaryMsg.messageId,
@@ -113,31 +119,20 @@ export const checkRateLimit = mutation({
 // Weather agent action with rate limiting
 export const getWeatherWithRateLimit = weatherAgent.asTextAction({
   stopWhen: stepCountIs(3),
-  beforeGenerate: async (ctx) => {
-    // Consume the rate limit token before generating
-    const userId = ctx.userId ?? "anonymous";
-    await apiRateLimiter.limit(
-      { runMutation: ctx.runMutation },
-      "weatherApiCalls",
-      {
-        key: userId,
-        throws: true,
-      },
-    );
-  },
 });
 
 // Summarization action
 export const summarize = weatherAgent.asTextAction({
-  instructions:
-    "You are a helpful assistant. Summarize the weather information from multiple locations into a brief overview.",
   stopWhen: stepCountIs(2),
 });
 
 // Mutation to start the rate-limited workflow
 export const startRateLimited = mutation({
   args: { locations: v.array(v.string()) },
-  handler: async (ctx, args): Promise<{ threadId: string; workflowId: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; workflowId: string }> => {
     const userId = await getAuthUserId(ctx);
     const threadId = await createThread(ctx, components.agent, {
       userId,
