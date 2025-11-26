@@ -3,12 +3,19 @@ import { WorkflowManager } from "@convex-dev/workflow";
 import { components, internal } from "../_generated/api";
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
-import { createThread, saveMessage, stepCountIs } from "@convex-dev/agent";
+import {
+  Agent,
+  createThread,
+  saveMessage,
+  stepCountIs,
+} from "@convex-dev/agent";
 import { getAuthUserId } from "../utils";
 import { weatherAgent } from "../agents/weather";
 import { fashionAgent } from "../agents/fashion";
 import { storyAgent } from "../agents/story";
 import { agent as simpleAgent } from "../agents/simple";
+import { z } from "zod/v4";
+import { defaultConfig } from "convex/agents/config";
 
 /**
  * Orchestrator Pattern: One agent decides what to do and composes other agents
@@ -23,7 +30,7 @@ export const orchestratorWorkflow = workflow.define({
   args: { prompt: v.string(), threadId: v.string() },
   handler: async (ctx, args): Promise<string> => {
     // Step 1: Use an LLM to determine which agent should handle the request
-    const routing = await ctx.runAction(
+    const { object: routing } = await ctx.runAction(
       internal.workflows.orchestrator.routeRequest,
       { prompt: args.prompt },
       { retry: true },
@@ -39,33 +46,42 @@ export const orchestratorWorkflow = workflow.define({
 
     let result: string;
     switch (routing.agent) {
-      case "weather":
-        result = await ctx.runAction(
+      case "weather": {
+        const weatherResult = await ctx.runAction(
           internal.workflows.orchestrator.getWeatherInfo,
           { promptMessageId: questionMsg.messageId, threadId: args.threadId },
           { retry: true },
         );
+        result = weatherResult.text;
         break;
-      case "fashion":
-        result = await ctx.runAction(
+      }
+      case "fashion": {
+        const fashionResult = await ctx.runAction(
           internal.workflows.orchestrator.getFashionInfo,
           { promptMessageId: questionMsg.messageId, threadId: args.threadId },
           { retry: true },
         );
+        result = fashionResult.text;
         break;
-      case "story":
-        result = await ctx.runAction(
+      }
+      case "story": {
+        const storyResult = await ctx.runAction(
           internal.workflows.orchestrator.getStory,
           { promptMessageId: questionMsg.messageId, threadId: args.threadId },
           { retry: true },
         );
+        result = storyResult.text;
         break;
-      default:
-        result = await ctx.runAction(
+      }
+      default: {
+        const generalResult = await ctx.runAction(
           internal.workflows.orchestrator.getGeneralResponse,
           { promptMessageId: questionMsg.messageId, threadId: args.threadId },
           { retry: true },
         );
+        result = generalResult.text;
+        break;
+      }
     }
 
     console.log("Orchestrator result:", result);
@@ -74,16 +90,9 @@ export const orchestratorWorkflow = workflow.define({
 });
 
 // Routing agent action - decides which specialist to use
-export const routeRequest = weatherAgent.asObjectAction({
-  schema: v.object({
-    agent: v.union(
-      v.literal("weather"),
-      v.literal("fashion"),
-      v.literal("story"),
-      v.literal("general"),
-    ),
-    reason: v.string(),
-  }),
+const routingAgent = new Agent(components.agent, {
+  name: "Routing Agent",
+  ...defaultConfig,
   instructions: `You are a routing agent. Analyze the user's request and determine which specialist agent should handle it:
 - "weather": For questions about weather, forecasts, or climate
 - "fashion": For questions about clothing, style, or what to wear
@@ -91,7 +100,17 @@ export const routeRequest = weatherAgent.asObjectAction({
 - "general": For all other requests
 
 Return the agent name and a brief reason for your choice.`,
-  stopWhen: stepCountIs(1),
+});
+export const routeRequest = routingAgent.asObjectAction({
+  schema: z.object({
+    agent: z.union([
+      z.literal("weather"),
+      z.literal("fashion"),
+      z.literal("story"),
+      z.literal("general"),
+    ]),
+    reason: z.string(),
+  }),
 });
 
 // Specialist agent actions
