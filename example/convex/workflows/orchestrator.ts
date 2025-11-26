@@ -112,9 +112,13 @@ export const getGeneralResponse = simpleAgent.asTextAction({
 });
 
 // Mutation to start the orchestrator workflow
+// TODO: make this a loop until it decides it's done
 export const startOrchestrator = mutation({
   args: { prompt: v.string() },
-  handler: async (ctx, args): Promise<{ threadId: string; workflowId: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; workflowId: string }> => {
     const userId = await getAuthUserId(ctx);
     const threadId = await createThread(ctx, components.agent, {
       userId,
