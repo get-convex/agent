@@ -28,15 +28,16 @@ export const parallelWorkflow = workflow.define({
     console.log("Starting parallel workflow for", args.location);
 
     // Kick off multiple nested workflows in parallel
-    const weatherWorkflowId = await ctx.runWorkflow(
-      internal.workflows.parallel.weatherSubWorkflow,
-      { location: args.location, threadId: args.threadId },
-    );
-
-    const fashionWorkflowId = await ctx.runWorkflow(
-      internal.workflows.parallel.fashionSubWorkflow,
-      { location: args.location, threadId: args.threadId },
-    );
+    const [weatherWorkflowId, fashionWorkflowId] = await Promise.all([
+      ctx.runWorkflow(internal.workflows.parallel.weatherSubWorkflow, {
+        location: args.location,
+        threadId: args.threadId,
+      }),
+      ctx.runWorkflow(internal.workflows.parallel.fashionSubWorkflow, {
+        location: args.location,
+        threadId: args.threadId,
+      }),
+    ]);
 
     console.log("Weather result:", weatherWorkflowId);
     console.log("Fashion result:", fashionWorkflowId);
@@ -124,7 +125,10 @@ export const summarizeResults = weatherAgent.asTextAction({
 // Mutation to start the parallel workflow
 export const startParallel = mutation({
   args: { location: v.string() },
-  handler: async (ctx, args): Promise<{ threadId: string; workflowId: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; workflowId: string }> => {
     const userId = await getAuthUserId(ctx);
     const threadId = await createThread(ctx, components.agent, {
       userId,
