@@ -3,9 +3,16 @@ import { WorkflowManager } from "@convex-dev/workflow";
 import { components, internal } from "../_generated/api";
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
-import { createThread, saveMessage, stepCountIs } from "@convex-dev/agent";
+import {
+  Agent,
+  createThread,
+  saveMessage,
+  stepCountIs,
+} from "@convex-dev/agent";
 import { getAuthUserId } from "../utils";
 import { agent as simpleAgent } from "../agents/simple";
+import { defaultConfig } from "convex/agents/config";
+import { z } from "zod/v4";
 
 /**
  * Routing Pattern: Intent-based routing to different code paths
@@ -24,7 +31,10 @@ export const routingWorkflow = workflow.define({
     response: v.string(),
     metadata: v.any(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ intent: string; response: string; metadata: any }> => {
     console.log("Starting routing workflow for message:", args.userMessage);
 
     // Step 1: Classify the user's intent
@@ -33,7 +43,7 @@ export const routingWorkflow = workflow.define({
       prompt: args.userMessage,
     });
 
-    const classification = await ctx.runAction(
+    const { object: classification } = await ctx.runAction(
       internal.workflows.routing.classifyIntent,
       {
         promptMessageId: intentMsg.messageId,
@@ -49,7 +59,7 @@ export const routingWorkflow = workflow.define({
     let metadata: any;
 
     switch (classification.intent) {
-      case "bug_report":
+      case "bug_report": {
         const bugTicket = await ctx.runMutation(
           internal.workflows.routing.createBugTicket,
           {
@@ -67,8 +77,9 @@ export const routingWorkflow = workflow.define({
         );
         metadata = bugTicket;
         break;
+      }
 
-      case "support_request":
+      case "support_request": {
         const supportTicket = await ctx.runMutation(
           internal.workflows.routing.createSupportTicket,
           {
@@ -86,8 +97,8 @@ export const routingWorkflow = workflow.define({
         );
         metadata = supportTicket;
         break;
-
-      case "sales_inquiry":
+      }
+      case "sales_inquiry": {
         const salesLead = await ctx.runMutation(
           internal.workflows.routing.createSalesLead,
           {
@@ -105,9 +116,9 @@ export const routingWorkflow = workflow.define({
         );
         metadata = salesLead;
         break;
-
+      }
       case "general_question":
-      default:
+      default: {
         response = await ctx.runAction(
           internal.workflows.routing.handleGeneralQuestion,
           {
@@ -117,6 +128,7 @@ export const routingWorkflow = workflow.define({
         );
         metadata = { type: "general" };
         break;
+      }
     }
 
     return {
@@ -128,52 +140,64 @@ export const routingWorkflow = workflow.define({
 });
 
 // Intent classification action
-export const classifyIntent = simpleAgent.asObjectAction({
-  schema: v.object({
-    intent: v.union(
-      v.literal("bug_report"),
-      v.literal("support_request"),
-      v.literal("sales_inquiry"),
-      v.literal("general_question"),
-    ),
-    confidence: v.number(),
-    reasoning: v.string(),
-  }),
+const intentAgent = new Agent(components.agent, {
+  name: "Intent Classifier",
+  ...defaultConfig,
   instructions: `You are an intent classification agent. Analyze the user's message and classify it into one of these categories:
-
 - "bug_report": User is reporting a bug, error, or something not working correctly
 - "support_request": User needs help, has a technical question, or needs assistance with the product
 - "sales_inquiry": User is interested in pricing, plans, features for purchase, or wants to talk to sales
 - "general_question": General questions, casual conversation, or unclear intent
-
-Also provide a confidence score (0-1) and brief reasoning for your classification.`,
-  stopWhen: stepCountIs(1),
+`,
+});
+export const classifyIntent = intentAgent.asObjectAction({
+  schema: z.object({
+    intent: z.union([
+      z.literal("bug_report"),
+      z.literal("support_request"),
+      z.literal("sales_inquiry"),
+      z.literal("general_question"),
+    ]),
+    confidence: z.number(),
+    reasoning: z.string(),
+  }),
 });
 
 // Bug report handler
-export const handleBugReport = simpleAgent.asTextAction({
+const bugAgent = new Agent(components.agent, {
+  name: "Bug Reporter",
+  ...defaultConfig,
   instructions: `You are a bug triage assistant. The user has reported a bug and a ticket has been created.
 Acknowledge the bug report, provide the ticket ID from the conversation, and ask for any additional details that might be helpful (steps to reproduce, error messages, screenshots, etc.).`,
+});
+export const handleBugReport = bugAgent.asTextAction({
   stopWhen: stepCountIs(2),
 });
 
 // Support request handler
-export const handleSupportRequest = simpleAgent.asTextAction({
+const supportAgent = new Agent(components.agent, {
+  name: "Support Assistant",
+  ...defaultConfig,
   instructions: `You are a technical support assistant. A support ticket has been created for the user.
 Provide helpful information to address their question, and let them know a support ticket has been created with the ID from the conversation. Offer to help troubleshoot or provide documentation links.`,
+});
+export const handleSupportRequest = supportAgent.asTextAction({
   stopWhen: stepCountIs(3),
 });
 
 // Sales inquiry handler
-export const handleSalesInquiry = simpleAgent.asTextAction({
+const salesAgent = new Agent(components.agent, {
+  name: "Sales Agent",
+  ...defaultConfig,
   instructions: `You are a sales assistant. The user is interested in learning more about the product or pricing.
 Provide relevant information about features, pricing, or plans. Let them know a sales representative will follow up, and their inquiry has been logged with the ID from the conversation.`,
+});
+export const handleSalesInquiry = salesAgent.asTextAction({
   stopWhen: stepCountIs(2),
 });
 
 // General question handler
 export const handleGeneralQuestion = simpleAgent.asTextAction({
-  instructions: `You are a helpful assistant. Answer the user's question in a friendly and informative way.`,
   stopWhen: stepCountIs(2),
 });
 
@@ -211,7 +235,10 @@ export const createSalesLead = mutation({
 // Mutation to start the routing workflow
 export const startRouting = mutation({
   args: { userMessage: v.string() },
-  handler: async (ctx, args): Promise<{ threadId: string; workflowId: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; workflowId: string }> => {
     const userId = await getAuthUserId(ctx);
     const threadId = await createThread(ctx, components.agent, {
       userId,
