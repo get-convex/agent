@@ -76,7 +76,10 @@ export const vectorRoutingWorkflow = workflow.define({
     similarity: v.number(),
     response: v.string(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ route: string; similarity: number; response: string }> => {
     console.log("Starting vector routing workflow for:", args.userMessage);
 
     // Step 1: Get embedding for the user's message
@@ -107,8 +110,8 @@ export const vectorRoutingWorkflow = workflow.define({
     // Step 4: Route to the appropriate handler based on vector similarity
     let response: string;
     switch (routeMatch.route) {
-      case "weather":
-        response = await ctx.runAction(
+      case "weather": {
+        const weatherResponse = await ctx.runAction(
           internal.workflows.vector_routing.handleWeather,
           {
             promptMessageId: userMsg.messageId,
@@ -116,10 +119,12 @@ export const vectorRoutingWorkflow = workflow.define({
           },
           { retry: true },
         );
+        response = weatherResponse.text;
         break;
+      }
 
-      case "story":
-        response = await ctx.runAction(
+      case "story": {
+        const storyResponse = await ctx.runAction(
           internal.workflows.vector_routing.handleStory,
           {
             promptMessageId: userMsg.messageId,
@@ -127,10 +132,12 @@ export const vectorRoutingWorkflow = workflow.define({
           },
           { retry: true },
         );
+        response = storyResponse.text;
         break;
+      }
 
-      case "support":
-        response = await ctx.runAction(
+      case "support": {
+        const supportResponse = await ctx.runAction(
           internal.workflows.vector_routing.handleSupport,
           {
             promptMessageId: userMsg.messageId,
@@ -138,10 +145,11 @@ export const vectorRoutingWorkflow = workflow.define({
           },
           { retry: true },
         );
+        response = supportResponse.text;
         break;
-
-      default:
-        response = await ctx.runAction(
+      }
+      default: {
+        const generalResponse = await ctx.runAction(
           internal.workflows.vector_routing.handleGeneral,
           {
             promptMessageId: userMsg.messageId,
@@ -149,7 +157,9 @@ export const vectorRoutingWorkflow = workflow.define({
           },
           { retry: true },
         );
+        response = generalResponse.text;
         break;
+      }
     }
 
     return {
@@ -254,19 +264,20 @@ export const handleStory = storyAgent.asTextAction({
 });
 
 export const handleSupport = simpleAgent.asTextAction({
-  instructions: `You are a helpful technical support assistant. Help the user with their issue, ask clarifying questions, and provide step-by-step guidance.`,
   stopWhen: stepCountIs(3),
 });
 
 export const handleGeneral = simpleAgent.asTextAction({
-  instructions: `You are a friendly, helpful assistant. Answer questions concisely and accurately.`,
   stopWhen: stepCountIs(2),
 });
 
 // Mutation to start the vector routing workflow
 export const startVectorRouting = mutation({
   args: { userMessage: v.string() },
-  handler: async (ctx, args): Promise<{ threadId: string; workflowId: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; workflowId: string }> => {
     const userId = await getAuthUserId(ctx);
     const threadId = await createThread(ctx, components.agent, {
       userId,
