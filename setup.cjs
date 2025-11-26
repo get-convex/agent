@@ -25,9 +25,10 @@ if (initFlag) {
 
   try {
     console.log("Checking backend configuration...");
-    execSync("npm run dev:backend -- --once", {
+    execSync("npx convex dev --once", {
       cwd: __dirname,
       stdio: "inherit",
+      stderr: "inherit",
     });
     console.log("✅ Backend setup complete! No API key needed.\n");
   } catch (error) {
