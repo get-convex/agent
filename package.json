@@ -17,6 +17,7 @@
   ],
   "type": "module",
   "scripts": {
+    "setup": "node setup.cjs --init",
     "dev": "run-p -r 'dev:*'",
     "dev:backend": "convex dev --typecheck-components",
     "dev:frontend": "cd example && vite --clearScreen false",
