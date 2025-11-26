@@ -3,9 +3,15 @@ import { WorkflowManager } from "@convex-dev/workflow";
 import { components, internal } from "../_generated/api";
 import { mutation } from "../_generated/server";
 import { v } from "convex/values";
-import { createThread, saveMessage, stepCountIs } from "@convex-dev/agent";
+import {
+  Agent,
+  createThread,
+  saveMessage,
+  stepCountIs,
+} from "@convex-dev/agent";
 import { getAuthUserId } from "../utils";
-import { weatherAgent } from "../agents/weather";
+import { defaultConfig } from "convex/agents/config";
+import { z } from "zod/v4";
 
 /**
  * Reason-Act Cycle Pattern: Iterative reasoning and action loop
@@ -25,7 +31,10 @@ export const reasonActCycleWorkflow = workflow.define({
     cycles: v.number(),
     finalAnswer: v.string(),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ cycles: number; finalAnswer: string }> => {
     console.log("Starting reason-act cycle for goal:", args.goal);
 
     let cycleCount = 0;
@@ -43,7 +52,7 @@ export const reasonActCycleWorkflow = workflow.define({
       console.log(`Cycle ${cycleCount}: Reasoning`);
 
       // Step 1: Reason about what to do next
-      const reasoning = await ctx.runAction(
+      const { object: reasoning } = await ctx.runAction(
         internal.workflows.reason_act_cycle.reasonAboutNextAction,
         {
           promptMessageId: reasoningMsg.messageId,
@@ -88,7 +97,8 @@ export const reasonActCycleWorkflow = workflow.define({
     // Generate final answer
     const finalMsg = await saveMessage(ctx, components.agent, {
       threadId: args.threadId,
-      prompt: "Based on all our reasoning and actions, provide a comprehensive final answer to the original goal.",
+      prompt:
+        "Based on all our reasoning and actions, provide a comprehensive final answer to the original goal.",
     });
 
     const finalAnswer = await ctx.runAction(
@@ -102,22 +112,15 @@ export const reasonActCycleWorkflow = workflow.define({
 
     return {
       cycles: cycleCount,
-      finalAnswer,
+      finalAnswer: finalAnswer.text,
     };
   },
 });
 
 // Agent action for reasoning about next steps
-export const reasonAboutNextAction = weatherAgent.asObjectAction({
-  schema: v.object({
-    action: v.union(
-      v.literal("get_weather"),
-      v.literal("get_location"),
-      v.literal("analyze_data"),
-      v.literal("answer"),
-    ),
-    rationale: v.string(),
-  }),
+const reasoningAgent = new Agent(components.agent, {
+  name: "Reasoning Agent",
+  ...defaultConfig,
   instructions: `You are a reasoning agent. Analyze the conversation and goal, then decide what action to take next:
 - "get_weather": If you need weather information
 - "get_location": If you need to determine a location
@@ -125,27 +128,46 @@ export const reasonAboutNextAction = weatherAgent.asObjectAction({
 - "answer": If you have enough information to answer the goal
 
 Provide your rationale for the chosen action.`,
-  stopWhen: stepCountIs(1),
+});
+
+export const reasonAboutNextAction = reasoningAgent.asObjectAction({
+  schema: z.object({
+    action: z.enum(["get_weather", "get_location", "analyze_data", "answer"]),
+    rationale: z.string(),
+  }),
 });
 
 // Agent action for executing actions
-export const executeAction = weatherAgent.asTextAction({
+const actionAgent = new Agent(components.agent, {
+  name: "Action Agent",
+  ...defaultConfig,
   instructions:
     "Execute the requested action using your available tools and knowledge. Provide detailed results.",
+});
+
+export const executeAction = actionAgent.asTextAction({
   stopWhen: stepCountIs(3),
 });
 
 // Agent action for generating the final answer
-export const generateFinalAnswer = weatherAgent.asTextAction({
+const finalAnswerAgent = new Agent(components.agent, {
+  name: "Final Answer Agent",
+  ...defaultConfig,
   instructions:
     "Synthesize all the reasoning and actions taken to provide a comprehensive final answer to the original goal.",
+});
+
+export const generateFinalAnswer = finalAnswerAgent.asTextAction({
   stopWhen: stepCountIs(2),
 });
 
 // Mutation to start the reason-act cycle workflow
 export const startReasonActCycle = mutation({
   args: { goal: v.string() },
-  handler: async (ctx, args): Promise<{ threadId: string; workflowId: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: string; workflowId: string }> => {
     const userId = await getAuthUserId(ctx);
     const threadId = await createThread(ctx, components.agent, {
       userId,
