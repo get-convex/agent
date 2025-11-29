@@ -536,21 +536,23 @@ describe("agent", () => {
     const result = await t.mutation(api.messages.deleteByOrder, {
       threadId: thread._id as Id<"threads">,
       startOrder: 0,
-      endOrder: 1,
+      endOrder: 2,
     });
 
     expect(result.isDone).toBe(true);
-    expect(result.lastOrder).toBe(0);
+    expect(result.lastOrder).toBe(1);
     expect(result.lastStepOrder).toBe(1);
 
-    // Verify only messages from order 0 were deleted
+    // Verify only messages from order 0 & 1 were deleted
     const remainingMessages = await t.query(
       api.messages.listMessagesByThreadId,
       { threadId: thread._id as Id<"threads">, order: "asc" },
     );
 
-    expect(remainingMessages.page).toHaveLength(3); // Should have messages from order 1 and 2
-    expect(remainingMessages.page.map((m) => m.order)).toEqual([1, 1, 2]);
+    expect(remainingMessages.page).toHaveLength(1); // Should have messages from order 2
+    expect(remainingMessages.page[0].message!.content).toBe(
+      "message order 2, step 0",
+    );
   });
 
   test("deleteByOrder handles step order boundaries correctly", async () => {
