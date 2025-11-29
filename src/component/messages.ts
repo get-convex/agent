@@ -102,12 +102,12 @@ export const deleteByOrder = mutation({
     lastOrder?: number;
     lastStepOrder?: number;
   }> => {
-    const messages = await orderedMessagesStream(
-      ctx,
-      args.threadId,
-      "asc",
-      args.startOrder,
-    )
+    const messages = await orderedMessagesStream(ctx, {
+      threadId: args.threadId,
+      sortOrder: "asc",
+      startOrder: args.startOrder,
+      startOrderBound: "gte",
+    })
       .narrow({
         lowerBound: args.startStepOrder
           ? [args.startOrder, args.startStepOrder]
@@ -312,14 +312,27 @@ export async function getMaxMessage(
   threadId: Id<"threads">,
   order?: number,
 ) {
-  return orderedMessagesStream(ctx, threadId, "desc", order).first();
+  return orderedMessagesStream(ctx, {
+    threadId,
+    sortOrder: "desc",
+    startOrder: order,
+    startOrderBound: "eq",
+  }).first();
 }
 
 function orderedMessagesStream(
   ctx: QueryCtx,
-  threadId: Id<"threads">,
-  sortOrder: "asc" | "desc",
-  order?: number,
+  {
+    threadId,
+    sortOrder,
+    startOrder,
+    startOrderBound,
+  }: {
+    threadId: Id<"threads">;
+    sortOrder: "asc" | "desc";
+    startOrder?: number;
+    startOrderBound?: "gte" | "eq";
+  },
 ) {
   return mergedStream(
     [true, false].flatMap((tool) =>
@@ -331,8 +344,12 @@ function orderedMessagesStream(
               .eq("threadId", threadId)
               .eq("status", status)
               .eq("tool", tool);
-            if (order !== undefined) {
-              return qq.eq("order", order);
+            if (startOrder !== undefined) {
+              if (startOrderBound === "gte") {
+                return qq.gte("order", startOrder);
+              } else {
+                return qq.eq("order", startOrder);
+              }
             }
             return qq;
           })
