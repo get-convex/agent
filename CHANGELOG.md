@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Fix deleteByOrder spanning many messages
+
 ## 0.3.1
 
 - Avoid JSON.stringify in the render path for logging in useUIMessages.
