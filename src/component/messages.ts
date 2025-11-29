@@ -322,12 +322,7 @@ export async function getMaxMessage(
 
 function orderedMessagesStream(
   ctx: QueryCtx,
-  {
-    threadId,
-    sortOrder,
-    startOrder,
-    startOrderBound,
-  }: {
+  args: {
     threadId: Id<"threads">;
     sortOrder: "asc" | "desc";
     startOrder?: number;
@@ -341,19 +336,19 @@ function orderedMessagesStream(
           .query("messages")
           .withIndex("threadId_status_tool_order_stepOrder", (q) => {
             const qq = q
-              .eq("threadId", threadId)
+              .eq("threadId", args.threadId)
               .eq("status", status)
               .eq("tool", tool);
-            if (startOrder !== undefined) {
-              if (startOrderBound === "gte") {
-                return qq.gte("order", startOrder);
+            if (args.startOrder !== undefined) {
+              if (args.startOrderBound === "gte") {
+                return qq.gte("order", args.startOrder);
               } else {
-                return qq.eq("order", startOrder);
+                return qq.eq("order", args.startOrder);
               }
             }
             return qq;
           })
-          .order(sortOrder),
+          .order(args.sortOrder),
       ),
     ),
     ["order", "stepOrder"],
