@@ -6,11 +6,11 @@ import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { getMaxMessage } from "./messages.js";
 import schema from "./schema.js";
-import { modules } from "./setup.test.js";
+import { initConvexTest, modules } from "./setup.test.js";
 
 describe("agent", () => {
   test("getMaxMessage works for threads", async () => {
-    const t = convexTest(schema, modules);
+    const t = initConvexTest();
     const thread = await t.mutation(api.threads.createThread, {
       userId: "test",
     });
