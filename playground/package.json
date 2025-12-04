@@ -111,7 +111,7 @@
     "@types/react-dom": "19.2.2",
     "convex": "file:../node_modules/convex",
     "eslint": "9.38.0",
-    "eslint-plugin-react-hooks": "5.2.0",
+    "eslint-plugin-react-hooks": "^6",
     "eslint-plugin-react-refresh": "0.4.24",
     "globals": "16.4.0",
     "react": "file:../node_modules/react",
