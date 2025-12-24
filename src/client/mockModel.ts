@@ -12,7 +12,13 @@ B B B B B B B B B B B B B B B
 C C C C C C C C C C C C C C C
 D D D D D D D D D D D D D D D
 `;
-const DEFAULT_USAGE = { outputTokens: 10, inputTokens: 3, totalTokens: 13 };
+const DEFAULT_USAGE = {
+  outputTokens: 10,
+  inputTokens: 3,
+  totalTokens: 13,
+  inputTokenDetails: undefined,
+  outputTokenDetails: undefined,
+};
 
 export type MockModelArgs = {
   provider?: LanguageModelV2["provider"];
@@ -166,7 +172,7 @@ export class MockLanguageModel implements LanguageModelV2 {
           type: "finish",
           finishReason: fail ? "error" : "stop",
           usage: DEFAULT_USAGE,
-          ...metadata,
+          ...(metadata as any),
         });
         return chunks;
       },
@@ -187,7 +193,7 @@ export class MockLanguageModel implements LanguageModelV2 {
           content: contentSteps[callIndex % contentSteps.length],
           finishReason: "stop" as const,
           usage: DEFAULT_USAGE,
-          ...metadata,
+          ...(metadata as any),
           warnings: [],
         };
         callIndex++;

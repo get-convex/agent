@@ -38,7 +38,7 @@ const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
 
 export type GetEmbedding = (text: string) => Promise<{
   embedding: number[];
-  textEmbeddingModel: string | EmbeddingModel<string>;
+  textEmbeddingModel: string | EmbeddingModel;
 }>;
 
 /**
@@ -398,6 +398,8 @@ export async function embedMany(
         inputTokens: result.usage.tokens,
         outputTokens: 0,
         totalTokens: result.usage.tokens,
+        inputTokenDetails: {} as any,
+        outputTokenDetails: {} as any,
       },
     });
   }
@@ -418,7 +420,7 @@ export async function generateAndSaveEmbeddings(
     threadId: string | undefined;
     userId: string | undefined;
     agentName?: string;
-    textEmbeddingModel: EmbeddingModel<string>;
+    textEmbeddingModel: EmbeddingModel;
   } & Pick<Config, "usageHandler" | "callSettings">,
   messages: MessageDoc[],
 ) {

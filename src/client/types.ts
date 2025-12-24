@@ -21,6 +21,12 @@ import type {
   CallSettings,
   generateObject,
 } from "ai";
+
+export interface Output<T = any, P = any> {
+  responseFormat: any;
+  parseCompleteOutput: any;
+  parsePartialOutput: any;
+}
 import type {
   GenericActionCtx,
   GenericDataModel,
@@ -100,7 +106,7 @@ export type Config = {
    *   ...
    *   textEmbeddingModel: openai.embedding("text-embedding-3-small")
    */
-  textEmbeddingModel?: EmbeddingModel<string>;
+  textEmbeddingModel?: EmbeddingModel;
   /**
    * Options to determine what messages are included as context in message
    * generation. To disable any messages automatically being added, pass:
@@ -330,14 +336,12 @@ export type AgentComponent = ComponentApi;
 export type TextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
-  OUTPUT = never,
-  OUTPUT_PARTIAL = never,
+  OUTPUT extends Output<any, any> = never,
 > = Omit<
   Parameters<
     typeof generateText<
       TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT,
-      OUTPUT_PARTIAL
+      OUTPUT
     >
   >[0],
   "model" | "prompt" | "messages"
@@ -352,14 +356,12 @@ export type TextArgs<
 export type StreamingTextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
-  OUTPUT = never,
-  OUTPUT_PARTIAL = never,
+  OUTPUT extends Output<any, any> = never,
 > = Omit<
   Parameters<
     typeof streamText<
       TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT,
-      OUTPUT_PARTIAL
+      OUTPUT
     >
   >[0],
   "model" | "prompt" | "messages"
@@ -474,15 +476,13 @@ export interface Thread<DefaultTools extends ToolSet> {
    */
   generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT = never,
-    OUTPUT_PARTIAL = never,
+    OUTPUT extends Output<any, any> = never,
   >(
     generateTextArgs: AgentPrompt &
       TextArgs<
         TOOLS extends undefined ? DefaultTools : TOOLS,
         TOOLS,
-        OUTPUT,
-        OUTPUT_PARTIAL
+        OUTPUT
       >,
     options?: Options,
   ): Promise<
@@ -502,15 +502,13 @@ export interface Thread<DefaultTools extends ToolSet> {
    */
   streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT = never,
-    PARTIAL_OUTPUT = never,
+    OUTPUT extends Output<any, any> = never,
   >(
     streamTextArgs: AgentPrompt &
       StreamingTextArgs<
         TOOLS extends undefined ? DefaultTools : TOOLS,
         TOOLS,
-        OUTPUT,
-        PARTIAL_OUTPUT
+        OUTPUT
       >,
     options?: Options & {
       /**
@@ -528,7 +526,7 @@ export interface Thread<DefaultTools extends ToolSet> {
   ): Promise<
     StreamTextResult<
       TOOLS extends undefined ? DefaultTools : TOOLS,
-      PARTIAL_OUTPUT
+      OUTPUT
     > &
       ThreadOutputMetadata
   >;
