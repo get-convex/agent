@@ -7,13 +7,13 @@ import { groq } from "@ai-sdk/groq";
 import { mockModel } from "@convex-dev/agent";
 
 let languageModel: LanguageModelV2;
-let textEmbeddingModel: EmbeddingModel<string>;
+let textEmbeddingModel: EmbeddingModel;
 
 if (process.env.ANTHROPIC_API_KEY) {
   languageModel = anthropic.chat("claude-opus-4-20250514");
 } else if (process.env.OPENAI_API_KEY) {
   languageModel = openai.chat("gpt-4o-mini");
-  textEmbeddingModel = openai.textEmbeddingModel("text-embedding-3-small");
+  textEmbeddingModel = openai.embedding("text-embedding-3-small");
 } else if (process.env.GROQ_API_KEY) {
   languageModel = groq.languageModel(
     "meta-llama/llama-4-scout-17b-16e-instruct",
