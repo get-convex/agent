@@ -20,7 +20,7 @@ function baseMessageDoc<T = unknown>(
 }
 
 describe("fromUIMessages round-trip tests", () => {
-  it("preserves essential data for simple user message", () => {
+  it("preserves essential data for simple user message", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -32,7 +32,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -54,7 +54,7 @@ describe("fromUIMessages round-trip tests", () => {
     }
   });
 
-  it("preserves essential data for assistant message", () => {
+  it("preserves essential data for assistant message", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -66,7 +66,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -78,7 +78,7 @@ describe("fromUIMessages round-trip tests", () => {
     expect(backToMessageDocs[0].text).toBe("Hi there! How can I help?");
   });
 
-  it("preserves system messages correctly", () => {
+  it("preserves system messages correctly", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -90,7 +90,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -108,7 +108,7 @@ describe("fromUIMessages round-trip tests", () => {
     );
   });
 
-  it("preserves reasoning in assistant messages", () => {
+  it("preserves reasoning in assistant messages", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -130,7 +130,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -152,7 +152,7 @@ describe("fromUIMessages round-trip tests", () => {
     expect(backToMessageDocs[0].reasoning).toBe("Let me think about this...");
   });
 
-  it("handles tool calls and groups them correctly", () => {
+  it("handles tool calls and groups them correctly", async () => {
     // Tool calls get grouped into single UI message but expanded back to multiple message docs
     const originalMessages = [
       baseMessageDoc({
@@ -196,7 +196,7 @@ describe("fromUIMessages round-trip tests", () => {
     const toTest = [originalMessages, [...originalMessages].reverse()];
     for (const messages of toTest) {
       const uiMessages = toUIMessages(messages);
-      const backToMessageDocs = fromUIMessages(uiMessages, {
+      const backToMessageDocs = await fromUIMessages(uiMessages, {
         threadId: "thread1",
       });
 
@@ -230,7 +230,7 @@ describe("fromUIMessages round-trip tests", () => {
     }
   });
 
-  it("preserves file attachments in user messages", () => {
+  it("preserves file attachments in user messages", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -252,7 +252,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -282,7 +282,7 @@ describe("fromUIMessages round-trip tests", () => {
     }
   });
 
-  it("preserves sources correctly", () => {
+  it("preserves sources correctly", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -315,7 +315,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -338,7 +338,7 @@ describe("fromUIMessages round-trip tests", () => {
     });
   });
 
-  it("preserves metadata when provided", () => {
+  it("preserves metadata when provided", async () => {
     const testMetadata = {
       customField: "customValue",
       timestamp: Date.now(),
@@ -356,7 +356,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -367,7 +367,7 @@ describe("fromUIMessages round-trip tests", () => {
     expect(backToMessageDocs[0].metadata).toEqual(testMetadata);
   });
 
-  it("handles streaming status correctly", () => {
+  it("handles streaming status correctly", async () => {
     const originalMessages = [
       baseMessageDoc({
         message: {
@@ -381,7 +381,7 @@ describe("fromUIMessages round-trip tests", () => {
     ];
 
     const uiMessages = toUIMessages(originalMessages);
-    const backToMessageDocs = fromUIMessages(uiMessages, {
+    const backToMessageDocs = await fromUIMessages(uiMessages, {
       threadId: "thread1",
     });
 
@@ -395,13 +395,13 @@ describe("fromUIMessages round-trip tests", () => {
 });
 
 describe("fromUIMessages functionality tests", () => {
-  it("handles empty messages array", () => {
+  it("handles empty messages array", async () => {
     const uiMessages: UIMessage[] = [];
-    const result = fromUIMessages(uiMessages, { threadId: "thread1" });
+    const result = await fromUIMessages(uiMessages, { threadId: "thread1" });
     expect(result).toHaveLength(0);
   });
 
-  it("correctly assigns thread ID", () => {
+  it("correctly assigns thread ID", async () => {
     const uiMessage: UIMessage = {
       id: "test-id",
       _creationTime: Date.now(),
@@ -414,14 +414,14 @@ describe("fromUIMessages functionality tests", () => {
       parts: [{ type: "text", text: "Hello" }],
     };
 
-    const result = fromUIMessages([uiMessage], {
+    const result = await fromUIMessages([uiMessage], {
       threadId: "custom-thread-id",
     });
     expect(result).toHaveLength(1);
     expect(result[0].threadId).toBe("custom-thread-id");
   });
 
-  it("correctly determines tool status", () => {
+  it("correctly determines tool status", async () => {
     const toolUIMessage: UIMessage = {
       id: "tool-id",
       _creationTime: Date.now(),
@@ -442,7 +442,7 @@ describe("fromUIMessages functionality tests", () => {
       ],
     };
 
-    const result = fromUIMessages([toolUIMessage], { threadId: "thread1" });
+    const result = await fromUIMessages([toolUIMessage], { threadId: "thread1" });
     expect(result.length).toBeGreaterThan(0);
 
     // Should have tool messages
@@ -450,7 +450,7 @@ describe("fromUIMessages functionality tests", () => {
     expect(toolMessages.length).toBeGreaterThan(0);
   });
 
-  it("handles tool calls without responses", () => {
+  it("handles tool calls without responses", async () => {
     const toolUIMessage: UIMessage = {
       id: "tool-id",
       _creationTime: Date.now(),
@@ -471,7 +471,7 @@ describe("fromUIMessages functionality tests", () => {
       ],
     };
 
-    const result = fromUIMessages([toolUIMessage], { threadId: "thread1" });
+    const result = await fromUIMessages([toolUIMessage], { threadId: "thread1" });
     expect(result.length).toBeGreaterThan(0);
 
     // Should have tool messages

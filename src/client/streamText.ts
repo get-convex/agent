@@ -17,6 +17,7 @@ import type {
   AgentPrompt,
   GenerationOutputMetadata,
   Options,
+  Output,
 } from "./types.js";
 import { startGeneration } from "./start.js";
 import type { Agent } from "./index.js";
@@ -32,8 +33,7 @@ import { errorToString, willContinue } from "./utils.js";
  */
 export async function streamText<
   TOOLS extends ToolSet,
-  OUTPUT = never,
-  PARTIAL_OUTPUT = never,
+  OUTPUT extends Output<any, any> = never,
 >(
   ctx: ActionCtx,
   component: AgentComponent,
@@ -43,7 +43,7 @@ export async function streamText<
    */
   streamTextArgs: AgentPrompt &
     Omit<
-      Parameters<typeof streamTextAi<TOOLS, OUTPUT, PARTIAL_OUTPUT>>[0],
+      Parameters<typeof streamTextAi<TOOLS, OUTPUT>>[0],
       "model" | "prompt" | "messages"
     > & {
       /**
@@ -73,7 +73,7 @@ export async function streamText<
     saveStreamDeltas?: boolean | StreamingOptions;
     agentForToolCtx?: Agent;
   },
-): Promise<StreamTextResult<TOOLS, PARTIAL_OUTPUT> & GenerationOutputMetadata> {
+): Promise<StreamTextResult<TOOLS, OUTPUT> & GenerationOutputMetadata> {
   const { threadId } = options ?? {};
   const { args, userId, order, stepOrder, promptMessageId, ...call } =
     await startGeneration(ctx, component, streamTextArgs, options);
@@ -141,7 +141,7 @@ export async function streamText<
       await call.save({ step }, createPendingMessage);
       return args.onStepFinish?.(step);
     },
-  }) as StreamTextResult<TOOLS, PARTIAL_OUTPUT>;
+  }) as StreamTextResult<TOOLS, OUTPUT>;
   const stream = streamer?.consumeStream(
     result.toUIMessageStream<AIUIMessage<TOOLS>>(),
   );

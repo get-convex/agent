@@ -155,6 +155,8 @@ export function toModelMessageUsage(usage: Usage): LanguageModelUsage {
     totalTokens: usage.totalTokens,
     reasoningTokens: usage.reasoningTokens,
     cachedInputTokens: usage.cachedInputTokens,
+    inputTokenDetails: {} as any,
+    outputTokenDetails: {} as any,
   };
 }
 
@@ -165,18 +167,33 @@ export function serializeWarnings(
     return undefined;
   }
   return warnings.map((warning) => {
-    if (warning.type !== "unsupported-setting") {
-      return warning;
+    if (warning.type === "compatibility") {
+      return {
+        type: "unsupported-setting",
+        setting: warning.feature,
+        details: warning.details,
+      };
     }
-    return { ...warning, setting: warning.setting.toString() };
-  });
+    return warning;
+  }) as any;
 }
 
 export function toModelMessageWarnings(
   warnings: MessageWithMetadata["warnings"],
 ): CallWarning[] | undefined {
-  // We don't need to do anythign here for now
-  return warnings;
+  if (!warnings) {
+    return undefined;
+  }
+  return warnings.map((warning) => {
+    if (warning.type === "unsupported-setting") {
+      return {
+        type: "compatibility",
+        feature: warning.setting,
+        details: warning.details,
+      };
+    }
+    return warning;
+  }) as any;
 }
 
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
@@ -364,12 +381,12 @@ export async function serializeContent(
           return part satisfies Infer<typeof vSourcePart>;
         }
         default:
-          return part satisfies Infer<typeof vContent>;
+          return null;
       }
     }),
   );
   return {
-    content: serialized as SerializedContent,
+    content: serialized.filter((p) => p !== null) as SerializedContent,
     fileIds: fileIds.length > 0 ? fileIds : undefined,
   };
 }
@@ -378,57 +395,59 @@ export function fromModelMessageContent(content: Content): Message["content"] {
   if (typeof content === "string") {
     return content;
   }
-  return content.map((part) => {
-    const metadata: {
-      providerOptions?: ProviderOptions;
-      providerMetadata?: ProviderMetadata;
-    } = {};
-    if ("providerOptions" in part) {
-      metadata.providerOptions = part.providerOptions as ProviderOptions;
-    }
-    if ("providerMetadata" in part) {
-      metadata.providerMetadata = part.providerMetadata as ProviderMetadata;
-    }
-    switch (part.type) {
-      case "text":
-        return part satisfies Infer<typeof vTextPart>;
-      case "image":
-        return {
-          type: part.type,
-          mimeType: getMimeOrMediaType(part),
-          ...metadata,
-          image: serializeDataOrUrl(part.image),
-        } satisfies Infer<typeof vImagePart>;
-      case "file":
-        return {
-          type: part.type,
-          data: serializeDataOrUrl(part.data),
-          filename: part.filename,
-          mimeType: getMimeOrMediaType(part)!,
-          ...metadata,
-        } satisfies Infer<typeof vFilePart>;
-      case "tool-call":
-        return {
-          type: part.type,
-          args: part.input ?? null,
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          providerExecuted: part.providerExecuted,
-          ...metadata,
-        } satisfies Infer<typeof vToolCallPart>;
-      case "tool-result":
-        return normalizeToolResult(part, metadata);
-      case "reasoning":
-        return {
-          type: part.type,
-          text: part.text,
-          ...metadata,
-        } satisfies Infer<typeof vReasoningPart>;
-      // Not in current generation output, but could be in historical messages
-      default:
-        return part satisfies Infer<typeof vContent>;
-    }
-  }) as Message["content"];
+  return content
+    .map((part) => {
+      const metadata: {
+        providerOptions?: ProviderOptions;
+        providerMetadata?: ProviderMetadata;
+      } = {};
+      if ("providerOptions" in part) {
+        metadata.providerOptions = part.providerOptions as ProviderOptions;
+      }
+      if ("providerMetadata" in part) {
+        metadata.providerMetadata = part.providerMetadata as ProviderMetadata;
+      }
+      switch (part.type) {
+        case "text":
+          return part satisfies Infer<typeof vTextPart>;
+        case "image":
+          return {
+            type: part.type,
+            mimeType: getMimeOrMediaType(part),
+            ...metadata,
+            image: serializeDataOrUrl(part.image),
+          } satisfies Infer<typeof vImagePart>;
+        case "file":
+          return {
+            type: part.type,
+            data: serializeDataOrUrl(part.data),
+            filename: part.filename,
+            mimeType: getMimeOrMediaType(part)!,
+            ...metadata,
+          } satisfies Infer<typeof vFilePart>;
+        case "tool-call":
+          return {
+            type: part.type,
+            args: part.input ?? null,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            providerExecuted: part.providerExecuted,
+            ...metadata,
+          } satisfies Infer<typeof vToolCallPart>;
+        case "tool-result":
+          return normalizeToolResult(part, metadata);
+        case "reasoning":
+          return {
+            type: part.type,
+            text: part.text,
+            ...metadata,
+          } satisfies Infer<typeof vReasoningPart>;
+        // Not in current generation output, but could be in historical messages
+        default:
+          return null;
+      }
+    })
+    .filter((p) => p !== null) as Message["content"];
 }
 
 export function toModelMessageContent(
@@ -437,84 +456,86 @@ export function toModelMessageContent(
   if (typeof content === "string") {
     return content;
   }
-  return content.map((part) => {
-    const metadata: {
-      providerOptions?: ProviderOptions;
-      providerMetadata?: ProviderMetadata;
-    } = {};
-    if ("providerOptions" in part) {
-      metadata.providerOptions = part.providerOptions;
-    }
-    if ("providerMetadata" in part) {
-      metadata.providerMetadata = part.providerMetadata;
-    }
-    switch (part.type) {
-      case "text":
-        return {
-          type: part.type,
-          text: part.text,
-          ...metadata,
-        } satisfies TextPart;
-      case "image":
-        return {
-          type: part.type,
-          image: toModelMessageDataOrUrl(part.image),
-          mediaType: getMimeOrMediaType(part),
-          ...metadata,
-        } satisfies ImagePart;
-      case "file":
-        return {
-          type: part.type,
-          data: toModelMessageDataOrUrl(part.data),
-          filename: part.filename,
-          mediaType: getMimeOrMediaType(part)!,
-          ...metadata,
-        } satisfies FilePart;
-      case "tool-call": {
-        const input = "input" in part ? part.input : part.args;
-        return {
-          type: part.type,
-          input: input ?? null,
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          providerExecuted: part.providerExecuted,
-          ...metadata,
-        } satisfies ToolCallPart;
+  return content
+    .map((part) => {
+      const metadata: {
+        providerOptions?: ProviderOptions;
+        providerMetadata?: ProviderMetadata;
+      } = {};
+      if ("providerOptions" in part) {
+        metadata.providerOptions = part.providerOptions;
       }
-      case "tool-result": {
-        return normalizeToolResult(part, metadata);
+      if ("providerMetadata" in part) {
+        metadata.providerMetadata = part.providerMetadata;
       }
-      case "reasoning":
-        return {
-          type: part.type,
-          text: part.text,
-          ...metadata,
-        } satisfies ReasoningPart;
-      case "redacted-reasoning":
-        // TODO: should we just drop this?
-        return {
-          type: "reasoning",
-          text: "",
-          ...metadata,
-          providerOptions: metadata.providerOptions
-            ? {
-                ...Object.fromEntries(
-                  Object.entries(metadata.providerOptions ?? {}).map(
-                    ([key, value]) => [
-                      key,
-                      { ...value, redactedData: part.data },
-                    ],
+      switch (part.type) {
+        case "text":
+          return {
+            type: part.type,
+            text: part.text,
+            ...metadata,
+          } satisfies TextPart;
+        case "image":
+          return {
+            type: part.type,
+            image: toModelMessageDataOrUrl(part.image),
+            mediaType: getMimeOrMediaType(part),
+            ...metadata,
+          } satisfies ImagePart;
+        case "file":
+          return {
+            type: part.type,
+            data: toModelMessageDataOrUrl(part.data),
+            filename: part.filename,
+            mediaType: getMimeOrMediaType(part)!,
+            ...metadata,
+          } satisfies FilePart;
+        case "tool-call": {
+          const input = "input" in part ? part.input : part.args;
+          return {
+            type: part.type,
+            input: input ?? null,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            providerExecuted: part.providerExecuted,
+            ...metadata,
+          } satisfies ToolCallPart;
+        }
+        case "tool-result": {
+          return normalizeToolResult(part, metadata);
+        }
+        case "reasoning":
+          return {
+            type: part.type,
+            text: part.text,
+            ...metadata,
+          } satisfies ReasoningPart;
+        case "redacted-reasoning":
+          // TODO: should we just drop this?
+          return {
+            type: "reasoning",
+            text: "",
+            ...metadata,
+            providerOptions: metadata.providerOptions
+              ? {
+                  ...Object.fromEntries(
+                    Object.entries(metadata.providerOptions ?? {}).map(
+                      ([key, value]) => [
+                        key,
+                        { ...value, redactedData: part.data },
+                      ],
+                    ),
                   ),
-                ),
-              }
-            : undefined,
-        } satisfies ReasoningPart;
-      case "source":
-        return part satisfies SourcePart;
-      default:
-        return part satisfies Content;
-    }
-  }) as Content;
+                }
+              : undefined,
+          } satisfies ReasoningPart;
+        case "source":
+          return part satisfies SourcePart;
+        default:
+          return null;
+      }
+    })
+    .filter((p) => p !== null) as Content;
 }
 
 export function normalizeToolOutput(
@@ -544,9 +565,11 @@ function normalizeToolResult(
 ): ToolResultPart & Infer<typeof vToolResultPart> {
   return {
     type: part.type,
-    output:
-      part.output ??
-      normalizeToolOutput("result" in part ? part.result : undefined),
+    output: part.output
+      ? validate(vToolResultOutput, part.output)
+        ? (part.output as any)
+        : normalizeToolOutput(JSON.stringify(part.output))
+      : normalizeToolOutput("result" in part ? part.result : undefined),
     toolCallId: part.toolCallId,
     toolName: part.toolName,
     ...metadata,

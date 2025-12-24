@@ -86,6 +86,7 @@ import type {
   UsageHandler,
   QueryCtx,
   AgentPrompt,
+  Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
 import { errorToString, willContinue } from "./utils.js";
@@ -416,9 +417,7 @@ export class Agent<
         ...args,
         tools: (args.tools ?? this.options.tools) as Tools,
         system: args.system ?? this.options.instructions,
-        stopWhen: (args.stopWhen ?? this.options.stopWhen) as
-          | StopCondition<Tools>
-          | Array<StopCondition<Tools>>,
+        stopWhen: (args.stopWhen ?? this.options.stopWhen) as any,
       },
       {
         ...this.options,
@@ -444,8 +443,7 @@ export class Agent<
    */
   async generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT = never,
-    OUTPUT_PARTIAL = never,
+    OUTPUT extends Output<any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -454,7 +452,7 @@ export class Agent<
      * {@link generateText} function, along with Agent prompt options.
      */
     generateTextArgs: AgentPrompt &
-      TextArgs<AgentTools, TOOLS, OUTPUT, OUTPUT_PARTIAL>,
+      TextArgs<AgentTools, TOOLS, OUTPUT>,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
@@ -469,7 +467,7 @@ export class Agent<
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
     const steps: StepResult<Tools>[] = [];
     try {
-      const result = (await generateText<Tools, OUTPUT, OUTPUT_PARTIAL>({
+      const result = (await generateText<Tools, OUTPUT>({
         ...args,
         prepareStep: async (options) => {
           const result = await generateTextArgs.prepareStep?.(options);
@@ -504,8 +502,7 @@ export class Agent<
    */
   async streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT = never,
-    PARTIAL_OUTPUT = never,
+    OUTPUT extends Output<any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -514,7 +511,7 @@ export class Agent<
      * {@link streamText} function, along with Agent prompt options.
      */
     streamTextArgs: AgentPrompt &
-      StreamingTextArgs<AgentTools, TOOLS, OUTPUT, PARTIAL_OUTPUT>,
+      StreamingTextArgs<AgentTools, TOOLS, OUTPUT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -535,12 +532,12 @@ export class Agent<
   ): Promise<
     StreamTextResult<
       TOOLS extends undefined ? AgentTools : TOOLS,
-      PARTIAL_OUTPUT
+      OUTPUT
     > &
       GenerationOutputMetadata
   > {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    return streamText<Tools, OUTPUT, PARTIAL_OUTPUT>(
+    return streamText<Tools, OUTPUT>(
       ctx,
       this.component,
       {
@@ -548,9 +545,7 @@ export class Agent<
         model: streamTextArgs.model ?? this.options.languageModel,
         tools: (streamTextArgs.tools ?? this.options.tools) as Tools,
         system: streamTextArgs.system ?? this.options.instructions,
-        stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as
-          | StopCondition<Tools>
-          | Array<StopCondition<Tools>>,
+        stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as any,
       },
       {
         ...threadOpts,
@@ -1440,7 +1435,7 @@ export class Agent<
         } as GenerateObjectArgs<FlexibleSchema<T>>;
         const ctx = (
           options?.customCtx
-            ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs) }
+            ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs as any) }
             : ctx_
         ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         const value = await this.generateObject(ctx, targetArgs, llmArgs, {

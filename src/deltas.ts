@@ -483,7 +483,7 @@ export function updateFromTextStreamParts(
         break;
       default: {
         // Should never happen
-        const _: never = part;
+        // const _: never = part;
         console.warn(`Received unexpected part: ${JSON.stringify(part)}`);
         break;
       }
