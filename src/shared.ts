@@ -2,6 +2,7 @@ import type {
   FilePart,
   ImagePart,
   ReasoningPart,
+  ToolApprovalRequest,
   ToolCallPart,
   ToolResultPart,
 } from "@ai-sdk/provider-utils";
@@ -46,7 +47,7 @@ export function extractText(message: Message | ModelMessage) {
 }
 
 export function joinText(
-  parts: (
+  parts: readonly (
     | UIMessagePart<UIDataTypes, UITools>
     | TextPart
     | ImagePart
@@ -54,11 +55,12 @@ export function joinText(
     | ReasoningPart
     | ToolCallPart
     | ToolResultPart
+    | ToolApprovalRequest // AI SDK v6
     | MessageContentParts
   )[],
 ) {
   return parts
-    .filter((p) => p.type === "text")
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)
     .filter(Boolean)
     .join(" ");

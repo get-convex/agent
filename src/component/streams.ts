@@ -544,8 +544,12 @@ export async function getStreamingMessagesWithMetadata(
         );
         // We don't save messages that have already been saved
         const numToSkip = stepOrder - streamingMessage.stepOrder;
+        const fromUIMessagesResult = await fromUIMessages(
+          uiMessages,
+          streamingMessage,
+        );
         const messages = await Promise.all(
-          fromUIMessages(uiMessages, streamingMessage)
+          fromUIMessagesResult
             .slice(numToSkip)
             .filter((m) => m.message !== undefined)
             .map(async (msg) => {

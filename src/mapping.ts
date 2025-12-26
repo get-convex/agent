@@ -155,6 +155,15 @@ export function toModelMessageUsage(usage: Usage): LanguageModelUsage {
     totalTokens: usage.totalTokens,
     reasoningTokens: usage.reasoningTokens,
     cachedInputTokens: usage.cachedInputTokens,
+    inputTokenDetails: {
+      noCacheTokens: undefined,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+    },
+    outputTokenDetails: {
+      textTokens: undefined,
+      reasoningTokens: undefined,
+    },
   };
 }
 
@@ -164,19 +173,24 @@ export function serializeWarnings(
   if (!warnings) {
     return undefined;
   }
-  return warnings.map((warning) => {
-    if (warning.type !== "unsupported-setting") {
-      return warning;
-    }
-    return { ...warning, setting: warning.setting.toString() };
-  });
+  // AI SDK v6 warning types (unsupported, compatibility, other) are compatible
+  // with our validator which also supports legacy v5 types for stored data
+  return warnings as MessageWithMetadata["warnings"];
 }
 
 export function toModelMessageWarnings(
   warnings: MessageWithMetadata["warnings"],
 ): CallWarning[] | undefined {
-  // We don't need to do anythign here for now
-  return warnings;
+  if (!warnings) {
+    return undefined;
+  }
+  // Filter out legacy warning types that aren't in AI SDK v6
+  return warnings.filter(
+    (w) =>
+      w.type === "unsupported" ||
+      w.type === "compatibility" ||
+      w.type === "other",
+  ) as CallWarning[];
 }
 
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
@@ -361,15 +375,21 @@ export async function serializeContent(
           } satisfies Infer<typeof vRedactedReasoningPart>;
         }
         case "source": {
-          return part satisfies Infer<typeof vSourcePart>;
+          return part as Infer<typeof vSourcePart>;
         }
+        // AI SDK v6 introduced tool-approval-request and tool-approval-response
+        // which we filter out since they're not persisted
+        case "tool-approval-request":
+        case "tool-approval-response":
+          return null;
         default:
-          return part satisfies Infer<typeof vContent>;
+          // For any other unknown types, pass through
+          return part as unknown as Infer<typeof vContent>;
       }
     }),
   );
   return {
-    content: serialized as SerializedContent,
+    content: serialized.filter((p) => p !== null) as SerializedContent,
     fileIds: fileIds.length > 0 ? fileIds : undefined,
   };
 }
@@ -378,57 +398,64 @@ export function fromModelMessageContent(content: Content): Message["content"] {
   if (typeof content === "string") {
     return content;
   }
-  return content.map((part) => {
-    const metadata: {
-      providerOptions?: ProviderOptions;
-      providerMetadata?: ProviderMetadata;
-    } = {};
-    if ("providerOptions" in part) {
-      metadata.providerOptions = part.providerOptions as ProviderOptions;
-    }
-    if ("providerMetadata" in part) {
-      metadata.providerMetadata = part.providerMetadata as ProviderMetadata;
-    }
-    switch (part.type) {
-      case "text":
-        return part satisfies Infer<typeof vTextPart>;
-      case "image":
-        return {
-          type: part.type,
-          mimeType: getMimeOrMediaType(part),
-          ...metadata,
-          image: serializeDataOrUrl(part.image),
-        } satisfies Infer<typeof vImagePart>;
-      case "file":
-        return {
-          type: part.type,
-          data: serializeDataOrUrl(part.data),
-          filename: part.filename,
-          mimeType: getMimeOrMediaType(part)!,
-          ...metadata,
-        } satisfies Infer<typeof vFilePart>;
-      case "tool-call":
-        return {
-          type: part.type,
-          args: part.input ?? null,
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          providerExecuted: part.providerExecuted,
-          ...metadata,
-        } satisfies Infer<typeof vToolCallPart>;
-      case "tool-result":
-        return normalizeToolResult(part, metadata);
-      case "reasoning":
-        return {
-          type: part.type,
-          text: part.text,
-          ...metadata,
-        } satisfies Infer<typeof vReasoningPart>;
-      // Not in current generation output, but could be in historical messages
-      default:
-        return part satisfies Infer<typeof vContent>;
-    }
-  }) as Message["content"];
+  return content
+    .map((part) => {
+      const metadata: {
+        providerOptions?: ProviderOptions;
+        providerMetadata?: ProviderMetadata;
+      } = {};
+      if ("providerOptions" in part) {
+        metadata.providerOptions = part.providerOptions as ProviderOptions;
+      }
+      if ("providerMetadata" in part) {
+        metadata.providerMetadata = part.providerMetadata as ProviderMetadata;
+      }
+      switch (part.type) {
+        case "text":
+          return part satisfies Infer<typeof vTextPart>;
+        case "image":
+          return {
+            type: part.type,
+            mimeType: getMimeOrMediaType(part),
+            ...metadata,
+            image: serializeDataOrUrl(part.image),
+          } satisfies Infer<typeof vImagePart>;
+        case "file":
+          return {
+            type: part.type,
+            data: serializeDataOrUrl(part.data),
+            filename: part.filename,
+            mimeType: getMimeOrMediaType(part)!,
+            ...metadata,
+          } satisfies Infer<typeof vFilePart>;
+        case "tool-call":
+          return {
+            type: part.type,
+            args: part.input ?? null,
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            providerExecuted: part.providerExecuted,
+            ...metadata,
+          } satisfies Infer<typeof vToolCallPart>;
+        case "tool-result":
+          return normalizeToolResult(part, metadata);
+        case "reasoning":
+          return {
+            type: part.type,
+            text: part.text,
+            ...metadata,
+          } satisfies Infer<typeof vReasoningPart>;
+        // AI SDK v6 introduced tool-approval-request and tool-approval-response
+        // which we filter out since they're not in our Message type
+        case "tool-approval-request":
+        case "tool-approval-response":
+          return null;
+        default:
+          // For any other unknown types, pass through
+          return part as unknown as Infer<typeof vContent>;
+      }
+    })
+    .filter((p) => p !== null) as Message["content"];
 }
 
 export function toModelMessageContent(
@@ -510,9 +537,9 @@ export function toModelMessageContent(
             : undefined,
         } satisfies ReasoningPart;
       case "source":
-        return part satisfies SourcePart;
+        return part as SourcePart;
       default:
-        return part satisfies Content;
+        return part as unknown as Content;
     }
   }) as Content;
 }
@@ -550,7 +577,7 @@ function normalizeToolResult(
     toolCallId: part.toolCallId,
     toolName: part.toolName,
     ...metadata,
-  } satisfies ToolResultPart;
+  } as ToolResultPart & Infer<typeof vToolResultPart>;
 }
 
 /**

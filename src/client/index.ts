@@ -7,12 +7,15 @@ import type {
 import type {
   CallSettings,
   GenerateObjectResult,
+  GenerateTextOnStepFinishCallback,
   GenerateTextResult,
   LanguageModel,
   ModelMessage,
+  PrepareStepFunction,
   StepResult,
   StopCondition,
   StreamTextResult,
+  StreamTextOnStepFinishCallback,
   ToolChoice,
   ToolSet,
 } from "ai";
@@ -457,7 +460,7 @@ export class Agent<
       TextArgs<AgentTools, TOOLS, OUTPUT, OUTPUT_PARTIAL>,
     options?: Options,
   ): Promise<
-    GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
+    GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, any> &
       GenerationOutputMetadata
   > {
     const { args, promptMessageId, order, ...call } = await this.start(
@@ -469,19 +472,30 @@ export class Agent<
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
     const steps: StepResult<Tools>[] = [];
     try {
-      const result = (await generateText<Tools, OUTPUT, OUTPUT_PARTIAL>({
+      // Note: The `as any` casts for callback access are needed because TypeScript
+      // can't infer the callback types through the complex intersection of TextArgs
+      // with AI SDK's NoInfer<TOOLS> wrapped generic parameters
+      const userPrepareStep = (
+        generateTextArgs as { prepareStep?: PrepareStepFunction<Tools> }
+      ).prepareStep;
+      const userOnStepFinish = (
+        generateTextArgs as {
+          onStepFinish?: GenerateTextOnStepFinishCallback<Tools>;
+        }
+      ).onStepFinish;
+      const result = (await generateText<Tools>({
         ...args,
         prepareStep: async (options) => {
-          const result = await generateTextArgs.prepareStep?.(options);
+          const result = await userPrepareStep?.(options);
           call.updateModel(result?.model ?? options.model);
           return result;
         },
         onStepFinish: async (step) => {
           steps.push(step);
           await call.save({ step }, await willContinue(steps, args.stopWhen));
-          return generateTextArgs.onStepFinish?.(step);
+          return userOnStepFinish?.(step);
         },
-      })) as GenerateTextResult<Tools, OUTPUT>;
+      })) as GenerateTextResult<Tools, any>;
       const metadata: GenerationOutputMetadata = {
         promptMessageId,
         order,
@@ -533,14 +547,16 @@ export class Agent<
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      PARTIAL_OUTPUT
-    > &
+    StreamTextResult<TOOLS extends undefined ? AgentTools : TOOLS, any> &
       GenerationOutputMetadata
   > {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    return streamText<Tools, OUTPUT, PARTIAL_OUTPUT>(
+    // Type assertion needed because StreamingTextArgs uses Omit which doesn't
+    // perfectly preserve the generic parameter relationships
+    const stopWhen = (
+      streamTextArgs as { stopWhen?: StopCondition<Tools> | Array<StopCondition<Tools>> }
+    ).stopWhen;
+    return streamText<Tools>(
       ctx,
       this.component,
       {
@@ -548,10 +564,10 @@ export class Agent<
         model: streamTextArgs.model ?? this.options.languageModel,
         tools: (streamTextArgs.tools ?? this.options.tools) as Tools,
         system: streamTextArgs.system ?? this.options.instructions,
-        stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as
+        stopWhen: (stopWhen ?? this.options.stopWhen) as
           | StopCondition<Tools>
           | Array<StopCondition<Tools>>,
-      },
+      } as Parameters<typeof streamText<Tools>>[2],
       {
         ...threadOpts,
         ...this.options,
@@ -649,8 +665,9 @@ export class Agent<
     const { args, promptMessageId, order, fail, save, getSavedMessages } =
       await this.start(ctx, streamObjectArgs, { ...threadOpts, ...options });
 
+    // Type assertion needed because args comes from start() which transforms the input
     const stream = streamObject<SCHEMA, OUTPUT, RESULT>({
-      ...(args as any),
+      ...args,
       onError: async (error) => {
         console.error(" streamObject onError", error);
         // TODO: content that we have so far
@@ -1356,14 +1373,14 @@ export class Agent<
           args.stream === true ? spec?.stream || true : (spec?.stream ?? false);
         const { userId, threadId, prompt, messages, maxSteps, ...rest } = args;
         const targetArgs = { userId, threadId };
-        const llmArgs = {
+        const llmArgs: StreamingTextArgs<AgentTools> = {
           stopWhen: spec?.stopWhen,
           ...overrides,
           ...omit(rest, ["storageOptions", "contextOptions", "stream"]),
           messages: messages?.map(toModelMessage),
           prompt: Array.isArray(prompt) ? prompt.map(toModelMessage) : prompt,
           toolChoice: args.toolChoice as ToolChoice<AgentTools>,
-        } satisfies StreamingTextArgs<AgentTools>;
+        };
         if (maxSteps) {
           llmArgs.stopWhen = stepCountIs(maxSteps);
         }
@@ -1374,14 +1391,14 @@ export class Agent<
         };
         const ctx = (
           spec?.customCtx
-            ? { ...ctx_, ...spec.customCtx(ctx_, targetArgs, llmArgs) }
+            ? { ...ctx_, ...(spec.customCtx as any)(ctx_, targetArgs, llmArgs) }
             : ctx_
         ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         if (stream) {
           const result = await this.streamText<any>(
             ctx,
             targetArgs,
-            llmArgs,
+            llmArgs as any,
             opts,
           );
           await result.consumeStream();
@@ -1397,7 +1414,7 @@ export class Agent<
           const res = await this.generateText<any>(
             ctx,
             targetArgs,
-            llmArgs,
+            llmArgs as any,
             opts,
           );
           return {
@@ -1440,7 +1457,7 @@ export class Agent<
         } as GenerateObjectArgs<FlexibleSchema<T>>;
         const ctx = (
           options?.customCtx
-            ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs) }
+            ? { ...ctx_, ...(options.customCtx as any)(ctx_, targetArgs, llmArgs) }
             : ctx_
         ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         const value = await this.generateObject(ctx, targetArgs, llmArgs, {

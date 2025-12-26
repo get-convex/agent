@@ -479,11 +479,12 @@ export function updateFromTextStreamParts(
       case "raw":
       case "start-step":
       case "start":
-        // ignore
+      case "tool-output-denied":
+      case "tool-approval-request":
+        // ignore these stream parts (AI SDK v6 additions)
         break;
       default: {
-        // Should never happen
-        const _: never = part;
+        // Log unexpected parts but don't fail - future SDK versions may add more
         console.warn(`Received unexpected part: ${JSON.stringify(part)}`);
         break;
       }

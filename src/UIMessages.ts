@@ -53,7 +53,7 @@ export type UIMessage<
  * @param meta - The metadata to add to the MessageDocs.
  * @returns
  */
-export function fromUIMessages<METADATA = unknown>(
+export async function fromUIMessages<METADATA = unknown>(
   messages: UIMessage<METADATA>[],
   meta: {
     threadId: string;
@@ -63,8 +63,10 @@ export function fromUIMessages<METADATA = unknown>(
     providerOptions?: ProviderOptions;
     metadata?: METADATA;
   },
-): (MessageDoc & { streaming: boolean; metadata?: METADATA })[] {
-  return messages.flatMap((uiMessage) => {
+): Promise<(MessageDoc & { streaming: boolean; metadata?: METADATA })[]> {
+  const results: (MessageDoc & { streaming: boolean; metadata?: METADATA })[] =
+    [];
+  for (const uiMessage of messages) {
     const stepOrder = uiMessage.stepOrder;
     const commonFields = {
       ...pick(meta, [
@@ -82,8 +84,8 @@ export function fromUIMessages<METADATA = unknown>(
       _id: uiMessage.id,
       tool: false,
     } satisfies MessageDoc & { streaming: boolean; metadata?: METADATA };
-    const modelMessages = convertToModelMessages([uiMessage]);
-    return modelMessages
+    const modelMessages = await convertToModelMessages([uiMessage]);
+    const docs = modelMessages
       .map((modelMessage, i) => {
         if (modelMessage.content.length === 0) {
           return undefined;
@@ -102,9 +104,9 @@ export function fromUIMessages<METADATA = unknown>(
           sources: fromSourceParts(uiMessage.parts),
         };
         if (Array.isArray(modelMessage.content)) {
-          const providerOptions = modelMessage.content.find(
-            (c) => c.providerOptions,
-          )?.providerOptions;
+          const providerOptions = (
+            modelMessage.content as Array<{ providerOptions?: ProviderOptions }>
+          ).find((c) => c.providerOptions)?.providerOptions;
           if (providerOptions) {
             // convertToModelMessages changes providerMetadata to providerOptions
             doc.providerMetadata = providerOptions;
@@ -113,8 +115,10 @@ export function fromUIMessages<METADATA = unknown>(
         }
         return doc;
       })
-      .filter((d) => d !== undefined);
-  });
+      .filter((d): d is NonNullable<typeof d> => d !== undefined);
+    results.push(...docs);
+  }
+  return results;
 }
 
 function fromSourceParts(parts: UIMessage["parts"]): Infer<typeof vSource>[] {
@@ -459,10 +463,18 @@ function createAssistantUIMessage<
           break;
         }
         case "tool-result": {
+          // In AI SDK v6, output can be structured with type/value or just a value directly
+          const rawOutput = contentPart.output as
+            | { type: string; value?: unknown }
+            | unknown;
           const output =
-            typeof contentPart.output?.type === "string"
-              ? contentPart.output.value
-              : contentPart.output;
+            rawOutput &&
+            typeof rawOutput === "object" &&
+            "type" in rawOutput &&
+            typeof (rawOutput as { type: string }).type === "string" &&
+            "value" in rawOutput
+              ? (rawOutput as { value: unknown }).value
+              : rawOutput;
           const call = allParts.find(
             (part) =>
               part.type === `tool-${contentPart.toolName}` &&
@@ -506,9 +518,18 @@ function createAssistantUIMessage<
           break;
         }
         default: {
-          const maybeSource = contentPart as SourcePart;
-          if (maybeSource.type === "source") {
-            allParts.push(toSourcePart(maybeSource));
+          // Handle source parts or other unknown types
+          const partType =
+            "type" in contentPart
+              ? (contentPart as { type: string }).type
+              : undefined;
+          if (partType === "source") {
+            allParts.push(toSourcePart(contentPart as unknown as SourcePart));
+          } else if (
+            partType === "tool-approval-request" ||
+            partType === "tool-approval-response"
+          ) {
+            // Skip AI SDK v6 tool approval types
           } else {
             console.warn(
               "Unknown content part type for assistant",

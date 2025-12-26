@@ -435,13 +435,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               totalTokens: number;
             };
             warnings?: Array<
-              | {
-                  details?: string;
-                  setting: string;
-                  type: "unsupported-setting";
-                }
-              | { details?: string; tool: any; type: "unsupported-tool" }
+              | { details?: string; feature: string; type: "unsupported" }
+              | { details?: string; feature: string; type: "compatibility" }
               | { message: string; type: "other" }
+              | { details?: string; setting: string; type: "unsupported-setting" }
+              | { details?: string; tool: any; type: "unsupported-tool" }
             >;
           }>;
           pendingMessageId?: string;
@@ -744,13 +742,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             };
             userId?: string;
             warnings?: Array<
-              | {
-                  details?: string;
-                  setting: string;
-                  type: "unsupported-setting";
-                }
-              | { details?: string; tool: any; type: "unsupported-tool" }
+              | { details?: string; feature: string; type: "unsupported" }
+              | { details?: string; feature: string; type: "compatibility" }
               | { message: string; type: "other" }
+              | { details?: string; setting: string; type: "unsupported-setting" }
+              | { details?: string; tool: any; type: "unsupported-tool" }
             >;
           }>;
         },
@@ -1064,9 +1060,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; type: "other" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
-            | { message: string; type: "other" }
           >;
         }>,
         Name
@@ -1393,13 +1391,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             };
             userId?: string;
             warnings?: Array<
-              | {
-                  details?: string;
-                  setting: string;
-                  type: "unsupported-setting";
-                }
-              | { details?: string; tool: any; type: "unsupported-tool" }
+              | { details?: string; feature: string; type: "unsupported" }
+              | { details?: string; feature: string; type: "compatibility" }
               | { message: string; type: "other" }
+              | { details?: string; setting: string; type: "unsupported-setting" }
+              | { details?: string; tool: any; type: "unsupported-tool" }
             >;
           }>;
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
@@ -1680,9 +1676,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; type: "other" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
-            | { message: string; type: "other" }
           >;
         }>,
         Name
@@ -1954,9 +1952,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; type: "other" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
-            | { message: string; type: "other" }
           >;
         }>,
         Name
@@ -2466,9 +2466,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; type: "other" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
-            | { message: string; type: "other" }
           >;
         },
         Name

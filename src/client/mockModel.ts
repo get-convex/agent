@@ -2,6 +2,7 @@ import type {
   LanguageModelV2,
   LanguageModelV2Content,
   LanguageModelV2StreamPart,
+  SharedV2ProviderMetadata,
 } from "@ai-sdk/provider";
 import { simulateReadableStream, type ProviderMetadata } from "ai";
 import { assert, pick } from "convex-helpers";
@@ -166,7 +167,9 @@ export class MockLanguageModel implements LanguageModelV2 {
           type: "finish",
           finishReason: fail ? "error" : "stop",
           usage: DEFAULT_USAGE,
-          ...metadata,
+          providerMetadata: metadata.providerMetadata as
+            | SharedV2ProviderMetadata
+            | undefined,
         });
         return chunks;
       },
@@ -187,7 +190,9 @@ export class MockLanguageModel implements LanguageModelV2 {
           content: contentSteps[callIndex % contentSteps.length],
           finishReason: "stop" as const,
           usage: DEFAULT_USAGE,
-          ...metadata,
+          providerMetadata: metadata.providerMetadata as
+            | SharedV2ProviderMetadata
+            | undefined,
           warnings: [],
         };
         callIndex++;

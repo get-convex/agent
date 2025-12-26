@@ -266,14 +266,17 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
       const namedAgent = agents.find(({ name }) => name === agentName);
       if (!namedAgent) throw new Error(`Unknown agent: ${agentName}`);
       const { agent } = namedAgent;
+      // Type cast needed because agent is dynamically resolved and TypeScript
+      // can't infer the generic parameters for streamText
+      const streamTextArgs = {
+        ...rest,
+        ...(system ? { system } : {}),
+        ...(messages ? { messages: messages.map(toModelMessage) } : {}),
+      };
       const { text, steps } = await agent.streamText(
         ctx,
         { threadId, userId },
-        {
-          ...rest,
-          ...(system ? { system } : {}),
-          ...(messages ? { messages: messages.map(toModelMessage) } : {}),
-        },
+        streamTextArgs as Parameters<typeof agent.streamText>[2],
         { contextOptions, storageOptions, saveStreamDeltas: true },
       );
       const outputMessages = await Promise.all(

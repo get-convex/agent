@@ -72,7 +72,7 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
   onInputAvailable?: (
     ctx: Ctx,
     options: {
-      input: [INPUT] extends [never] ? undefined : INPUT;
+      input: [INPUT] extends [never] ? unknown : INPUT;
     } & ToolCallOptions,
   ) => void | PromiseLike<void>;
 

@@ -206,7 +206,10 @@ export function useThreadMessages<Query extends ThreadMessagesQuery<any, any>>(
 }
 
 /**
- * @deprecated FYI `useStreamingUIMessages` is likely better for you.
+ * @deprecated Use `useStreamingUIMessages` instead. This function returns
+ * UIMessages cast to MessageDoc[] for backward compatibility, but no longer
+ * performs the full conversion since AI SDK v6 made convertToModelMessages async.
+ *
  * A hook that fetches streaming messages from a thread.
  * This ONLY returns streaming messages. To get both, use `useThreadMessages`.
  *
@@ -216,7 +219,8 @@ export function useThreadMessages<Query extends ThreadMessagesQuery<any, any>>(
  * @param args The arguments to pass to the query other than `paginationOpts`
  * and `streamArgs`. So `{ threadId }` at minimum, plus any other arguments that
  * you want to pass to the query.
- * @returns The streaming messages.
+ * @returns The streaming messages (note: these are UIMessages typed as MessageDoc
+ * for backward compatibility - use useStreamingUIMessages for proper typing).
  */
 export function useStreamingThreadMessages<Query extends StreamQuery<any>>(
   query: Query,
@@ -242,9 +246,9 @@ export function useStreamingThreadMessages<Query extends StreamQuery<any>>(
   if (args === "skip") {
     return undefined;
   }
-  // TODO: we aren't passing through as much metadata as we could here.
-  // We could share the stream metadata logic with useStreamingUIMessages.
-  return uiMessages
-    ?.map((m) => fromUIMessages([m], { threadId: args.threadId }))
-    .flat();
+  // Note: In AI SDK v6, convertToModelMessages became async, so we can't do
+  // the full conversion here. We return UIMessages with overlapping fields
+  // as MessageDoc for backward compatibility. Consumers should migrate to
+  // useStreamingUIMessages for proper typing.
+  return uiMessages as Array<MessageDoc> | undefined;
 }

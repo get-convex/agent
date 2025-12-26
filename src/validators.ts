@@ -281,6 +281,19 @@ export const vUsage = v.object({
 export type Usage = Infer<typeof vUsage>;
 
 export const vLanguageModelCallWarning = v.union(
+  // AI SDK v6 warning types
+  v.object({
+    type: v.literal("unsupported"),
+    feature: v.string(),
+    details: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("compatibility"),
+    feature: v.string(),
+    details: v.optional(v.string()),
+  }),
+  v.object({ type: v.literal("other"), message: v.string() }),
+  // Legacy AI SDK v5 warning types (for backwards compatibility with stored data)
   v.object({
     type: v.literal("unsupported-setting"),
     setting: v.string(),
@@ -291,7 +304,6 @@ export const vLanguageModelCallWarning = v.union(
     tool: v.any(),
     details: v.optional(v.string()),
   }),
-  v.object({ type: v.literal("other"), message: v.string() }),
 );
 
 export const vMessageWithMetadataInternal = v.object({

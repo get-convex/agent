@@ -1,6 +1,10 @@
 import type {
+  PrepareStepFunction,
   StepResult,
+  StreamTextOnErrorCallback,
+  StreamTextOnStepFinishCallback,
   StreamTextResult,
+  StreamTextTransform,
   ToolSet,
   UIMessage as AIUIMessage,
 } from "ai";
@@ -33,7 +37,7 @@ import { errorToString, willContinue } from "./utils.js";
 export async function streamText<
   TOOLS extends ToolSet,
   OUTPUT = never,
-  PARTIAL_OUTPUT = never,
+  _PARTIAL_OUTPUT = never, // kept for backwards compatibility, ignored in v6
 >(
   ctx: ActionCtx,
   component: AgentComponent,
@@ -42,10 +46,7 @@ export async function streamText<
    * {@link streamText} function, along with Agent prompt options.
    */
   streamTextArgs: AgentPrompt &
-    Omit<
-      Parameters<typeof streamTextAi<TOOLS, OUTPUT, PARTIAL_OUTPUT>>[0],
-      "model" | "prompt" | "messages"
-    > & {
+    Omit<Parameters<typeof streamTextAi<TOOLS>>[0], "model" | "prompt" | "messages"> & {
       /**
        * The tools to use for the tool calls. This will override tools specified
        * in the Agent constructor or createThread / continueThread.
@@ -73,7 +74,7 @@ export async function streamText<
     saveStreamDeltas?: boolean | StreamingOptions;
     agentForToolCtx?: Agent;
   },
-): Promise<StreamTextResult<TOOLS, PARTIAL_OUTPUT> & GenerationOutputMetadata> {
+): Promise<StreamTextResult<TOOLS, any> & GenerationOutputMetadata> {
   const { threadId } = options ?? {};
   const { args, userId, order, stepOrder, promptMessageId, ...call } =
     await startGeneration(ctx, component, streamTextArgs, options);
@@ -108,29 +109,41 @@ export async function streamText<
         )
       : undefined;
 
+  // Extract user callbacks with proper types. Type assertions needed because
+  // TypeScript can't infer through the complex intersection/Omit types
+  const userTransform = (
+    streamTextArgs as {
+      experimental_transform?: StreamTextTransform<TOOLS> | StreamTextTransform<TOOLS>[];
+    }
+  ).experimental_transform;
+  const userOnError = (
+    streamTextArgs as { onError?: StreamTextOnErrorCallback }
+  ).onError;
+  const userPrepareStep = (
+    streamTextArgs as { prepareStep?: PrepareStepFunction<TOOLS> }
+  ).prepareStep;
+  const userOnStepFinish = (
+    args as { onStepFinish?: StreamTextOnStepFinishCallback<TOOLS> }
+  ).onStepFinish;
+
   const result = streamTextAi({
     ...args,
     abortSignal: streamer?.abortController.signal ?? args.abortSignal,
     experimental_transform: mergeTransforms(
       options?.saveStreamDeltas,
-      streamTextArgs.experimental_transform,
+      userTransform,
     ),
     onError: async (error) => {
       console.error("onError", error);
       await call.fail(errorToString(error.error));
       await streamer?.fail(errorToString(error.error));
-      return streamTextArgs.onError?.(error);
+      return userOnError?.(error);
     },
     prepareStep: async (options) => {
-      const result = await streamTextArgs.prepareStep?.(options);
+      const result = await userPrepareStep?.(options);
       if (result) {
         const model = result.model ?? options.model;
         call.updateModel(model);
-        // streamer?.updateMetadata({
-        //   model: getModelName(model),
-        //   provider: getProviderName(model),
-        //   providerOptions: options.messages.at(-1)?.providerOptions,
-        // });
         return result;
       }
       return undefined;
@@ -139,9 +152,9 @@ export async function streamText<
       steps.push(step);
       const createPendingMessage = await willContinue(steps, args.stopWhen);
       await call.save({ step }, createPendingMessage);
-      return args.onStepFinish?.(step);
+      return userOnStepFinish?.(step);
     },
-  }) as StreamTextResult<TOOLS, PARTIAL_OUTPUT>;
+  }) as StreamTextResult<TOOLS, any>;
   const stream = streamer?.consumeStream(
     result.toUIMessageStream<AIUIMessage<TOOLS>>(),
   );

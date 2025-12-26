@@ -100,7 +100,7 @@ export type Config = {
    *   ...
    *   textEmbeddingModel: openai.embedding("text-embedding-3-small")
    */
-  textEmbeddingModel?: EmbeddingModel<string>;
+  textEmbeddingModel?: EmbeddingModel;
   /**
    * Options to determine what messages are included as context in message
    * generation. To disable any messages automatically being added, pass:
@@ -331,14 +331,10 @@ export type TextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
   OUTPUT = never,
-  OUTPUT_PARTIAL = never,
+  _OUTPUT_PARTIAL = never, // kept for backwards compatibility, ignored in v6
 > = Omit<
   Parameters<
-    typeof generateText<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT,
-      OUTPUT_PARTIAL
-    >
+    typeof generateText<TOOLS extends undefined ? AgentTools : TOOLS>
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -353,14 +349,10 @@ export type StreamingTextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
   OUTPUT = never,
-  OUTPUT_PARTIAL = never,
+  _PARTIAL_OUTPUT = never, // kept for backwards compatibility, ignored in v6
 > = Omit<
   Parameters<
-    typeof streamText<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT,
-      OUTPUT_PARTIAL
-    >
+    typeof streamText<TOOLS extends undefined ? AgentTools : TOOLS>
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -486,7 +478,7 @@ export interface Thread<DefaultTools extends ToolSet> {
       >,
     options?: Options,
   ): Promise<
-    GenerateTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
+    GenerateTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, any> &
       ThreadOutputMetadata
   >;
 
@@ -526,10 +518,7 @@ export interface Thread<DefaultTools extends ToolSet> {
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<
-      TOOLS extends undefined ? DefaultTools : TOOLS,
-      PARTIAL_OUTPUT
-    > &
+    StreamTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, any> &
       ThreadOutputMetadata
   >;
   /**
