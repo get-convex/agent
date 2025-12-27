@@ -8,10 +8,16 @@
  * @module
  */
 
+import type * as agents_analyst from "../agents/analyst.js";
 import type * as agents_config from "../agents/config.js";
+import type * as agents_creative from "../agents/creative.js";
 import type * as agents_fashion from "../agents/fashion.js";
+import type * as agents_judge from "../agents/judge.js";
+import type * as agents_pragmatist from "../agents/pragmatist.js";
+import type * as agents_researcher from "../agents/researcher.js";
 import type * as agents_simple from "../agents/simple.js";
 import type * as agents_story from "../agents/story.js";
+import type * as agents_synthesizer from "../agents/synthesizer.js";
 import type * as agents_weather from "../agents/weather.js";
 import type * as chat_basic from "../chat/basic.js";
 import type * as chat_human from "../chat/human.js";
@@ -46,7 +52,11 @@ import type * as usage_tracking_invoicing from "../usage_tracking/invoicing.js";
 import type * as usage_tracking_tables from "../usage_tracking/tables.js";
 import type * as usage_tracking_usageHandler from "../usage_tracking/usageHandler.js";
 import type * as utils from "../utils.js";
+import type * as workflows_actor_critique from "../workflows/actor_critique.js";
+import type * as workflows_batching from "../workflows/batching.js";
 import type * as workflows_chaining from "../workflows/chaining.js";
+import type * as workflows_council_of_agents from "../workflows/council_of_agents.js";
+import type * as workflows_deep_agent from "../workflows/deep_agent.js";
 import type * as workflows_human_in_the_loop from "../workflows/human_in_the_loop.js";
 import type * as workflows_orchestrator from "../workflows/orchestrator.js";
 import type * as workflows_parallel from "../workflows/parallel.js";
@@ -62,10 +72,16 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "agents/analyst": typeof agents_analyst;
   "agents/config": typeof agents_config;
+  "agents/creative": typeof agents_creative;
   "agents/fashion": typeof agents_fashion;
+  "agents/judge": typeof agents_judge;
+  "agents/pragmatist": typeof agents_pragmatist;
+  "agents/researcher": typeof agents_researcher;
   "agents/simple": typeof agents_simple;
   "agents/story": typeof agents_story;
+  "agents/synthesizer": typeof agents_synthesizer;
   "agents/weather": typeof agents_weather;
   "chat/basic": typeof chat_basic;
   "chat/human": typeof chat_human;
@@ -100,7 +116,11 @@ declare const fullApi: ApiFromModules<{
   "usage_tracking/tables": typeof usage_tracking_tables;
   "usage_tracking/usageHandler": typeof usage_tracking_usageHandler;
   utils: typeof utils;
+  "workflows/actor_critique": typeof workflows_actor_critique;
+  "workflows/batching": typeof workflows_batching;
   "workflows/chaining": typeof workflows_chaining;
+  "workflows/council_of_agents": typeof workflows_council_of_agents;
+  "workflows/deep_agent": typeof workflows_deep_agent;
   "workflows/human_in_the_loop": typeof workflows_human_in_the_loop;
   "workflows/orchestrator": typeof workflows_orchestrator;
   "workflows/parallel": typeof workflows_parallel;
