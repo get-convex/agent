@@ -6,6 +6,7 @@ import type {
 } from "@ai-sdk/provider-utils";
 import type {
   CallSettings,
+  EmbeddingModel,
   GenerateObjectResult,
   GenerateTextResult,
   LanguageModel,
@@ -243,6 +244,14 @@ export class Agent<
         | Array<StopCondition<NoInfer<AgentTools>>>;
     },
   ) {}
+
+  /**
+   * Get the embedding model, prioritizing embeddingModel over textEmbeddingModel.
+   * @private
+   */
+  private getEmbeddingModel(): EmbeddingModel | undefined {
+    return this.options.embeddingModel ?? this.options.textEmbeddingModel;
+  }
 
   /**
    * Start a new thread with the agent. This will have a fresh history, though if
@@ -741,7 +750,7 @@ export class Agent<
     const { skipEmbeddings, ...rest } = args;
     if (args.embeddings) {
       embeddings = args.embeddings;
-    } else if (!skipEmbeddings && this.options.textEmbeddingModel) {
+    } else if (!skipEmbeddings && this.getEmbeddingModel()) {
       if (!("runAction" in ctx)) {
         console.warn(
           "You're trying to save messages and generate embeddings, but you're in a mutation. " +
@@ -857,9 +866,10 @@ export class Agent<
       contextOptions,
       getEmbedding: async (text) => {
         assert("runAction" in ctx);
+        const embeddingModel = this.getEmbeddingModel();
         assert(
-          this.options.textEmbeddingModel,
-          "A textEmbeddingModel is required to be set on the Agent that you're doing vector search with",
+          embeddingModel,
+          "An embeddingModel (or textEmbeddingModel) is required to be set on the Agent that you're doing vector search with",
         );
         return {
           embedding: (
@@ -871,7 +881,7 @@ export class Agent<
               values: [text],
             })
           ).embeddings[0],
-          textEmbeddingModel: this.options.textEmbeddingModel,
+          textEmbeddingModel: embeddingModel,
         };
       },
     });
@@ -970,10 +980,10 @@ export class Agent<
             .join(", "),
       );
     }
-    const { textEmbeddingModel } = this.options;
+    const textEmbeddingModel = this.getEmbeddingModel();
     if (!textEmbeddingModel) {
       throw new Error(
-        "No embeddings were generated for the messages. You must pass a textEmbeddingModel to the agent constructor.",
+        "No embeddings were generated for the messages. You must pass an embeddingModel (or textEmbeddingModel) to the agent constructor.",
       );
     }
     await generateAndSaveEmbeddings(
