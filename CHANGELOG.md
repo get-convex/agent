@@ -2,7 +2,23 @@
 
 ## 0.6.0
 
-- Update to the AI SDK v6
+**Note on versioning:** This release jumps from 0.3.2 to 0.6.0, skipping versions 0.4.0 and 0.5.0. This is intentional and aligns the `@convex-dev/agent` package version with the AI SDK v6 major version for clearer compatibility signaling. Going forward, the minor version of this package will track the AI SDK major version to make it easier for developers to identify which version of the AI SDK is supported.
+
+- Breaking: Requires AI SDK v6 and drops support for AI SDK v5. Projects pinned
+  to v5 must upgrade their AI SDK dependencies before updating to this
+  version.
+- Aligns this package's message and tool invocation types with the AI SDK v6
+  APIs to reduce casting/adapter code when integrating with the core SDK.
+- Updates internal helpers to use the AI SDK v6 request/response shapes and
+  error handling semantics.
+- Migration from 0.3.x:
+  - Update your AI SDK dependency to v6 in `package.json` and reinstall
+    dependencies.
+  - Rebuild and run your type checker to surface any call sites that depend on
+    the old AI SDK v5 types or message shapes.
+  - Review any custom integrations that relied on deprecated v5-only helpers
+    and update them to the new AI SDK v6-compatible APIs.
+  - See Vercel's [v6 migration guide](https://ai-sdk.dev/docs/migration-guides/migration-guide-6-0) for details on AI SDK changes.
 
 ## 0.3.2
 
