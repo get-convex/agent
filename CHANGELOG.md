@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+
+- Update to the AI SDK v6
+
 ## 0.3.2
 
 - Fix deleteByOrder spanning many messages
