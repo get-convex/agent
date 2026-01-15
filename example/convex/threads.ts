@@ -73,7 +73,6 @@ export const updateThreadTitle = action({
       object: { title, summary },
     } = await thread.generateObject(
       {
-        mode: "json",
         schemaDescription:
           "Generate a title and summary for the thread. The title should be a single sentence that captures the main topic of the thread. The summary should be a short description of the thread that could be used to describe it to someone who hasn't read it.",
         schema: z.object({
