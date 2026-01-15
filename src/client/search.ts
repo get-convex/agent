@@ -38,7 +38,11 @@ const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
 
 export type GetEmbedding = (text: string) => Promise<{
   embedding: number[];
-  textEmbeddingModel: string | EmbeddingModel;
+  /**
+   * @deprecated Use embeddingModel instead.
+   */
+  textEmbeddingModel?: string | EmbeddingModel;
+  embeddingModel: string | EmbeddingModel;
 }>;
 
 /**
@@ -178,8 +182,10 @@ export async function fetchRecentAndSearchMessages(
       if (!embedding && args.getEmbedding) {
         const embeddingFields = await args.getEmbedding(text);
         embedding = embeddingFields.embedding;
-        embeddingModel = embeddingFields.textEmbeddingModel
-          ? getModelName(embeddingFields.textEmbeddingModel)
+        const effectiveModel =
+          embeddingFields.embeddingModel ?? embeddingFields.textEmbeddingModel;
+        embeddingModel = effectiveModel
+          ? getModelName(effectiveModel)
           : undefined;
         // TODO: if the text matches the target message, save the embedding
         // for the target message and return the embeddingId on the message.
@@ -423,17 +429,27 @@ export async function generateAndSaveEmbeddings(
     threadId: string | undefined;
     userId: string | undefined;
     agentName?: string;
-    textEmbeddingModel: EmbeddingModel;
+    /**
+     * @deprecated Use embeddingModel instead.
+     */
+    textEmbeddingModel?: EmbeddingModel;
+    embeddingModel?: EmbeddingModel;
   } & Pick<Config, "usageHandler" | "callSettings">,
   messages: MessageDoc[],
 ) {
+  const effectiveEmbeddingModel = args.embeddingModel ?? args.textEmbeddingModel;
+  if (!effectiveEmbeddingModel) {
+    throw new Error(
+      "an embeddingModel (or textEmbeddingModel) is required to generate and save embeddings",
+    );
+  }
   const toEmbed = messages.filter((m) => !m.embeddingId && m.message);
   if (toEmbed.length === 0) {
     return;
   }
   const embeddings = await embedMessages(
     ctx,
-    args,
+    { ...args, embeddingModel: effectiveEmbeddingModel },
     toEmbed.map((m) => m.message!),
   );
   if (embeddings && embeddings.vectors.some((v) => v !== null)) {
@@ -511,10 +527,10 @@ export async function fetchContextWithPrompt(
               ...args,
               userId,
               values: [text],
-              textEmbeddingModel: effectiveEmbeddingModel,
+              embeddingModel: effectiveEmbeddingModel,
             })
           ).embeddings[0],
-          textEmbeddingModel: effectiveEmbeddingModel,
+          embeddingModel: effectiveEmbeddingModel,
         };
       },
     },
@@ -547,7 +563,7 @@ export async function fetchContextWithPrompt(
         {
           ...args,
           userId,
-          textEmbeddingModel: effectiveEmbeddingModel,
+          embeddingModel: effectiveEmbeddingModel,
         },
         [promptMessage],
       );
