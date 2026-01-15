@@ -33,7 +33,7 @@ import { errorToString, willContinue } from "./utils.js";
  */
 export async function streamText<
   TOOLS extends ToolSet,
-  OUTPUT extends Output<any, any> = never,
+  OUTPUT extends Output<any, any, any> = never,
 >(
   ctx: ActionCtx,
   component: AgentComponent,

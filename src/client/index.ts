@@ -452,7 +452,7 @@ export class Agent<
    */
   async generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any> = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -511,7 +511,7 @@ export class Agent<
    */
   async streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any> = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -881,7 +881,7 @@ export class Agent<
               values: [text],
             })
           ).embeddings[0],
-          textEmbeddingModel: embeddingModel,
+          embeddingModel: embeddingModel,
         };
       },
     });
@@ -980,8 +980,8 @@ export class Agent<
             .join(", "),
       );
     }
-    const textEmbeddingModel = this.getEmbeddingModel();
-    if (!textEmbeddingModel) {
+    const embeddingModel = this.getEmbeddingModel();
+    if (!embeddingModel) {
       throw new Error(
         "No embeddings were generated for the messages. You must pass an embeddingModel (or textEmbeddingModel) to the agent constructor.",
       );
@@ -994,7 +994,7 @@ export class Agent<
         agentName: this.options.name,
         threadId: messages[0].threadId,
         userId: messages[0].userId,
-        textEmbeddingModel,
+        embeddingModel,
       },
       messages,
     );
