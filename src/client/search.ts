@@ -294,7 +294,7 @@ export async function embedMessages(
     userId: string | undefined;
     threadId: string | undefined;
     agentName?: string;
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "callSettings">,
+  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings">,
   messages: (ModelMessage | Message)[],
 ): Promise<
   | {
@@ -304,7 +304,8 @@ export async function embedMessages(
     }
   | undefined
 > {
-  if (!options.textEmbeddingModel) {
+  const textEmbeddingModel = options.embeddingModel ?? options.textEmbeddingModel;
+  if (!textEmbeddingModel) {
     return undefined;
   }
   let embeddings:
@@ -340,7 +341,7 @@ export async function embedMessages(
   if (textEmbeddings.embeddings.length > 0) {
     const dimension = textEmbeddings.embeddings[0].length;
     validateVectorDimension(dimension);
-    const model = getModelName(options.textEmbeddingModel);
+    const model = getModelName(textEmbeddingModel);
     embeddings = { vectors: embeddingsOrNull, dimension, model };
   }
   return embeddings;
@@ -355,7 +356,16 @@ export async function embedMessages(
  */
 export async function embedMany(
   ctx: ActionCtx,
-  {
+  args: {
+    userId: string | undefined;
+    threadId: string | undefined;
+    values: string[];
+    abortSignal?: AbortSignal;
+    headers?: Record<string, string>;
+    agentName?: string;
+  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings">,
+): Promise<{ embeddings: number[][] }> {
+  const {
     userId,
     threadId,
     values,
@@ -364,24 +374,17 @@ export async function embedMany(
     agentName,
     usageHandler,
     textEmbeddingModel,
-    callSettings,
-  }: {
-    userId: string | undefined;
-    threadId: string | undefined;
-    values: string[];
-    abortSignal?: AbortSignal;
-    headers?: Record<string, string>;
-    agentName?: string;
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "callSettings">,
-): Promise<{ embeddings: number[][] }> {
-  const embeddingModel = textEmbeddingModel;
-  assert(
     embeddingModel,
-    "a textEmbeddingModel is required to be set for vector search",
+    callSettings,
+  } = args;
+  const effectiveEmbeddingModel = embeddingModel ?? textEmbeddingModel;
+  assert(
+    effectiveEmbeddingModel,
+    "an embeddingModel (or textEmbeddingModel) is required to be set for vector search",
   );
   const result = await embedMany_({
     ...callSettings,
-    model: embeddingModel,
+    model: effectiveEmbeddingModel,
     values,
     abortSignal,
     headers,
@@ -475,7 +478,8 @@ export async function fetchContextWithPrompt(
   order: number | undefined;
   stepOrder: number | undefined;
 }> {
-  const { threadId, userId, textEmbeddingModel } = args;
+  const { threadId, userId, textEmbeddingModel, embeddingModel } = args;
+  const effectiveEmbeddingModel = embeddingModel ?? textEmbeddingModel;
 
   const promptArray = getPromptArray(args.prompt);
 
@@ -498,8 +502,8 @@ export async function fetchContextWithPrompt(
       contextOptions: args.contextOptions ?? {},
       getEmbedding: async (text) => {
         assert(
-          textEmbeddingModel,
-          "A textEmbeddingModel is required to be set on the Agent that you're doing vector search with",
+          effectiveEmbeddingModel,
+          "An embeddingModel (or textEmbeddingModel) is required to be set on the Agent that you're doing vector search with",
         );
         return {
           embedding: (
@@ -507,10 +511,10 @@ export async function fetchContextWithPrompt(
               ...args,
               userId,
               values: [text],
-              textEmbeddingModel,
+              textEmbeddingModel: effectiveEmbeddingModel,
             })
           ).embeddings[0],
-          textEmbeddingModel,
+          textEmbeddingModel: effectiveEmbeddingModel,
         };
       },
     },
@@ -533,7 +537,7 @@ export async function fetchContextWithPrompt(
         promptArray.push(promptMessage.message);
       }
     }
-    if (!promptMessage.embeddingId && textEmbeddingModel) {
+    if (!promptMessage.embeddingId && effectiveEmbeddingModel) {
       // Lazily generate embeddings for the prompt message, if it doesn't have
       // embeddings yet. This can happen if the message was saved in a mutation
       // where the LLM is not available.
@@ -543,7 +547,7 @@ export async function fetchContextWithPrompt(
         {
           ...args,
           userId,
-          textEmbeddingModel,
+          textEmbeddingModel: effectiveEmbeddingModel,
         },
         [promptMessage],
       );

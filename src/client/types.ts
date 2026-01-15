@@ -105,8 +105,21 @@ export type Config = {
    * const myAgent = new Agent(components.agent, {
    *   ...
    *   textEmbeddingModel: openai.embedding("text-embedding-3-small")
+   * @deprecated — Use embeddingModel instead.
    */
   textEmbeddingModel?: EmbeddingModel;
+  /**
+   * The model to use for text embeddings. Optional.
+   * If specified, it will use this for generating vector embeddings
+   * of chats, and can opt-in to doing vector search for automatic context
+   * on generateText, etc.
+   * e.g.
+   * import { openai } from "@ai-sdk/openai"
+   * const myAgent = new Agent(components.agent, {
+   *   ...
+   *   embeddingModel: openai.embedding("text-embedding-3-small")
+   */
+  embeddingModel?: EmbeddingModel;
   /**
    * Options to determine what messages are included as context in message
    * generation. To disable any messages automatically being added, pass:
