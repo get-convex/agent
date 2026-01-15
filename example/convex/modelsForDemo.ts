@@ -1,11 +1,11 @@
 import { type EmbeddingModel } from "ai";
-import type { LanguageModelV2 } from "@ai-sdk/provider";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
 import { mockModel } from "@convex-dev/agent";
 
-let languageModel: LanguageModelV2;
+let languageModel: LanguageModelV3;
 let textEmbeddingModel: EmbeddingModel;
 
 if (process.env.ANTHROPIC_API_KEY) {
