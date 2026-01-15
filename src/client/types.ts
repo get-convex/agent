@@ -22,10 +22,12 @@ import type {
   generateObject,
 } from "ai";
 
-export interface Output<T = any, P = any> {
+export interface Output<T = any, P = any, E = any> {
+  name: string;
   responseFormat: any;
   parseCompleteOutput: any;
   parsePartialOutput: any;
+  createElementStreamTransform: any;
 }
 import type {
   GenericActionCtx,
@@ -349,7 +351,7 @@ export type AgentComponent = ComponentApi;
 export type TextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
-  OUTPUT extends Output<any, any> = never,
+  OUTPUT extends Output<any, any, any> = never,
 > = Omit<
   Parameters<
     typeof generateText<
@@ -369,7 +371,7 @@ export type TextArgs<
 export type StreamingTextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
-  OUTPUT extends Output<any, any> = never,
+  OUTPUT extends Output<any, any, any> = never,
 > = Omit<
   Parameters<
     typeof streamText<
@@ -489,7 +491,7 @@ export interface Thread<DefaultTools extends ToolSet> {
    */
   generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any> = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     generateTextArgs: AgentPrompt &
       TextArgs<
@@ -515,7 +517,7 @@ export interface Thread<DefaultTools extends ToolSet> {
    */
   streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any> = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     streamTextArgs: AgentPrompt &
       StreamingTextArgs<

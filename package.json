@@ -71,8 +71,8 @@
     }
   },
   "peerDependencies": {
-    "@ai-sdk/provider-utils": "^4.0.1",
-    "ai": "^6.0.3",
+    "@ai-sdk/provider-utils": "^4.0.6",
+    "ai": "^6.0.35",
     "convex": "^1.24.8",
     "convex-helpers": "^0.1.103",
     "react": "^18.3.1 || ^19.0.0"
@@ -83,12 +83,12 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "^3.0.1",
-    "@ai-sdk/groq": "^3.0.1",
-    "@ai-sdk/openai": "^3.0.1",
-    "@ai-sdk/provider": "^3.0.0",
-    "@ai-sdk/provider-utils": "^4.0.1",
-    "@convex-dev/rag": "0.6.0",
+    "@ai-sdk/anthropic": "^3.0.13",
+    "@ai-sdk/groq": "^3.0.8",
+    "@ai-sdk/openai": "^3.0.10",
+    "@ai-sdk/provider": "^3.0.3",
+    "@ai-sdk/provider-utils": "^4.0.6",
+    "@convex-dev/rag": "0.6.1",
     "@convex-dev/rate-limiter": "0.3.0",
     "@convex-dev/workflow": "0.3.2",
     "@edge-runtime/vm": "5.0.0",
@@ -106,7 +106,7 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@vitejs/plugin-react": "4.7.0",
-    "ai": "^6.0.3",
+    "ai": "^6.0.35",
     "autoprefixer": "10.4.21",
     "chokidar-cli": "3.0.0",
     "class-variance-authority": "0.7.1",

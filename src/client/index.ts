@@ -452,7 +452,7 @@ export class Agent<
    */
   async generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any> = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -511,7 +511,7 @@ export class Agent<
    */
   async streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any> = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },

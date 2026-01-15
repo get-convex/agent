@@ -394,8 +394,8 @@ export async function embedMany(
       userId,
       threadId,
       agentName,
-      model: getModelName(embeddingModel),
-      provider: getProviderName(embeddingModel),
+      model: getModelName(effectiveEmbeddingModel),
+      provider: getProviderName(effectiveEmbeddingModel),
       providerMetadata: undefined,
       usage: {
         inputTokens: result.usage.tokens,
