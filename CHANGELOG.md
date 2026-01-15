@@ -326,8 +326,7 @@ data at rest is backwards compatible.
 - Adds a `rawRequestResponseHandler` argument to the Agent that is a good spot
   to log or save all raw request/responses if you're trying to debug model
   behavior, headers, etc.
-- Centralizes the example model usage so you can swap openai for openrouter /
-  grok in one place.
+- Centralizes the example model usage so you can swap models in one place.
 - StorageOptions now takes a better argument name
   `saveMessages?: "all" | "none" | "promptAndOutput";`, deprecating
   `save{All,Any}InputMessages` and `saveOutputMessages`.
