@@ -2,6 +2,8 @@
 
 ## 0.6.0
 
+**Note on versioning:** This release jumps from 0.3.2 to 0.6.0, skipping versions 0.4.0 and 0.5.0. This is intentional and aligns the `@convex-dev/agent` package version with the AI SDK v6 major version for clearer compatibility signaling. Going forward, the minor version of this package will track the AI SDK major version to make it easier for developers to identify which version of the AI SDK is supported.
+
 - Update to the AI SDK v6
 
 ## 0.3.2
