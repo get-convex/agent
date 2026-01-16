@@ -107,17 +107,20 @@ export async function fromUIMessages<METADATA = unknown>(
               sources: fromSourceParts(uiMessage.parts),
             };
           if (Array.isArray(modelMessage.content)) {
-            const providerOptions = (
-              modelMessage.content.find(
-                (c) => (c as { providerOptions?: unknown }).providerOptions,
-              ) as { providerOptions?: unknown } | undefined
-            )?.providerOptions as
-              | Record<string, Record<string, unknown>>
-              | undefined;
-            if (providerOptions) {
+            // Find a content part with providerOptions (type assertion needed for SDK compatibility)
+            const partWithProviderOptions = modelMessage.content.find(
+              (c): c is typeof c & { providerOptions: unknown } =>
+                "providerOptions" in c && c.providerOptions !== undefined,
+            );
+            if (partWithProviderOptions?.providerOptions) {
               // convertToModelMessages changes providerMetadata to providerOptions
-              doc.providerMetadata = providerOptions;
-              doc.providerOptions ??= providerOptions;
+              const providerOptions = partWithProviderOptions.providerOptions as
+                | Record<string, Record<string, unknown>>
+                | undefined;
+              if (providerOptions) {
+                doc.providerMetadata = providerOptions;
+                doc.providerOptions ??= providerOptions;
+              }
             }
           }
           return doc;
