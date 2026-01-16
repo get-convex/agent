@@ -583,11 +583,12 @@ export function combineUIMessages(messages: UIMessage[]): UIMessage[] {
       const previousPartIndex = newParts.findIndex(
         (p) => getToolCallId(p) === toolCallId,
       );
-      const previousPart = newParts.splice(previousPartIndex, 1)[0];
-      if (!previousPart) {
+      if (previousPartIndex === -1) {
+        // Tool call not found in previous parts, add it as new
         newParts.push(part);
         continue;
       }
+      const previousPart = newParts.splice(previousPartIndex, 1)[0];
       newParts.push(mergeParts(previousPart, part));
     }
     acc.push({
