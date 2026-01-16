@@ -42,6 +42,7 @@ export type UIMessage<
   stepOrder: number;
   status: UIStatus;
   agentName?: string;
+  userId?: string;
   text: string;
   _creationTime: number;
 };
@@ -75,7 +76,8 @@ export function fromUIMessages<METADATA = unknown>(
         "providerOptions",
         "metadata",
       ]),
-      ...omit(uiMessage, ["parts", "role", "key", "text"]),
+      ...omit(uiMessage, ["parts", "role", "key", "text", "userId"]),
+      userId: uiMessage.userId ?? meta.userId,
       status: uiMessage.status === "streaming" ? "pending" : "success",
       streaming: uiMessage.status === "streaming",
       // to override
@@ -288,6 +290,7 @@ function createSystemUIMessage<
     text,
     role: "system",
     agentName: message.agentName,
+    userId: message.userId,
     parts: [{ type: "text", text, ...partCommon } satisfies TextUIPart],
     metadata: message.metadata,
   };
@@ -347,6 +350,7 @@ function createUserUIMessage<
     key: `${message.threadId}-${message.order}-${message.stepOrder}`,
     text,
     role: "user",
+    userId: message.userId,
     parts,
     metadata: message.metadata,
   };
@@ -370,6 +374,7 @@ function createAssistantUIMessage<
     stepOrder: firstMessage.stepOrder,
     key: `${firstMessage.threadId}-${firstMessage.order}-${firstMessage.stepOrder}`,
     agentName: firstMessage.agentName,
+    userId: firstMessage.userId,
   };
 
   // Get status from last message

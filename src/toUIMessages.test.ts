@@ -728,4 +728,131 @@ describe("toUIMessages", () => {
     expect(textParts).toHaveLength(1);
     expect(textParts[0].text).toBe("The result is 42.");
   });
+
+  describe("userId preservation", () => {
+    it("preserves userId in user messages", () => {
+      const messages = [
+        baseMessageDoc({
+          userId: "user123",
+          message: {
+            role: "user",
+            content: "Hello!",
+          },
+          text: "Hello!",
+        }),
+      ];
+      const uiMessages = toUIMessages(messages);
+      expect(uiMessages).toHaveLength(1);
+      expect(uiMessages[0].role).toBe("user");
+      expect(uiMessages[0].userId).toBe("user123");
+    });
+
+    it("preserves userId in system messages", () => {
+      const messages = [
+        baseMessageDoc({
+          userId: "user456",
+          message: {
+            role: "system",
+            content: "System prompt",
+          },
+          text: "System prompt",
+        }),
+      ];
+      const uiMessages = toUIMessages(messages);
+      expect(uiMessages).toHaveLength(1);
+      expect(uiMessages[0].role).toBe("system");
+      expect(uiMessages[0].userId).toBe("user456");
+    });
+
+    it("preserves userId in assistant messages", () => {
+      const messages = [
+        baseMessageDoc({
+          userId: "user789",
+          message: {
+            role: "assistant",
+            content: "Hi there!",
+          },
+          text: "Hi there!",
+        }),
+      ];
+      const uiMessages = toUIMessages(messages);
+      expect(uiMessages).toHaveLength(1);
+      expect(uiMessages[0].role).toBe("assistant");
+      expect(uiMessages[0].userId).toBe("user789");
+    });
+
+    it("preserves userId from first message in grouped assistant messages", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          userId: "userA",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "myTool",
+                toolCallId: "call1",
+                args: {},
+              },
+            ],
+          },
+          text: "",
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          userId: "userA",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call1",
+                toolName: "myTool",
+                output: { type: "text", value: "result" },
+              },
+            ],
+          },
+          text: "",
+        }),
+        baseMessageDoc({
+          _id: "msg3",
+          userId: "userA",
+          order: 1,
+          stepOrder: 3,
+          message: {
+            role: "assistant",
+            content: "Done!",
+          },
+          text: "Done!",
+        }),
+      ];
+      const uiMessages = toUIMessages(messages);
+      expect(uiMessages).toHaveLength(1);
+      expect(uiMessages[0].role).toBe("assistant");
+      expect(uiMessages[0].userId).toBe("userA");
+    });
+
+    it("handles undefined userId gracefully", () => {
+      const messages = [
+        baseMessageDoc({
+          // No userId provided
+          message: {
+            role: "user",
+            content: "Hello!",
+          },
+          text: "Hello!",
+        }),
+      ];
+      const uiMessages = toUIMessages(messages);
+      expect(uiMessages).toHaveLength(1);
+      expect(uiMessages[0].userId).toBeUndefined();
+    });
+  });
 });
