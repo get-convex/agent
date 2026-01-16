@@ -43,6 +43,7 @@ export type UIMessage<
   stepOrder: number;
   status: UIStatus;
   agentName?: string;
+  userId?: string;
   text: string;
   _creationTime: number;
 };
@@ -77,7 +78,8 @@ export async function fromUIMessages<METADATA = unknown>(
           "providerOptions",
           "metadata",
         ]),
-        ...omit(uiMessage, ["parts", "role", "key", "text"]),
+        ...omit(uiMessage, ["parts", "role", "key", "text", "userId"]),
+        userId: uiMessage.userId ?? meta.userId,
         status: uiMessage.status === "streaming" ? "pending" : "success",
         streaming: uiMessage.status === "streaming",
         // to override
@@ -104,12 +106,21 @@ export async function fromUIMessages<METADATA = unknown>(
               finishReason: tool ? "tool-calls" : "stop",
               sources: fromSourceParts(uiMessage.parts),
             };
-                  if (Array.isArray(modelMessage.content)) {
-                              const providerOptions = (modelMessage.content.find(
-                                (c) => (c as any).providerOptions,
-                              ) as any)?.providerOptions;                    if (providerOptions) {              // convertToModelMessages changes providerMetadata to providerOptions
-              doc.providerMetadata = providerOptions;
-              doc.providerOptions ??= providerOptions;
+          if (Array.isArray(modelMessage.content)) {
+            // Find a content part with providerOptions (type assertion needed for SDK compatibility)
+            const partWithProviderOptions = modelMessage.content.find(
+              (c): c is typeof c & { providerOptions: unknown } =>
+                "providerOptions" in c && c.providerOptions !== undefined,
+            );
+            if (partWithProviderOptions?.providerOptions) {
+              // convertToModelMessages changes providerMetadata to providerOptions
+              const providerOptions = partWithProviderOptions.providerOptions as
+                | Record<string, Record<string, unknown>>
+                | undefined;
+              if (providerOptions) {
+                doc.providerMetadata = providerOptions;
+                doc.providerOptions ??= providerOptions;
+              }
             }
           }
           return doc;
@@ -291,6 +302,7 @@ function createSystemUIMessage<
     text,
     role: "system",
     agentName: message.agentName,
+    userId: message.userId,
     parts: [{ type: "text", text, ...partCommon } satisfies TextUIPart],
     metadata: message.metadata,
   };
@@ -350,6 +362,7 @@ function createUserUIMessage<
     key: `${message.threadId}-${message.order}-${message.stepOrder}`,
     text,
     role: "user",
+    userId: message.userId,
     parts,
     metadata: message.metadata,
   };
@@ -373,6 +386,7 @@ function createAssistantUIMessage<
     stepOrder: firstMessage.stepOrder,
     key: `${firstMessage.threadId}-${firstMessage.order}-${firstMessage.stepOrder}`,
     agentName: firstMessage.agentName,
+    userId: firstMessage.userId,
   };
 
   // Get status from last message
@@ -469,6 +483,12 @@ function createAssistantUIMessage<
             typeof typedPart.output?.type === "string"
               ? typedPart.output.value
               : typedPart.output;
+          // Check for error at both the content part level (isError) and message level
+          // isError may exist on stored tool results but isn't in ToolResultPart type
+          const hasError =
+            (contentPart as { isError?: boolean }).isError || message.error;
+          const errorText =
+            message.error || (hasError ? String(output) : undefined);
           const call = allParts.find(
             (part) =>
               part.type === `tool-${contentPart.toolName}` &&
@@ -476,9 +496,9 @@ function createAssistantUIMessage<
               part.toolCallId === contentPart.toolCallId,
           ) as ToolUIPart | undefined;
           if (call) {
-            if (message.error) {
+            if (hasError) {
               call.state = "output-error";
-              call.errorText = message.error;
+              call.errorText = errorText ?? "Unknown error";
               call.output = output;
             } else {
               call.state = "output-available";
@@ -489,13 +509,13 @@ function createAssistantUIMessage<
               "Tool result without preceding tool call.. adding anyways",
               contentPart,
             );
-            if (message.error) {
+            if (hasError) {
               allParts.push({
                 type: `tool-${contentPart.toolName}`,
                 toolCallId: contentPart.toolCallId,
                 state: "output-error",
                 input: undefined,
-                errorText: message.error,
+                errorText: errorText ?? "Unknown error",
                 callProviderMetadata: message.providerMetadata,
               } satisfies ToolUIPart<TOOLS>);
             } else {
@@ -589,11 +609,12 @@ export function combineUIMessages(messages: UIMessage[]): UIMessage[] {
       const previousPartIndex = newParts.findIndex(
         (p) => getToolCallId(p) === toolCallId,
       );
-      const previousPart = newParts.splice(previousPartIndex, 1)[0];
-      if (!previousPart) {
+      if (previousPartIndex === -1) {
+        // Tool call not found in previous parts, add it as new
         newParts.push(part);
         continue;
       }
+      const previousPart = newParts.splice(previousPartIndex, 1)[0];
       newParts.push(mergeParts(previousPart, part));
     }
     acc.push({
