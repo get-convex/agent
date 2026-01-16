@@ -210,3 +210,64 @@ describe("mapping", () => {
     expect(fileIds).toBeUndefined();
   });
 });
+
+describe("serializeUsage", () => {
+  test("serializes basic usage fields", async () => {
+    const { serializeUsage } = await import("./mapping.js");
+    const usage = serializeUsage({
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+    });
+    expect(usage).toEqual({
+      promptTokens: 100,
+      completionTokens: 50,
+      totalTokens: 150,
+      reasoningTokens: undefined,
+      cachedInputTokens: undefined,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+    });
+  });
+
+  test("serializes cache-related fields", async () => {
+    const { serializeUsage } = await import("./mapping.js");
+    // inputTokenDetails may exist in newer AI SDK versions (5.1+)
+    const usage = serializeUsage({
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+      cachedInputTokens: 80,
+      inputTokenDetails: {
+        cacheReadTokens: 60,
+        cacheWriteTokens: 20,
+      },
+    } as Parameters<typeof serializeUsage>[0]);
+    expect(usage).toEqual({
+      promptTokens: 100,
+      completionTokens: 50,
+      totalTokens: 150,
+      reasoningTokens: undefined,
+      cachedInputTokens: 80,
+      cacheReadTokens: 60,
+      cacheWriteTokens: 20,
+    });
+  });
+
+  test("handles Anthropic cacheCreationInputTokens via cacheWriteTokens", async () => {
+    const { serializeUsage } = await import("./mapping.js");
+    // Anthropic's cacheCreationInputTokens maps to AI SDK's cacheWriteTokens
+    // inputTokenDetails may exist in newer AI SDK versions (5.1+)
+    const usage = serializeUsage({
+      inputTokens: 337,
+      outputTokens: 342,
+      totalTokens: 679,
+      inputTokenDetails: {
+        cacheReadTokens: 0,
+        cacheWriteTokens: 46209, // This is Anthropic's cacheCreationInputTokens
+      },
+    } as Parameters<typeof serializeUsage>[0]);
+    expect(usage.cacheWriteTokens).toBe(46209);
+    expect(usage.cacheReadTokens).toBe(0);
+  });
+});

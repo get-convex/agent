@@ -277,6 +277,9 @@ export const vUsage = v.object({
   totalTokens: v.number(),
   reasoningTokens: v.optional(v.number()),
   cachedInputTokens: v.optional(v.number()),
+  // Cache token details from AI SDK (Anthropic's cacheCreationInputTokens maps to cacheWriteTokens)
+  cacheReadTokens: v.optional(v.number()),
+  cacheWriteTokens: v.optional(v.number()),
 });
 export type Usage = Infer<typeof vUsage>;
 

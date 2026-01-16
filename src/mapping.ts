@@ -139,23 +139,36 @@ export function docsToModelMessages(messages: MessageDoc[]): ModelMessage[] {
 }
 
 export function serializeUsage(usage: LanguageModelUsage): Usage {
+  // inputTokenDetails may exist in newer AI SDK versions (5.1+)
+  const inputTokenDetails = (usage as { inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number } }).inputTokenDetails;
   return {
     promptTokens: usage.inputTokens ?? 0,
     completionTokens: usage.outputTokens ?? 0,
     totalTokens: usage.totalTokens ?? 0,
     reasoningTokens: usage.reasoningTokens,
     cachedInputTokens: usage.cachedInputTokens,
+    // Cache token details (Anthropic's cacheCreationInputTokens maps to cacheWriteTokens)
+    cacheReadTokens: inputTokenDetails?.cacheReadTokens,
+    cacheWriteTokens: inputTokenDetails?.cacheWriteTokens,
   };
 }
 
 export function toModelMessageUsage(usage: Usage): LanguageModelUsage {
-  return {
+  const result: LanguageModelUsage = {
     inputTokens: usage.promptTokens,
     outputTokens: usage.completionTokens,
     totalTokens: usage.totalTokens,
     reasoningTokens: usage.reasoningTokens,
     cachedInputTokens: usage.cachedInputTokens,
   };
+  // Add inputTokenDetails for newer AI SDK versions (5.1+) if we have cache token data
+  if (usage.cacheReadTokens !== undefined || usage.cacheWriteTokens !== undefined) {
+    (result as { inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number } }).inputTokenDetails = {
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheWriteTokens: usage.cacheWriteTokens,
+    };
+  }
+  return result;
 }
 
 export function serializeWarnings(
