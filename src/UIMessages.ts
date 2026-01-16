@@ -463,6 +463,12 @@ function createAssistantUIMessage<
             typeof contentPart.output?.type === "string"
               ? contentPart.output.value
               : contentPart.output;
+          // Check for error at both the content part level (isError) and message level
+          // isError may exist on stored tool results but isn't in ToolResultPart type
+          const hasError =
+            (contentPart as { isError?: boolean }).isError || message.error;
+          const errorText =
+            message.error || (hasError ? String(output) : undefined);
           const call = allParts.find(
             (part) =>
               part.type === `tool-${contentPart.toolName}` &&
@@ -470,9 +476,9 @@ function createAssistantUIMessage<
               part.toolCallId === contentPart.toolCallId,
           ) as ToolUIPart | undefined;
           if (call) {
-            if (message.error) {
+            if (hasError) {
               call.state = "output-error";
-              call.errorText = message.error;
+              call.errorText = errorText ?? "Unknown error";
               call.output = output;
             } else {
               call.state = "output-available";
@@ -483,13 +489,13 @@ function createAssistantUIMessage<
               "Tool result without preceding tool call.. adding anyways",
               contentPart,
             );
-            if (message.error) {
+            if (hasError) {
               allParts.push({
                 type: `tool-${contentPart.toolName}`,
                 toolCallId: contentPart.toolCallId,
                 state: "output-error",
                 input: undefined,
-                errorText: message.error,
+                errorText: errorText ?? "Unknown error",
                 callProviderMetadata: message.providerMetadata,
               } satisfies ToolUIPart<TOOLS>);
             } else {

@@ -549,6 +549,8 @@ function normalizeToolResult(
       normalizeToolOutput("result" in part ? part.result : undefined),
     toolCallId: part.toolCallId,
     toolName: part.toolName,
+    // Preserve isError flag for error reporting
+    ...("isError" in part && part.isError ? { isError: true } : {}),
     ...metadata,
   } satisfies ToolResultPart;
 }
