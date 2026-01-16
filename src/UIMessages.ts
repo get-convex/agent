@@ -8,7 +8,6 @@ import {
   type SourceUrlUIPart,
   type StepStartUIPart,
   type TextUIPart,
-  type ToolResultPart,
   type ToolUIPart,
   type UIDataTypes,
   type UITools,
@@ -43,6 +42,7 @@ export type UIMessage<
   stepOrder: number;
   status: UIStatus;
   agentName?: string;
+  userId?: string;
   text: string;
   _creationTime: number;
 };
@@ -54,7 +54,7 @@ export type UIMessage<
  * @param meta - The metadata to add to the MessageDocs.
  * @returns
  */
-export async function fromUIMessages<METADATA = unknown>(
+export function fromUIMessages<METADATA = unknown>(
   messages: UIMessage<METADATA>[],
   meta: {
     threadId: string;
@@ -64,60 +64,59 @@ export async function fromUIMessages<METADATA = unknown>(
     providerOptions?: ProviderOptions;
     metadata?: METADATA;
   },
-): Promise<(MessageDoc & { streaming: boolean; metadata?: METADATA })[]> {
-  const nested = await Promise.all(
-    messages.map(async (uiMessage) => {
-      const stepOrder = uiMessage.stepOrder;
-      const commonFields = {
-        ...pick(meta, [
-          "threadId",
-          "userId",
-          "model",
-          "provider",
-          "providerOptions",
-          "metadata",
-        ]),
-        ...omit(uiMessage, ["parts", "role", "key", "text"]),
-        status: uiMessage.status === "streaming" ? "pending" : "success",
-        streaming: uiMessage.status === "streaming",
-        // to override
-        _id: uiMessage.id,
-        tool: false,
-      } satisfies MessageDoc & { streaming: boolean; metadata?: METADATA };
-      const modelMessages = await convertToModelMessages([uiMessage]);
-      return modelMessages
-        .map((modelMessage, i) => {
-          if (modelMessage.content.length === 0) {
-            return undefined;
+): (MessageDoc & { streaming: boolean; metadata?: METADATA })[] {
+  return messages.flatMap((uiMessage) => {
+    const stepOrder = uiMessage.stepOrder;
+    const commonFields = {
+      ...pick(meta, [
+        "threadId",
+        "userId",
+        "model",
+        "provider",
+        "providerOptions",
+        "metadata",
+      ]),
+      ...omit(uiMessage, ["parts", "role", "key", "text", "userId"]),
+      userId: uiMessage.userId ?? meta.userId,
+      status: uiMessage.status === "streaming" ? "pending" : "success",
+      streaming: uiMessage.status === "streaming",
+      // to override
+      _id: uiMessage.id,
+      tool: false,
+    } satisfies MessageDoc & { streaming: boolean; metadata?: METADATA };
+    const modelMessages = convertToModelMessages([uiMessage]);
+    return modelMessages
+      .map((modelMessage, i) => {
+        if (modelMessage.content.length === 0) {
+          return undefined;
+        }
+        const message = fromModelMessage(modelMessage);
+        const tool = isTool(message);
+        const doc: MessageDoc & { streaming: boolean; metadata?: METADATA } = {
+          ...commonFields,
+          _id: uiMessage.id + `-${i}`,
+          stepOrder: stepOrder + i,
+          message,
+          tool,
+          text: extractText(message),
+          reasoning: extractReasoning(message),
+          finishReason: tool ? "tool-calls" : "stop",
+          sources: fromSourceParts(uiMessage.parts),
+        };
+        if (Array.isArray(modelMessage.content)) {
+          const providerOptions = modelMessage.content.find(
+            (c) => c.providerOptions,
+          )?.providerOptions;
+          if (providerOptions) {
+            // convertToModelMessages changes providerMetadata to providerOptions
+            doc.providerMetadata = providerOptions;
+            doc.providerOptions ??= providerOptions;
           }
-          const message = fromModelMessage(modelMessage);
-          const tool = isTool(message);
-          const doc: MessageDoc & { streaming: boolean; metadata?: METADATA } =
-            {
-              ...commonFields,
-              _id: uiMessage.id + `-${i}`,
-              stepOrder: stepOrder + i,
-              message,
-              tool,
-              text: extractText(message),
-              reasoning: extractReasoning(message),
-              finishReason: tool ? "tool-calls" : "stop",
-              sources: fromSourceParts(uiMessage.parts),
-            };
-                  if (Array.isArray(modelMessage.content)) {
-                              const providerOptions = (modelMessage.content.find(
-                                (c) => (c as any).providerOptions,
-                              ) as any)?.providerOptions;                    if (providerOptions) {              // convertToModelMessages changes providerMetadata to providerOptions
-              doc.providerMetadata = providerOptions;
-              doc.providerOptions ??= providerOptions;
-            }
-          }
-          return doc;
-        })
-        .filter((d) => d !== undefined);
-    }),
-  );
-  return nested.flat();
+        }
+        return doc;
+      })
+      .filter((d) => d !== undefined);
+  });
 }
 
 function fromSourceParts(parts: UIMessage["parts"]): Infer<typeof vSource>[] {
@@ -291,6 +290,7 @@ function createSystemUIMessage<
     text,
     role: "system",
     agentName: message.agentName,
+    userId: message.userId,
     parts: [{ type: "text", text, ...partCommon } satisfies TextUIPart],
     metadata: message.metadata,
   };
@@ -350,6 +350,7 @@ function createUserUIMessage<
     key: `${message.threadId}-${message.order}-${message.stepOrder}`,
     text,
     role: "user",
+    userId: message.userId,
     parts,
     metadata: message.metadata,
   };
@@ -373,6 +374,7 @@ function createAssistantUIMessage<
     stepOrder: firstMessage.stepOrder,
     key: `${firstMessage.threadId}-${firstMessage.order}-${firstMessage.stepOrder}`,
     agentName: firstMessage.agentName,
+    userId: firstMessage.userId,
   };
 
   // Get status from last message
@@ -462,13 +464,10 @@ function createAssistantUIMessage<
           break;
         }
         case "tool-result": {
-          const typedPart = contentPart as unknown as ToolResultPart & {
-            output: { type: string; value: unknown };
-          };
           const output =
-            typeof typedPart.output?.type === "string"
-              ? typedPart.output.value
-              : typedPart.output;
+            typeof contentPart.output?.type === "string"
+              ? contentPart.output.value
+              : contentPart.output;
           // Check for error at both the content part level (isError) and message level
           // isError may exist on stored tool results but isn't in ToolResultPart type
           const hasError =
@@ -518,7 +517,7 @@ function createAssistantUIMessage<
           break;
         }
         default: {
-          const maybeSource = contentPart as unknown as SourcePart;
+          const maybeSource = contentPart as SourcePart;
           if (maybeSource.type === "source") {
             allParts.push(toSourcePart(maybeSource));
           } else {
@@ -595,12 +594,11 @@ export function combineUIMessages(messages: UIMessage[]): UIMessage[] {
       const previousPartIndex = newParts.findIndex(
         (p) => getToolCallId(p) === toolCallId,
       );
-      if (previousPartIndex === -1) {
-        // Tool call not found in previous parts, add it as new
+      const previousPart = newParts.splice(previousPartIndex, 1)[0];
+      if (!previousPart) {
         newParts.push(part);
         continue;
       }
-      const previousPart = newParts.splice(previousPartIndex, 1)[0];
       newParts.push(mergeParts(previousPart, part));
     }
     acc.push({
