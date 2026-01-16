@@ -11,6 +11,12 @@ export async function willContinue(
   if (step.finishReason !== "tool-calls") return false;
   // we don't have a tool result, so we'll wait for more
   if (step.toolCalls.length > step.toolResults.length) return false;
+  // If any tool result has an error, continue without evaluating stopWhen.
+  // This allows the LLM to retry or handle the error.
+  const hasErrorResult = step.toolResults.some(
+    (result) => (result as { isError?: boolean }).isError === true,
+  );
+  if (hasErrorResult) return true;
   if (Array.isArray(stopWhen)) {
     return (await Promise.all(stopWhen.map(async (s) => s({ steps })))).every(
       (stop) => !stop,
