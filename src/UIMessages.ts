@@ -107,9 +107,13 @@ export async function fromUIMessages<METADATA = unknown>(
               sources: fromSourceParts(uiMessage.parts),
             };
           if (Array.isArray(modelMessage.content)) {
-            const providerOptions = (modelMessage.content.find(
-              (c) => (c as any).providerOptions,
-            ) as any)?.providerOptions;
+            const providerOptions = (
+              modelMessage.content.find(
+                (c) => (c as { providerOptions?: unknown }).providerOptions,
+              ) as { providerOptions?: unknown } | undefined
+            )?.providerOptions as
+              | Record<string, Record<string, unknown>>
+              | undefined;
             if (providerOptions) {
               // convertToModelMessages changes providerMetadata to providerOptions
               doc.providerMetadata = providerOptions;
