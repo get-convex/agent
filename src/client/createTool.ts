@@ -72,10 +72,10 @@ export type ToolOutputPropertiesCtx<
   | {
       /**
        * An async function that is called with the arguments from the tool call and produces a result.
-       * If not provided, the tool will not be executed automatically.
+       * If `execute` (or `handler`) is not provided, the tool will not be executed automatically.
        *
-       * @args is the input of the tool call.
-       * @options.abortSignal is a signal that can be used to abort the tool call.
+       * @param input - The input of the tool call.
+       * @param options.abortSignal - A signal that can be used to abort the tool call.
        */
       execute: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
       outputSchema?: FlexibleSchema<OUTPUT>;
@@ -122,15 +122,17 @@ export type ToolInputProperties<INPUT> =
  * This is a wrapper around the ai.tool function that adds extra context to the
  * tool call, including the action context, userId, threadId, and messageId.
  * @param tool The tool. See https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling
- * but swap parameters for args and handler for execute.
+ * Currently contains deprecated parameters `args` and `handler` to maintain backwards compatibility
+ * but these will be removed in the future. Use `inputSchema` and `execute` instead, respectively.
+ * 
  * @returns A tool to be used with the AI SDK.
  */
 export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
   def: {
     /**
-  An optional description of what the tool does.
-  Will be used by the language model to decide whether to use the tool.
-  Not used for provider-defined tools.
+     * An optional description of what the tool does.
+     * Will be used by the language model to decide whether to use the tool.
+     * Not used for provider-defined tools.
      */
     description?: string;
     /**
@@ -229,7 +231,7 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
 ): Tool<INPUT, OUTPUT> {
   const inputSchema = def.inputSchema ?? def.args;
   if (!inputSchema)
-    throw new Error("To use a Convex tool, you must provide an `inputSchema`");
+    throw new Error("To use a Convex tool, you must provide an `inputSchema` (or `args`)");
 
   const executeHandler = def.execute ?? def.handler;
   if (!executeHandler && !def.outputSchema)
@@ -247,7 +249,7 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
     providerOptions: def.providerOptions,
     inputSchema,
     inputExamples: def.inputExamples,
-    needsApproval(input, options) {
+    needsApproval(this: Tool<INPUT, OUTPUT>, input, options) {
       const needsApproval = def.needsApproval;
       if (!needsApproval || typeof needsApproval === "boolean")
         return Boolean(needsApproval);
