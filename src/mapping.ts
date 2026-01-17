@@ -463,6 +463,7 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             approvalId: part.approvalId,
             approved: part.approved,
             reason: part.reason,
+            providerExecuted: part.providerExecuted,
             ...metadata,
           } satisfies Infer<typeof vToolApprovalResponse>;
         // Not in current generation output, but could be in historical messages
@@ -567,6 +568,7 @@ export function toModelMessageContent(
             approvalId: part.approvalId,
             approved: part.approved,
             reason: part.reason,
+            providerExecuted: part.providerExecuted,
             ...metadata,
           } satisfies ToolApprovalResponse;
         default:
