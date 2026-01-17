@@ -286,7 +286,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             args?: any;
                             experimental_content?: Array<
-                              | { text: string; type: "text" }
+                              | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                               | {
                                   data: string;
                                   mimeType?: string;
@@ -300,10 +300,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
-                                    | { text: string; type: "text" }
+                                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                     | {
                                         data: string;
                                         mediaType: string;
@@ -364,7 +365,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   content: Array<{
                     args?: any;
                     experimental_content?: Array<
-                      | { text: string; type: "text" }
+                      | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                       | { data: string; mimeType?: string; type: "image" }
                     >;
                     isError?: boolean;
@@ -374,11 +375,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -601,7 +610,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             args?: any;
                             experimental_content?: Array<
-                              | { text: string; type: "text" }
+                              | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                               | {
                                   data: string;
                                   mimeType?: string;
@@ -615,10 +624,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
-                                    | { text: string; type: "text" }
+                                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                     | {
                                         data: string;
                                         mediaType: string;
@@ -679,7 +689,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   content: Array<{
                     args?: any;
                     experimental_content?: Array<
-                      | { text: string; type: "text" }
+                      | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                       | { data: string; mimeType?: string; type: "image" }
                     >;
                     isError?: boolean;
@@ -689,11 +699,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -946,7 +964,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           args?: any;
                           experimental_content?: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mimeType?: string; type: "image" }
                           >;
                           isError?: boolean;
@@ -956,10 +974,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
-                                  | { text: string; type: "text" }
+                                  | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                   | {
                                       data: string;
                                       mediaType: string;
@@ -1011,7 +1030,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 content: Array<{
                   args?: any;
                   experimental_content?: Array<
-                    | { text: string; type: "text" }
+                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
@@ -1021,11 +1040,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
-                          | { text: string; type: "text" }
+                          | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                           | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -1274,7 +1301,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             args?: any;
                             experimental_content?: Array<
-                              | { text: string; type: "text" }
+                              | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                               | {
                                   data: string;
                                   mimeType?: string;
@@ -1288,10 +1315,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
-                                    | { text: string; type: "text" }
+                                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                     | {
                                         data: string;
                                         mediaType: string;
@@ -1352,7 +1380,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   content: Array<{
                     args?: any;
                     experimental_content?: Array<
-                      | { text: string; type: "text" }
+                      | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                       | { data: string; mimeType?: string; type: "image" }
                     >;
                     isError?: boolean;
@@ -1362,11 +1390,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -1586,7 +1622,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           args?: any;
                           experimental_content?: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mimeType?: string; type: "image" }
                           >;
                           isError?: boolean;
@@ -1596,10 +1632,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
-                                  | { text: string; type: "text" }
+                                  | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                   | {
                                       data: string;
                                       mediaType: string;
@@ -1651,7 +1688,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 content: Array<{
                   args?: any;
                   experimental_content?: Array<
-                    | { text: string; type: "text" }
+                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
@@ -1661,11 +1698,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
-                          | { text: string; type: "text" }
+                          | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                           | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -1872,7 +1917,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           args?: any;
                           experimental_content?: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mimeType?: string; type: "image" }
                           >;
                           isError?: boolean;
@@ -1882,10 +1927,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
-                                  | { text: string; type: "text" }
+                                  | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                   | {
                                       data: string;
                                       mediaType: string;
@@ -1937,7 +1983,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 content: Array<{
                   args?: any;
                   experimental_content?: Array<
-                    | { text: string; type: "text" }
+                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
@@ -1947,11 +1993,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
-                          | { text: string; type: "text" }
+                          | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                           | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -2172,7 +2226,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             args?: any;
                             experimental_content?: Array<
-                              | { text: string; type: "text" }
+                              | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                               | {
                                   data: string;
                                   mimeType?: string;
@@ -2186,10 +2240,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
-                                    | { text: string; type: "text" }
+                                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                     | {
                                         data: string;
                                         mediaType: string;
@@ -2250,7 +2305,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   content: Array<{
                     args?: any;
                     experimental_content?: Array<
-                      | { text: string; type: "text" }
+                      | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                       | { data: string; mimeType?: string; type: "image" }
                     >;
                     isError?: boolean;
@@ -2260,11 +2315,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
@@ -2408,7 +2471,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           args?: any;
                           experimental_content?: Array<
-                            | { text: string; type: "text" }
+                            | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                             | { data: string; mimeType?: string; type: "image" }
                           >;
                           isError?: boolean;
@@ -2418,10 +2481,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
-                                  | { text: string; type: "text" }
+                                  | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                                   | {
                                       data: string;
                                       mediaType: string;
@@ -2473,7 +2537,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 content: Array<{
                   args?: any;
                   experimental_content?: Array<
-                    | { text: string; type: "text" }
+                    | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                     | { data: string; mimeType?: string; type: "image" }
                   >;
                   isError?: boolean;
@@ -2483,11 +2547,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
                       | { type: "execution-denied"; reason?: string; }
+                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
-                          | { text: string; type: "text" }
+                          | { text: string; type: "text"; providerOptions?: Record<string, Record<string, any>> }
                           | { data: string; mediaType: string; type: "media" }
+                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
+                            | { url: string; type: "file-url" }
+                            | { fileId: string | Record<string, string>; type: "file-id" }
+                            | { data: string; mediaType: string; type: "image-data" }
+                            | { url: string; type: "image-url" }
+                            | { fileId: string | Record<string, string>; type: "image-file-id" }
+                            | { type: "custom" }
                             | { data: string; mediaType: string; filename?: string; type: "file-data" }
                             | { url: string; type: "file-url" }
                             | { fileId: string | Record<string, string>; type: "file-id" }
