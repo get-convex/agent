@@ -94,8 +94,7 @@ export type ToolOutputPropertiesCtx<
     }
 >;
 
-export type ToolInputProperties<INPUT> = NeverOptional<
-  INPUT,
+export type ToolInputProperties<INPUT> =
   | {
       /**
        * The schema of the input that the tool expects.
@@ -117,8 +116,7 @@ export type ToolInputProperties<INPUT> = NeverOptional<
        */
       args: FlexibleSchema<INPUT>;
       inputSchema?: never;
-    }
->;
+    };
 
 /**
  * This is a wrapper around the ai.tool function that adds extra context to the
