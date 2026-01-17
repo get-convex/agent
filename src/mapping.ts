@@ -328,7 +328,7 @@ export async function serializeContent(
           }
           return {
             type: part.type,
-            mimeType: getMimeOrMediaType(part),
+            mediaType: getMimeOrMediaType(part),
             ...metadata,
             image,
           } satisfies Infer<typeof vImagePart>;
@@ -348,7 +348,7 @@ export async function serializeContent(
             type: part.type,
             data,
             filename: part.filename,
-            mimeType: getMimeOrMediaType(part)!,
+            mediaType: getMimeOrMediaType(part)!,
             ...metadata,
           } satisfies Infer<typeof vFilePart>;
         }
@@ -419,7 +419,7 @@ export function fromModelMessageContent(content: Content): Message["content"] {
         case "image":
           return {
             type: part.type,
-            mimeType: getMimeOrMediaType(part),
+            mediaType: getMimeOrMediaType(part),
             ...metadata,
             image: serializeDataOrUrl(part.image),
           } satisfies Infer<typeof vImagePart>;
@@ -428,7 +428,7 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             type: part.type,
             data: serializeDataOrUrl(part.data),
             filename: part.filename,
-            mimeType: getMimeOrMediaType(part)!,
+            mediaType: getMimeOrMediaType(part)!,
             ...metadata,
           } satisfies Infer<typeof vFilePart>;
         case "tool-call":
