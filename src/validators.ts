@@ -277,6 +277,11 @@ export const vToolApprovalResponse = v.object({
    * Optional reason for the approval or denial.
    */
   reason: v.optional(v.string()),
+  /**
+   * Flag indicating whether the tool call is provider-executed.
+   * Only provider-executed tool approval responses should be sent to the model.
+   */
+  providerExecuted: v.optional(v.boolean()),
   /** @todo Should we continue to include? */
   providerMetadata,
   /** @todo Should we continue to include? */
