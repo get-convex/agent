@@ -36,6 +36,8 @@ import {
   type SourcePart,
   vToolResultOutput,
   type MessageDoc,
+  vToolApprovalRequest,
+  vToolApprovalResponse,
 } from "./validators.js";
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { MutationCtx } from "./client/types.js";
@@ -45,6 +47,8 @@ import {
   convertUint8ArrayToBase64,
   type ProviderOptions,
   type ReasoningPart,
+  type ToolApprovalRequest,
+  type ToolApprovalResponse,
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
 import {
@@ -349,10 +353,12 @@ export async function serializeContent(
           } satisfies Infer<typeof vFilePart>;
         }
         case "tool-call": {
-          const args = "input" in part ? part.input : part.args;
+          const input = part.input ?? (part as any)?.args;
           return {
             type: part.type,
-            args: args ?? null,
+            input: input ?? null,
+            /** @deprecated Use `input` instead. */
+            args: input ?? null,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
@@ -428,6 +434,8 @@ export function fromModelMessageContent(content: Content): Message["content"] {
         case "tool-call":
           return {
             type: part.type,
+            input: part.input ?? null,
+            /** @deprecated Use `input` instead. */
             args: part.input ?? null,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
@@ -442,6 +450,21 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             text: part.text,
             ...metadata,
           } satisfies Infer<typeof vReasoningPart>;
+        case "tool-approval-request":
+          return {
+            type: part.type,
+            approvalId: part.approvalId,
+            toolCallId: part.toolCallId,
+            ...metadata,
+          } satisfies Infer<typeof vToolApprovalRequest>;
+        case "tool-approval-response":
+          return {
+            type: part.type,
+            approvalId: part.approvalId,
+            approved: part.approved,
+            reason: part.reason,
+            ...metadata,
+          } satisfies Infer<typeof vToolApprovalResponse>;
         // Not in current generation output, but could be in historical messages
         default:
           return null;
@@ -491,7 +514,7 @@ export function toModelMessageContent(
             ...metadata,
           } satisfies FilePart;
         case "tool-call": {
-          const input = "input" in part ? part.input : part.args;
+          const input = part.input ?? (part as any)?.args;
           return {
             type: part.type,
             input: input ?? null,
@@ -531,6 +554,21 @@ export function toModelMessageContent(
           } satisfies ReasoningPart;
         case "source":
           return part satisfies SourcePart;
+        case "tool-approval-request":
+          return {
+            type: part.type,
+            approvalId: part.approvalId,
+            toolCallId: part.toolCallId,
+            ...metadata,
+          } satisfies ToolApprovalRequest;
+        case "tool-approval-response":
+          return {
+            type: part.type,
+            approvalId: part.approvalId,
+            approved: part.approved,
+            reason: part.reason,
+            ...metadata,
+          } satisfies ToolApprovalResponse;
         default:
           return null;
       }

@@ -254,6 +254,10 @@ export const vToolApprovalRequest = v.object({
    * ID of the tool call that the approval request is for.
    */
   toolCallId: v.string(),
+  /** @todo Should we continue to include? */
+  providerMetadata,
+  /** @todo Should we continue to include? */
+  providerOptions,
 });
 
 /**
@@ -273,6 +277,10 @@ export const vToolApprovalResponse = v.object({
    * Optional reason for the approval or denial.
    */
   reason: v.optional(v.string()),
+  /** @todo Should we continue to include? */
+  providerMetadata,
+  /** @todo Should we continue to include? */
+  providerOptions,
 });
 
 export const vToolResultPart = v.object({
