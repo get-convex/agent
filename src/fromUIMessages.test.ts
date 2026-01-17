@@ -277,7 +277,7 @@ describe("fromUIMessages round-trip tests", () => {
       expect(fileContent).toBeDefined();
       expect(fileContent).toMatchObject({
         type: "file",
-        mimeType: "image/png",
+        mediaType: "image/png",
       });
     }
   });
