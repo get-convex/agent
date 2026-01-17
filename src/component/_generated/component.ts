@@ -56,7 +56,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           filename?: string;
           hash: string;
-          mimeType: string;
+          mediaType?: string;
+          mimeType?: string;
           storageId: string;
         },
         { fileId: string; storageId: string },
@@ -86,7 +87,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           filename?: string;
           hash: string;
           lastTouchedAt: number;
-          mimeType: string;
+          mediaType?: string;
+          mimeType?: string;
           refcount: number;
           storageId: string;
         },
@@ -114,7 +116,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             filename?: string;
             hash: string;
             lastTouchedAt: number;
-            mimeType: string;
+            mediaType?: string;
+            mimeType?: string;
             refcount: number;
             storageId: string;
           }>;
@@ -192,7 +195,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -226,7 +230,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -495,7 +500,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -529,7 +535,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -846,7 +853,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -874,7 +882,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -1144,7 +1153,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -1178,7 +1188,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -1462,7 +1473,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -1490,7 +1502,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -1736,7 +1749,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -1764,7 +1778,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -2006,7 +2021,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -2040,7 +2056,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         | {
                             data: string | ArrayBuffer;
                             filename?: string;
-                            mimeType: string;
+                            mediaType?: string;
+                            mimeType?: string;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -2248,7 +2265,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
@@ -2276,7 +2294,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | {
                           data: string | ArrayBuffer;
                           filename?: string;
-                          mimeType: string;
+                          mediaType?: string;
+                            mimeType?: string;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
