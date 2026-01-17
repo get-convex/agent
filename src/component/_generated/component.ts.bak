@@ -268,8 +268,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "redacted-reasoning";
                           }
                         | {
-                            input: any;
-                            args?: any;
+                            args: any;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -299,7 +298,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "json"; value: any }
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
@@ -373,19 +371,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "json"; value: any }
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
                             | { text: string; type: "text" }
                             | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                           >;
                         };
                     providerExecuted?: boolean;
@@ -583,8 +573,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "redacted-reasoning";
                           }
                         | {
-                            input: any;
-                            args?: any;
+                            args: any;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -614,7 +603,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "json"; value: any }
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
@@ -688,19 +676,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "json"; value: any }
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
                             | { text: string; type: "text" }
                             | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                           >;
                         };
                     providerExecuted?: boolean;
@@ -931,8 +911,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "redacted-reasoning";
                         }
                       | {
-                          input: any;
-                            args?: any;
+                          args: any;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -955,7 +934,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "json"; value: any }
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
@@ -1020,19 +998,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "json"; value: any }
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
                           | { text: string; type: "text" }
                           | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                         >;
                       };
                   providerExecuted?: boolean;
@@ -1256,8 +1226,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "redacted-reasoning";
                           }
                         | {
-                            input: any;
-                            args?: any;
+                            args: any;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -1287,7 +1256,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "json"; value: any }
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
@@ -1361,19 +1329,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "json"; value: any }
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
                             | { text: string; type: "text" }
                             | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                           >;
                         };
                     providerExecuted?: boolean;
@@ -1571,8 +1531,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "redacted-reasoning";
                         }
                       | {
-                          input: any;
-                            args?: any;
+                          args: any;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1595,7 +1554,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "json"; value: any }
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
@@ -1660,19 +1618,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "json"; value: any }
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
                           | { text: string; type: "text" }
                           | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                         >;
                       };
                   providerExecuted?: boolean;
@@ -1857,8 +1807,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "redacted-reasoning";
                         }
                       | {
-                          input: any;
-                            args?: any;
+                          args: any;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -1881,7 +1830,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "json"; value: any }
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
@@ -1946,19 +1894,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "json"; value: any }
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
                           | { text: string; type: "text" }
                           | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                         >;
                       };
                   providerExecuted?: boolean;
@@ -2154,8 +2094,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "redacted-reasoning";
                           }
                         | {
-                            input: any;
-                            args?: any;
+                            args: any;
                             providerExecuted?: boolean;
                             providerMetadata?: Record<
                               string,
@@ -2185,7 +2124,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               | { type: "json"; value: any }
                               | { type: "error-text"; value: string }
                               | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                               | {
                                   type: "content";
                                   value: Array<
@@ -2259,19 +2197,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                       | { type: "json"; value: any }
                       | { type: "error-text"; value: string }
                       | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                       | {
                           type: "content";
                           value: Array<
                             | { text: string; type: "text" }
                             | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                           >;
                         };
                     providerExecuted?: boolean;
@@ -2393,8 +2323,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "redacted-reasoning";
                         }
                       | {
-                          input: any;
-                            args?: any;
+                          args: any;
                           providerExecuted?: boolean;
                           providerMetadata?: Record<
                             string,
@@ -2417,7 +2346,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             | { type: "json"; value: any }
                             | { type: "error-text"; value: string }
                             | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                             | {
                                 type: "content";
                                 value: Array<
@@ -2482,19 +2410,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | { type: "json"; value: any }
                     | { type: "error-text"; value: string }
                     | { type: "error-json"; value: any }
-                      | { type: "execution-denied"; reason?: string; }
                     | {
                         type: "content";
                         value: Array<
                           | { text: string; type: "text" }
                           | { data: string; mediaType: string; type: "media" }
-                            | { data: string; mediaType: string; filename?: string; type: "file-data" }
-                            | { url: string; type: "file-url" }
-                            | { fileId: string | Record<string, string>; type: "file-id" }
-                            | { data: string; mediaType: string; type: "image-data" }
-                            | { url: string; type: "image-url" }
-                            | { fileId: string | Record<string, string>; type: "image-file-id" }
-                            | { type: "custom" }
                         >;
                       };
                   providerExecuted?: boolean;
