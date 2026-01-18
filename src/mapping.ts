@@ -387,6 +387,24 @@ export async function serializeContent(
         case "source": {
           return part satisfies Infer<typeof vSourcePart>;
         }
+        case "tool-approval-request": {
+          return {
+            type: part.type,
+            approvalId: part.approvalId,
+            toolCallId: part.toolCallId,
+            ...metadata,
+          } satisfies Infer<typeof vToolApprovalRequest>;
+        }
+        case "tool-approval-response": {
+          return {
+            type: part.type,
+            approvalId: part.approvalId,
+            approved: part.approved,
+            reason: part.reason,
+            providerExecuted: part.providerExecuted,
+            ...metadata,
+          } satisfies Infer<typeof vToolApprovalResponse>;
+        }
         default:
           return null;
       }
