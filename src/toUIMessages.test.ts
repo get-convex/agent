@@ -970,4 +970,300 @@ describe("toUIMessages", () => {
       expect(uiMessages[0].userId).toBeUndefined();
     });
   });
+
+  describe("tool approval workflow", () => {
+    it("sets state to approval-requested when tool-approval-request is present", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("approval-requested");
+      expect(toolPart.approval).toEqual({ id: "approval1" });
+    });
+
+    it("sets state to approval-responded when tool-approval-response with approved: true", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval1",
+                approved: true,
+                reason: "User confirmed",
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("approval-responded");
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        approved: true,
+        reason: "User confirmed",
+      });
+    });
+
+    it("sets state to output-denied when tool-approval-response with approved: false", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval1",
+                approved: false,
+                reason: "User declined the operation",
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("output-denied");
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        approved: false,
+        reason: "User declined the operation",
+      });
+    });
+
+    it("sets state to output-denied when tool-result has execution-denied output", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call1",
+                toolName: "dangerousTool",
+                output: {
+                  type: "execution-denied",
+                  reason: "Tool execution was denied by the user",
+                },
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("output-denied");
+      expect(toolPart.approval).toEqual({
+        id: "",
+        approved: false,
+        reason: "Tool execution was denied by the user",
+      });
+    });
+
+    it("handles full approval flow: request → approved → executed → output-available", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval1",
+                approved: true,
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg3",
+          order: 1,
+          stepOrder: 3,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call1",
+                toolName: "dangerousTool",
+                output: {
+                  type: "json",
+                  value: { deleted: true },
+                },
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      // After tool-result, state should be output-available
+      expect(toolPart.state).toBe("output-available");
+      expect(toolPart.output).toEqual({ deleted: true });
+      // approval should still be preserved from earlier
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        approved: true,
+        reason: undefined,
+      });
+    });
+  });
 });

@@ -533,4 +533,51 @@ describe("mergeDeltas", () => {
       },
     ]);
   });
+
+  it("handles streaming tool-approval-request and updates tool state", () => {
+    const streamId = "s10";
+    const deltas = [
+      {
+        streamId,
+        start: 0,
+        end: 1,
+        parts: [
+          {
+            type: "tool-call",
+            toolCallId: "call1",
+            toolName: "dangerousTool",
+            input: { action: "delete" },
+          },
+        ],
+      } satisfies StreamDelta,
+      {
+        streamId,
+        start: 1,
+        end: 2,
+        parts: [
+          {
+            type: "tool-approval-request",
+            toolCallId: "call1",
+            approvalId: "approval1",
+          },
+        ],
+      } satisfies StreamDelta,
+    ];
+    const [[message], _, changed] = deriveUIMessagesFromTextStreamParts(
+      "thread1",
+      [{ streamId, order: 10, stepOrder: 0, status: "streaming" }],
+      [],
+      deltas,
+    );
+    expect(message).toBeDefined();
+    expect(message.role).toBe("assistant");
+    expect(changed).toBe(true);
+
+    const toolPart = message.parts.find(
+      (p) => p.type === "tool-dangerousTool",
+    ) as any;
+    expect(toolPart).toBeDefined();
+    expect(toolPart.state).toBe("approval-requested");
+    expect(toolPart.approval).toEqual({ id: "approval1" });
+  });
 });
