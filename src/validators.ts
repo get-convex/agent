@@ -115,17 +115,34 @@ export const vSourcePart = v.union(
 );
 export type SourcePart = Infer<typeof vSourcePart>;
 
-export const vToolCallPart = v.object({
-  type: v.literal("tool-call"),
-  toolCallId: v.string(),
-  toolName: v.string(),
-  input: v.any(),
-  /** @deprecated Use `input` instead. */
-  args: v.optional(v.any()),
-  providerExecuted: v.optional(v.boolean()),
-  providerOptions,
-  providerMetadata,
-});
+// Union type to support both old (args) and new (input) formats
+// Both include input for type hint support
+export const vToolCallPart = v.union(
+  // New format: input is primary, args is optional for backwards compat
+  v.object({
+    type: v.literal("tool-call"),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    input: v.any(),
+    /** @deprecated Use `input` instead. */
+    args: v.optional(v.any()),
+    providerExecuted: v.optional(v.boolean()),
+    providerOptions,
+    providerMetadata,
+  }),
+  // Legacy format: args is present, input is optional
+  v.object({
+    type: v.literal("tool-call"),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    /** @deprecated Use `input` instead. */
+    args: v.any(),
+    input: v.optional(v.any()),
+    providerExecuted: v.optional(v.boolean()),
+    providerOptions,
+    providerMetadata,
+  }),
+);
 
 const vToolResultContent = v.array(
   v.union(
