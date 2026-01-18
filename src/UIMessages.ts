@@ -114,9 +114,10 @@ export async function fromUIMessages<METADATA = unknown>(
             );
             if (partWithProviderOptions?.providerOptions) {
               // convertToModelMessages changes providerMetadata to providerOptions
-              const providerOptions = partWithProviderOptions.providerOptions as
-                | Record<string, Record<string, unknown>>
-                | undefined;
+              const providerOptions =
+                partWithProviderOptions.providerOptions as
+                  | Record<string, Record<string, unknown>>
+                  | undefined;
               if (providerOptions) {
                 doc.providerMetadata = providerOptions;
                 doc.providerOptions ??= providerOptions;
@@ -477,8 +478,39 @@ function createAssistantUIMessage<
         }
         case "tool-result": {
           const typedPart = contentPart as unknown as ToolResultPart & {
-            output: { type: string; value: unknown };
+            output: { type: string; value?: unknown; reason?: string };
           };
+
+          // Check if this is an execution-denied result
+          if (typedPart.output?.type === "execution-denied") {
+            const call = allParts.find(
+              (part) =>
+                part.type === `tool-${contentPart.toolName}` &&
+                "toolCallId" in part &&
+                part.toolCallId === contentPart.toolCallId,
+            ) as ToolUIPart | undefined;
+
+            if (call) {
+              call.state = "output-denied";
+              if (!("approval" in call) || !call.approval) {
+                (call as ToolUIPart & { approval?: object }).approval = {
+                  id: "",
+                  approved: false,
+                  reason: typedPart.output.reason,
+                };
+              } else {
+                const approval = (
+                  call as ToolUIPart & {
+                    approval: { approved?: boolean; reason?: string };
+                  }
+                ).approval;
+                approval.approved = false;
+                approval.reason = typedPart.output.reason;
+              }
+            }
+            break;
+          }
+
           const output =
             typeof typedPart.output?.type === "string"
               ? typedPart.output.value
@@ -528,6 +560,68 @@ function createAssistantUIMessage<
                 callProviderMetadata: message.providerMetadata,
               } satisfies ToolUIPart<TOOLS>);
             }
+          }
+          break;
+        }
+        case "tool-approval-request": {
+          // Find the matching tool call
+          const typedPart = contentPart as {
+            toolCallId: string;
+            approvalId: string;
+          };
+          const toolCallPart = allParts.find(
+            (part) =>
+              "toolCallId" in part && part.toolCallId === typedPart.toolCallId,
+          ) as ToolUIPart | undefined;
+
+          if (toolCallPart) {
+            toolCallPart.state = "approval-requested";
+            (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+              id: typedPart.approvalId,
+            };
+          } else {
+            console.warn(
+              "Tool approval request without preceding tool call",
+              contentPart,
+            );
+          }
+          break;
+        }
+        case "tool-approval-response": {
+          // Find the tool call that has this approval by matching approval.id
+          const typedPart = contentPart as {
+            approvalId: string;
+            approved: boolean;
+            reason?: string;
+          };
+          const toolCallPart = allParts.find(
+            (part) =>
+              "approval" in part &&
+              (part as ToolUIPart & { approval?: { id: string } }).approval
+                ?.id === typedPart.approvalId,
+          ) as ToolUIPart | undefined;
+
+          if (toolCallPart) {
+            if (typedPart.approved) {
+              toolCallPart.state = "approval-responded";
+              (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+                id: typedPart.approvalId,
+                approved: true,
+                reason: typedPart.reason,
+              };
+            } else {
+              toolCallPart.state = "output-denied";
+              (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+                id: typedPart.approvalId,
+                approved: false,
+                reason: typedPart.reason,
+              };
+            }
+          } else {
+            console.warn(
+              "Tool approval response without matching approval request",
+              contentPart,
+            );
           }
           break;
         }

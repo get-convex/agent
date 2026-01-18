@@ -472,6 +472,25 @@ export function updateFromTextStreamParts(
         }
         break;
       }
+      case "tool-approval-request": {
+        const typedPart = part as unknown as {
+          type: "tool-approval-request";
+          toolCallId: string;
+          approvalId: string;
+        };
+        const toolPart = toolPartsById.get(typedPart.toolCallId);
+        if (toolPart) {
+          toolPart.state = "approval-requested";
+          (toolPart as ToolUIPart & { approval?: object }).approval = {
+            id: typedPart.approvalId,
+          };
+        } else {
+          console.warn(
+            `Expected tool call part ${typedPart.toolCallId} for approval request`,
+          );
+        }
+        break;
+      }
       case "file":
       case "text-end":
       case "finish-step":
