@@ -267,9 +267,14 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
         });
       }
     } else if (doc.message?.role === "tool") {
-      const content = doc.message.content.filter((c) =>
-        toolCallIds.has(c.toolCallId),
-      );
+      const content = doc.message.content.filter((c) => {
+        // tool-result parts have toolCallId
+        if (c.type === "tool-result") {
+          return toolCallIds.has(c.toolCallId);
+        }
+        // tool-approval-response parts don't have toolCallId, so include them
+        return true;
+      });
       if (content.length) {
         result.push({
           ...doc,

@@ -353,12 +353,13 @@ export async function serializeContent(
           } satisfies Infer<typeof vFilePart>;
         }
         case "tool-call": {
-          const input = part.input ?? (part as any)?.args;
+          // Handle legacy data where only args field exists
+          const input = part.input ?? (part as any)?.args ?? {};
           return {
             type: part.type,
-            input: input ?? null,
+            input,
             /** @deprecated Use `input` instead. */
-            args: input ?? null,
+            args: input,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
@@ -432,11 +433,12 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             ...metadata,
           } satisfies Infer<typeof vFilePart>;
         case "tool-call":
+          // Handle legacy data where only args field exists
           return {
             type: part.type,
-            input: part.input ?? null,
+            input: part.input ?? (part as any)?.args ?? {},
             /** @deprecated Use `input` instead. */
-            args: part.input ?? null,
+            args: part.input ?? (part as any)?.args ?? {},
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
@@ -515,10 +517,11 @@ export function toModelMessageContent(
             ...metadata,
           } satisfies FilePart;
         case "tool-call": {
-          const input = part.input ?? (part as any)?.args;
+          // Handle legacy data where only args field exists
+          const input = part.input ?? (part as any)?.args ?? {};
           return {
             type: part.type,
-            input: input ?? null,
+            input,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,

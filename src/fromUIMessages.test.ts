@@ -166,6 +166,7 @@ describe("fromUIMessages round-trip tests", () => {
               type: "tool-call",
               toolName: "calculator",
               toolCallId: "call1",
+              input: { operation: "add", a: 2, b: 3 },
               args: { operation: "add", a: 2, b: 3 },
             },
           ],
@@ -442,7 +443,9 @@ describe("fromUIMessages functionality tests", () => {
       ],
     };
 
-    const result = await fromUIMessages([toolUIMessage], { threadId: "thread1" });
+    const result = await fromUIMessages([toolUIMessage], {
+      threadId: "thread1",
+    });
     expect(result.length).toBeGreaterThan(0);
 
     // Should have tool messages
@@ -471,7 +474,9 @@ describe("fromUIMessages functionality tests", () => {
       ],
     };
 
-    const result = await fromUIMessages([toolUIMessage], { threadId: "thread1" });
+    const result = await fromUIMessages([toolUIMessage], {
+      threadId: "thread1",
+    });
     expect(result.length).toBeGreaterThan(0);
 
     // Should have tool messages
