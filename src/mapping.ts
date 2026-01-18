@@ -328,7 +328,7 @@ export async function serializeContent(
           }
           return {
             type: part.type,
-            mimeType: getMimeOrMediaType(part),
+            mediaType: getMimeOrMediaType(part),
             ...metadata,
             image,
           } satisfies Infer<typeof vImagePart>;
@@ -348,17 +348,18 @@ export async function serializeContent(
             type: part.type,
             data,
             filename: part.filename,
-            mimeType: getMimeOrMediaType(part)!,
+            mediaType: getMimeOrMediaType(part)!,
             ...metadata,
           } satisfies Infer<typeof vFilePart>;
         }
         case "tool-call": {
-          const input = part.input ?? (part as any)?.args;
+          // Handle legacy data where only args field exists
+          const input = part.input ?? (part as any)?.args ?? {};
           return {
             type: part.type,
-            input: input ?? null,
+            input,
             /** @deprecated Use `input` instead. */
-            args: input ?? null,
+            args: input,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
@@ -419,7 +420,7 @@ export function fromModelMessageContent(content: Content): Message["content"] {
         case "image":
           return {
             type: part.type,
-            mimeType: getMimeOrMediaType(part),
+            mediaType: getMimeOrMediaType(part),
             ...metadata,
             image: serializeDataOrUrl(part.image),
           } satisfies Infer<typeof vImagePart>;
@@ -428,15 +429,16 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             type: part.type,
             data: serializeDataOrUrl(part.data),
             filename: part.filename,
-            mimeType: getMimeOrMediaType(part)!,
+            mediaType: getMimeOrMediaType(part)!,
             ...metadata,
           } satisfies Infer<typeof vFilePart>;
         case "tool-call":
+          // Handle legacy data where only args field exists
           return {
             type: part.type,
-            input: part.input ?? null,
+            input: part.input ?? (part as any)?.args ?? {},
             /** @deprecated Use `input` instead. */
-            args: part.input ?? null,
+            args: part.input ?? (part as any)?.args ?? {},
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
@@ -515,10 +517,11 @@ export function toModelMessageContent(
             ...metadata,
           } satisfies FilePart;
         case "tool-call": {
-          const input = part.input ?? (part as any)?.args;
+          // Handle legacy data where only args field exists
+          const input = part.input ?? (part as any)?.args ?? {};
           return {
             type: part.type,
-            input: input ?? null,
+            input,
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
