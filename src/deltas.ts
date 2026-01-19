@@ -75,9 +75,8 @@ export async function updateFromUIMessageChunks(
       // Tool invocation errors can be safely ignored when streaming continuation
       // after tool approval - the stored messages have the complete tool context
       if (errorMessage.toLowerCase().includes("no tool invocation found")) {
-        console.warn(
-          "Tool invocation not found in continuation stream - using stored messages",
-        );
+        // Silently suppress - this is expected after tool approval when the
+        // continuation stream has tool-result without the original tool-call
         suppressError = true;
         return;
       }
