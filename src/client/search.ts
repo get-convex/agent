@@ -231,12 +231,19 @@ export async function fetchRecentAndSearchMessages(
 
 /**
  * Filter out tool messages that don't have both a tool call and response.
+ * For the approval workflow, tool calls with approval responses (but no tool-results yet)
+ * should also be kept.
  * @param docs The messages to filter.
  * @returns The filtered messages.
  */
 export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
   const toolCallIds = new Set<string>();
   const toolResultIds = new Set<string>();
+  // Track approval workflow: toolCallId → approvalId
+  const approvalRequestsByToolCallId = new Map<string, string>();
+  // Track which approvalIds have responses
+  const approvalResponseIds = new Set<string>();
+
   const result: MessageDoc[] = [];
   for (const doc of docs) {
     if (doc.message && Array.isArray(doc.message.content)) {
@@ -245,17 +252,43 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
           toolCallIds.add(content.toolCallId);
         } else if (content.type === "tool-result") {
           toolResultIds.add(content.toolCallId);
+        } else if (content.type === "tool-approval-request") {
+          const approvalRequest = content as {
+            type: "tool-approval-request";
+            toolCallId: string;
+            approvalId: string;
+          };
+          approvalRequestsByToolCallId.set(
+            approvalRequest.toolCallId,
+            approvalRequest.approvalId,
+          );
+        } else if (content.type === "tool-approval-response") {
+          const approvalResponse = content as {
+            type: "tool-approval-response";
+            approvalId: string;
+          };
+          approvalResponseIds.add(approvalResponse.approvalId);
         }
       }
     }
   }
+
+  // Helper: check if tool call has a corresponding approval response
+  const hasApprovalResponse = (toolCallId: string) => {
+    const approvalId = approvalRequestsByToolCallId.get(toolCallId);
+    return approvalId !== undefined && approvalResponseIds.has(approvalId);
+  };
+
   for (const doc of docs) {
     if (
       doc.message?.role === "assistant" &&
       Array.isArray(doc.message.content)
     ) {
       const content = doc.message.content.filter(
-        (p) => p.type !== "tool-call" || toolResultIds.has(p.toolCallId),
+        (p) =>
+          p.type !== "tool-call" ||
+          toolResultIds.has(p.toolCallId) ||
+          hasApprovalResponse(p.toolCallId),
       );
       if (content.length) {
         result.push({
@@ -305,7 +338,10 @@ export async function embedMessages(
     userId: string | undefined;
     threadId: string | undefined;
     agentName?: string;
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings">,
+  } & Pick<
+    Config,
+    "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings"
+  >,
   messages: (ModelMessage | Message)[],
 ): Promise<
   | {
@@ -315,7 +351,8 @@ export async function embedMessages(
     }
   | undefined
 > {
-  const textEmbeddingModel = options.embeddingModel ?? options.textEmbeddingModel;
+  const textEmbeddingModel =
+    options.embeddingModel ?? options.textEmbeddingModel;
   if (!textEmbeddingModel) {
     return undefined;
   }
@@ -374,7 +411,10 @@ export async function embedMany(
     abortSignal?: AbortSignal;
     headers?: Record<string, string>;
     agentName?: string;
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings">,
+  } & Pick<
+    Config,
+    "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings"
+  >,
 ): Promise<{ embeddings: number[][] }> {
   const {
     userId,
@@ -442,7 +482,8 @@ export async function generateAndSaveEmbeddings(
   } & Pick<Config, "usageHandler" | "callSettings">,
   messages: MessageDoc[],
 ) {
-  const effectiveEmbeddingModel = args.embeddingModel ?? args.textEmbeddingModel;
+  const effectiveEmbeddingModel =
+    args.embeddingModel ?? args.textEmbeddingModel;
   if (!effectiveEmbeddingModel) {
     throw new Error(
       "an embeddingModel (or textEmbeddingModel) is required to generate and save embeddings",
