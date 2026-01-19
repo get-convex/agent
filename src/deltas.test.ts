@@ -156,6 +156,49 @@ describe("UIMessageChunks", () => {
   });
 });
 
+describe("UIMessageChunks - continuation stream", () => {
+  it("gracefully handles tool-result without tool-call in continuation stream after approval", async () => {
+    // This simulates what happens after tool approval:
+    // Stream A: tool-call, tool-approval-request -> finishes
+    // User approves
+    // Stream B: tool-result (referencing tool-call from Stream A) -> this test
+    //
+    // The AI SDK's readUIMessageStream expects tool-call before tool-result,
+    // but they're in different streams. The onError handler should gracefully
+    // ignore this error since stored messages provide the fallback.
+    const uiMessage = blankUIMessage(
+      {
+        streamId: "continuation-stream",
+        status: "streaming",
+        order: 1,
+        stepOrder: 0,
+        format: "UIMessageChunk",
+        agentName: "agent1",
+      },
+      "thread1",
+    );
+
+    // Send a tool-result without the corresponding tool-call in this stream
+    // This would normally throw "No tool invocation found" error
+    const updatedMessage = await updateFromUIMessageChunks(uiMessage, [
+      { type: "start" },
+      { type: "start-step" },
+      {
+        type: "tool-output-available",
+        toolCallId: "call_from_previous_stream",
+        output: "Tool execution result",
+      },
+      { type: "finish-step" },
+      { type: "finish" },
+    ]);
+
+    // The message should NOT be marked as failed - the error should be suppressed
+    expect(updatedMessage.status).not.toBe("failed");
+    // The stream still processes (even if tool-output isn't reflected without tool-input)
+    expect(updatedMessage).toBeDefined();
+  });
+});
+
 describe("mergeDeltas", () => {
   it("merges a single text-delta into a message", () => {
     const streamId = "s1";
