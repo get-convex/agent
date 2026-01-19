@@ -36,14 +36,20 @@ const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // the 8k token limit for some models.
 const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
 
-export type GetEmbedding = (text: string) => Promise<{
-  embedding: number[];
-  /**
-   * @deprecated Use embeddingModel instead.
-   */
-  textEmbeddingModel?: string | EmbeddingModel;
-  embeddingModel: string | EmbeddingModel;
-}>;
+export type GetEmbedding = (text: string) => Promise<
+  | {
+      embedding: number[];
+      /** @deprecated Use embeddingModel instead. */
+      textEmbeddingModel: string | EmbeddingModel;
+      embeddingModel?: string | EmbeddingModel;
+    }
+  | {
+      embedding: number[];
+      /** @deprecated Use embeddingModel instead. */
+      textEmbeddingModel?: string | EmbeddingModel;
+      embeddingModel: string | EmbeddingModel;
+    }
+>;
 
 /**
  * Fetch the context messages for a thread.
