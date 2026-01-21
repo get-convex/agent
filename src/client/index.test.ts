@@ -193,6 +193,7 @@ describe("filterOutOrphanedToolMessages", () => {
           type: "tool-call",
           toolCallId: "1",
           toolName: "tool1",
+          input: { test: "test" },
           args: { test: "test" },
         },
       ],

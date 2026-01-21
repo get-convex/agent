@@ -36,10 +36,20 @@ const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // the 8k token limit for some models.
 const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
 
-export type GetEmbedding = (text: string) => Promise<{
-  embedding: number[];
-  textEmbeddingModel: string | EmbeddingModel<string>;
-}>;
+export type GetEmbedding = (text: string) => Promise<
+  | {
+      embedding: number[];
+      /** @deprecated Use embeddingModel instead. */
+      textEmbeddingModel: string | EmbeddingModel;
+      embeddingModel?: string | EmbeddingModel;
+    }
+  | {
+      embedding: number[];
+      /** @deprecated Use embeddingModel instead. */
+      textEmbeddingModel?: string | EmbeddingModel;
+      embeddingModel: string | EmbeddingModel;
+    }
+>;
 
 /**
  * Fetch the context messages for a thread.
@@ -178,8 +188,10 @@ export async function fetchRecentAndSearchMessages(
       if (!embedding && args.getEmbedding) {
         const embeddingFields = await args.getEmbedding(text);
         embedding = embeddingFields.embedding;
-        embeddingModel = embeddingFields.textEmbeddingModel
-          ? getModelName(embeddingFields.textEmbeddingModel)
+        const effectiveModel =
+          embeddingFields.embeddingModel ?? embeddingFields.textEmbeddingModel;
+        embeddingModel = effectiveModel
+          ? getModelName(effectiveModel)
           : undefined;
         // TODO: if the text matches the target message, save the embedding
         // for the target message and return the embeddingId on the message.
@@ -225,12 +237,19 @@ export async function fetchRecentAndSearchMessages(
 
 /**
  * Filter out tool messages that don't have both a tool call and response.
+ * For the approval workflow, tool calls with approval responses (but no tool-results yet)
+ * should also be kept.
  * @param docs The messages to filter.
  * @returns The filtered messages.
  */
 export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
   const toolCallIds = new Set<string>();
   const toolResultIds = new Set<string>();
+  // Track approval workflow: toolCallId → approvalId
+  const approvalRequestsByToolCallId = new Map<string, string>();
+  // Track which approvalIds have responses
+  const approvalResponseIds = new Set<string>();
+
   const result: MessageDoc[] = [];
   for (const doc of docs) {
     if (doc.message && Array.isArray(doc.message.content)) {
@@ -239,17 +258,43 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
           toolCallIds.add(content.toolCallId);
         } else if (content.type === "tool-result") {
           toolResultIds.add(content.toolCallId);
+        } else if (content.type === "tool-approval-request") {
+          const approvalRequest = content as {
+            type: "tool-approval-request";
+            toolCallId: string;
+            approvalId: string;
+          };
+          approvalRequestsByToolCallId.set(
+            approvalRequest.toolCallId,
+            approvalRequest.approvalId,
+          );
+        } else if (content.type === "tool-approval-response") {
+          const approvalResponse = content as {
+            type: "tool-approval-response";
+            approvalId: string;
+          };
+          approvalResponseIds.add(approvalResponse.approvalId);
         }
       }
     }
   }
+
+  // Helper: check if tool call has a corresponding approval response
+  const hasApprovalResponse = (toolCallId: string) => {
+    const approvalId = approvalRequestsByToolCallId.get(toolCallId);
+    return approvalId !== undefined && approvalResponseIds.has(approvalId);
+  };
+
   for (const doc of docs) {
     if (
       doc.message?.role === "assistant" &&
       Array.isArray(doc.message.content)
     ) {
       const content = doc.message.content.filter(
-        (p) => p.type !== "tool-call" || toolResultIds.has(p.toolCallId),
+        (p) =>
+          p.type !== "tool-call" ||
+          toolResultIds.has(p.toolCallId) ||
+          hasApprovalResponse(p.toolCallId),
       );
       if (content.length) {
         result.push({
@@ -261,9 +306,14 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
         });
       }
     } else if (doc.message?.role === "tool") {
-      const content = doc.message.content.filter((c) =>
-        toolCallIds.has(c.toolCallId),
-      );
+      const content = doc.message.content.filter((c) => {
+        // tool-result parts have toolCallId
+        if (c.type === "tool-result") {
+          return toolCallIds.has(c.toolCallId);
+        }
+        // tool-approval-response parts don't have toolCallId, so include them
+        return true;
+      });
       if (content.length) {
         result.push({
           ...doc,
@@ -294,7 +344,10 @@ export async function embedMessages(
     userId: string | undefined;
     threadId: string | undefined;
     agentName?: string;
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "callSettings">,
+  } & Pick<
+    Config,
+    "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings"
+  >,
   messages: (ModelMessage | Message)[],
 ): Promise<
   | {
@@ -304,7 +357,9 @@ export async function embedMessages(
     }
   | undefined
 > {
-  if (!options.textEmbeddingModel) {
+  const textEmbeddingModel =
+    options.embeddingModel ?? options.textEmbeddingModel;
+  if (!textEmbeddingModel) {
     return undefined;
   }
   let embeddings:
@@ -340,7 +395,7 @@ export async function embedMessages(
   if (textEmbeddings.embeddings.length > 0) {
     const dimension = textEmbeddings.embeddings[0].length;
     validateVectorDimension(dimension);
-    const model = getModelName(options.textEmbeddingModel);
+    const model = getModelName(textEmbeddingModel);
     embeddings = { vectors: embeddingsOrNull, dimension, model };
   }
   return embeddings;
@@ -355,7 +410,19 @@ export async function embedMessages(
  */
 export async function embedMany(
   ctx: ActionCtx,
-  {
+  args: {
+    userId: string | undefined;
+    threadId: string | undefined;
+    values: string[];
+    abortSignal?: AbortSignal;
+    headers?: Record<string, string>;
+    agentName?: string;
+  } & Pick<
+    Config,
+    "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings"
+  >,
+): Promise<{ embeddings: number[][] }> {
+  const {
     userId,
     threadId,
     values,
@@ -364,24 +431,17 @@ export async function embedMany(
     agentName,
     usageHandler,
     textEmbeddingModel,
-    callSettings,
-  }: {
-    userId: string | undefined;
-    threadId: string | undefined;
-    values: string[];
-    abortSignal?: AbortSignal;
-    headers?: Record<string, string>;
-    agentName?: string;
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "callSettings">,
-): Promise<{ embeddings: number[][] }> {
-  const embeddingModel = textEmbeddingModel;
-  assert(
     embeddingModel,
-    "a textEmbeddingModel is required to be set for vector search",
+    callSettings,
+  } = args;
+  const effectiveEmbeddingModel = embeddingModel ?? textEmbeddingModel;
+  assert(
+    effectiveEmbeddingModel,
+    "an embeddingModel (or textEmbeddingModel) is required to be set for vector search",
   );
   const result = await embedMany_({
     ...callSettings,
-    model: embeddingModel,
+    model: effectiveEmbeddingModel,
     values,
     abortSignal,
     headers,
@@ -391,13 +451,15 @@ export async function embedMany(
       userId,
       threadId,
       agentName,
-      model: getModelName(embeddingModel),
-      provider: getProviderName(embeddingModel),
+      model: getModelName(effectiveEmbeddingModel),
+      provider: getProviderName(effectiveEmbeddingModel),
       providerMetadata: undefined,
       usage: {
         inputTokens: result.usage.tokens,
         outputTokens: 0,
         totalTokens: result.usage.tokens,
+        inputTokenDetails: {} as any,
+        outputTokenDetails: {} as any,
       },
     });
   }
@@ -418,17 +480,28 @@ export async function generateAndSaveEmbeddings(
     threadId: string | undefined;
     userId: string | undefined;
     agentName?: string;
-    textEmbeddingModel: EmbeddingModel<string>;
+    /**
+     * @deprecated Use embeddingModel instead.
+     */
+    textEmbeddingModel?: EmbeddingModel;
+    embeddingModel?: EmbeddingModel;
   } & Pick<Config, "usageHandler" | "callSettings">,
   messages: MessageDoc[],
 ) {
+  const effectiveEmbeddingModel =
+    args.embeddingModel ?? args.textEmbeddingModel;
+  if (!effectiveEmbeddingModel) {
+    throw new Error(
+      "an embeddingModel (or textEmbeddingModel) is required to generate and save embeddings",
+    );
+  }
   const toEmbed = messages.filter((m) => !m.embeddingId && m.message);
   if (toEmbed.length === 0) {
     return;
   }
   const embeddings = await embedMessages(
     ctx,
-    args,
+    { ...args, embeddingModel: effectiveEmbeddingModel },
     toEmbed.map((m) => m.message!),
   );
   if (embeddings && embeddings.vectors.some((v) => v !== null)) {
@@ -473,7 +546,8 @@ export async function fetchContextWithPrompt(
   order: number | undefined;
   stepOrder: number | undefined;
 }> {
-  const { threadId, userId, textEmbeddingModel } = args;
+  const { threadId, userId, textEmbeddingModel, embeddingModel } = args;
+  const effectiveEmbeddingModel = embeddingModel ?? textEmbeddingModel;
 
   const promptArray = getPromptArray(args.prompt);
 
@@ -496,8 +570,8 @@ export async function fetchContextWithPrompt(
       contextOptions: args.contextOptions ?? {},
       getEmbedding: async (text) => {
         assert(
-          textEmbeddingModel,
-          "A textEmbeddingModel is required to be set on the Agent that you're doing vector search with",
+          effectiveEmbeddingModel,
+          "An embeddingModel (or textEmbeddingModel) is required to be set on the Agent that you're doing vector search with",
         );
         return {
           embedding: (
@@ -505,10 +579,10 @@ export async function fetchContextWithPrompt(
               ...args,
               userId,
               values: [text],
-              textEmbeddingModel,
+              embeddingModel: effectiveEmbeddingModel,
             })
           ).embeddings[0],
-          textEmbeddingModel,
+          embeddingModel: effectiveEmbeddingModel,
         };
       },
     },
@@ -531,7 +605,7 @@ export async function fetchContextWithPrompt(
         promptArray.push(promptMessage.message);
       }
     }
-    if (!promptMessage.embeddingId && textEmbeddingModel) {
+    if (!promptMessage.embeddingId && effectiveEmbeddingModel) {
       // Lazily generate embeddings for the prompt message, if it doesn't have
       // embeddings yet. This can happen if the message was saved in a mutation
       // where the LLM is not available.
@@ -541,7 +615,7 @@ export async function fetchContextWithPrompt(
         {
           ...args,
           userId,
-          textEmbeddingModel,
+          embeddingModel: effectiveEmbeddingModel,
         },
         [promptMessage],
       );
