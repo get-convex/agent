@@ -728,4 +728,106 @@ describe("toUIMessages", () => {
     expect(textParts).toHaveLength(1);
     expect(textParts[0].text).toBe("The result is 42.");
   });
+
+  it("shows output-error state when tool result has isError: true (issue #162)", () => {
+    const messages = [
+      // Tool call
+      baseMessageDoc({
+        _id: "msg1",
+        order: 1,
+        stepOrder: 1,
+        tool: true,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolName: "generateImage",
+              toolCallId: "call1",
+              args: { id: "invalid-id" },
+            },
+          ],
+        },
+      }),
+      // Tool result with error
+      baseMessageDoc({
+        _id: "msg2",
+        order: 1,
+        stepOrder: 2,
+        tool: true,
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call1",
+              toolName: "generateImage",
+              output: {
+                type: "text",
+                value:
+                  'ArgumentValidationError: Value does not match validator.\nPath: .id\nValue: "invalid-id"\nValidator: v.id("images")',
+              },
+              isError: true,
+            },
+          ],
+        },
+      }),
+    ];
+
+    const uiMessages = toUIMessages(messages);
+
+    expect(uiMessages).toHaveLength(1);
+    expect(uiMessages[0].role).toBe("assistant");
+
+    const toolParts = uiMessages[0].parts.filter(
+      (p) => p.type === "tool-generateImage",
+    );
+    expect(toolParts).toHaveLength(1);
+
+    const toolPart = toolParts[0] as any;
+    expect(toolPart.toolCallId).toBe("call1");
+    // Should show output-error, not output-available
+    expect(toolPart.state).toBe("output-error");
+    expect(toolPart.output).toContain("ArgumentValidationError");
+  });
+
+  it("shows output-error when tool result has isError: true without tool call present (issue #162)", () => {
+    // This simulates the case where the tool-call message wasn't saved
+    const messages = [
+      baseMessageDoc({
+        _id: "msg1",
+        order: 1,
+        stepOrder: 1,
+        tool: true,
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call1",
+              toolName: "generateImage",
+              output: {
+                type: "text",
+                value: "Error: Something went wrong",
+              },
+              isError: true,
+            },
+          ],
+        },
+      }),
+    ];
+
+    const uiMessages = toUIMessages(messages);
+
+    expect(uiMessages).toHaveLength(1);
+    expect(uiMessages[0].role).toBe("assistant");
+
+    const toolParts = uiMessages[0].parts.filter(
+      (p) => p.type === "tool-generateImage",
+    );
+    expect(toolParts).toHaveLength(1);
+
+    const toolPart = toolParts[0] as any;
+    expect(toolPart.state).toBe("output-error");
+  });
 });
