@@ -22,7 +22,7 @@ import type {
   generateObject,
 } from "ai";
 
-export interface Output<T = any, P = any, E = any> {
+export interface Output<_T = any, _P = any, _E = any> {
   name: string;
   responseFormat: any;
   parseCompleteOutput: any;
