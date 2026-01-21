@@ -86,7 +86,7 @@
     "@ai-sdk/openai": "^3.0.10",
     "@ai-sdk/provider": "^3.0.3",
     "@ai-sdk/provider-utils": "^4.0.6",
-    "@convex-dev/rag": "0.6.1",
+    "@convex-dev/rag": "0.7.0",
     "@convex-dev/rate-limiter": "0.3.0",
     "@convex-dev/workflow": "0.3.2",
     "@edge-runtime/vm": "5.0.0",

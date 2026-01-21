@@ -25,7 +25,6 @@ import {
   type Message,
   type MessageWithMetadata,
   type Usage,
-  type vContent,
   type vFilePart,
   type vImagePart,
   type vReasoningPart,
