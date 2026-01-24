@@ -13,7 +13,7 @@ import {
 import { getAuthUserId } from "../utils";
 import { defaultConfig } from "convex/agents/config";
 import { z } from "zod/v4";
-import { GenerateTextResult, TypedToolCall } from "ai";
+import { TypedToolCall } from "ai";
 
 /**
  * Deep Agent Pattern: One-Turn-Per-Action Workflow with Completion Injection.
@@ -117,13 +117,7 @@ const deepAgent = new Agent(components.agent, {
 3. Delegate complex or long sub-tasks using delegateToSubagent (can use multiple in parallel).
 4. Results from sub-agents will be provided to you via the subagentCompletion tool.
 5. When done, write your final report to the scratchpad and stop.`,
-    tools: {
-        internetSearch,
-        updateScratchpad,
-        readScratchpad,
-        delegateToSubagent,
-        subagentCompletion,
-    },
+    tools: toolset,
 });
 
 export const runAgentStep = internalAction({
