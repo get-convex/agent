@@ -141,6 +141,9 @@ const addMessagesArgs = {
   // if set to true, these messages will not show up in text or vector search
   // results for the userId
   hideFromUserIdSearch: v.optional(v.boolean()),
+  // If provided, forces the messages to use this order instead of computing it.
+  // Used by forceNewOrder to ensure continuation messages get a fresh order.
+  overrideOrder: v.optional(v.number()),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -165,6 +168,7 @@ async function addMessagesHandler(
     promptMessageId,
     pendingMessageId,
     hideFromUserIdSearch,
+    overrideOrder,
     ...rest
   } = args;
   const promptMessage = promptMessageId && (await ctx.db.get(promptMessageId));
@@ -196,7 +200,11 @@ async function addMessagesHandler(
   let order, stepOrder;
   let fail = false;
   let error: string | undefined;
-  if (promptMessageId) {
+  // When overrideOrder is provided, use it directly instead of computing from promptMessage
+  if (overrideOrder !== undefined) {
+    order = overrideOrder;
+    stepOrder = -1; // Will be incremented to 0 for the first message
+  } else if (promptMessageId) {
     assert(promptMessage, `Parent message ${promptMessageId} not found`);
     if (promptMessage.status === "failed") {
       fail = true;

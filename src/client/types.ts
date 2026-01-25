@@ -86,6 +86,13 @@ export type AgentPrompt = {
    * specified in the Agent config.
    */
   model?: LanguageModel;
+  /**
+   * If true, the new message will get a fresh order (one higher than the max
+   * existing order) instead of using the promptMessageId's order. Useful for
+   * continuing generation after tool approval where you want the continuation
+   * to be a separate message from the original tool call.
+   */
+  forceNewOrder?: boolean;
 };
 
 export type Config = {

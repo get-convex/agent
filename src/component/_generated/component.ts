@@ -697,6 +697,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | { message: string; type: "other" }
             >;
           }>;
+          overrideOrder?: number;
           pendingMessageId?: string;
           promptMessageId?: string;
           threadId: string;
@@ -1420,22 +1421,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           toolName: string;
                           type: "tool-call";
                         }
-                        | {
-                            args: any;
-                            input?: any;
-                            providerExecuted?: boolean;
-                            providerMetadata?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            providerOptions?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            toolCallId: string;
-                            toolName: string;
-                            type: "tool-call";
-                          }
+                      | {
+                          args: any;
+                          input?: any;
+                          providerExecuted?: boolean;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          toolCallId: string;
+                          toolName: string;
+                          type: "tool-call";
+                        }
                       | {
                           args?: any;
                           experimental_content?: Array<
@@ -2533,22 +2531,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           toolName: string;
                           type: "tool-call";
                         }
-                        | {
-                            args: any;
-                            input?: any;
-                            providerExecuted?: boolean;
-                            providerMetadata?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            providerOptions?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            toolCallId: string;
-                            toolName: string;
-                            type: "tool-call";
-                          }
+                      | {
+                          args: any;
+                          input?: any;
+                          providerExecuted?: boolean;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          toolCallId: string;
+                          toolName: string;
+                          type: "tool-call";
+                        }
                       | {
                           args?: any;
                           experimental_content?: Array<
@@ -3054,22 +3049,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           toolName: string;
                           type: "tool-call";
                         }
-                        | {
-                            args: any;
-                            input?: any;
-                            providerExecuted?: boolean;
-                            providerMetadata?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            providerOptions?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            toolCallId: string;
-                            toolName: string;
-                            type: "tool-call";
-                          }
+                      | {
+                          args: any;
+                          input?: any;
+                          providerExecuted?: boolean;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          toolCallId: string;
+                          toolName: string;
+                          type: "tool-call";
+                        }
                       | {
                           args?: any;
                           experimental_content?: Array<
@@ -4063,22 +4055,19 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           toolName: string;
                           type: "tool-call";
                         }
-                        | {
-                            args: any;
-                            input?: any;
-                            providerExecuted?: boolean;
-                            providerMetadata?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            providerOptions?: Record<
-                              string,
-                              Record<string, any>
-                            >;
-                            toolCallId: string;
-                            toolName: string;
-                            type: "tool-call";
-                          }
+                      | {
+                          args: any;
+                          input?: any;
+                          providerExecuted?: boolean;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          toolCallId: string;
+                          toolName: string;
+                          type: "tool-call";
+                        }
                       | {
                           args?: any;
                           experimental_content?: Array<
