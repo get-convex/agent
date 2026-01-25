@@ -53,24 +53,7 @@ export const generateResponse = internalAction({
     const result = await approvalAgent.streamText(
       ctx,
       { threadId },
-      {
-        promptMessageId,
-        onStepFinish: (step) => {
-          console.log("Step finished:", {
-            finishReason: step.finishReason,
-            toolCallsCount: step.toolCalls.length,
-            toolResultsCount: step.toolResults.length,
-            contentTypes: step.content.map((c) => c.type),
-            responseMessagesCount: step.response.messages.length,
-            responseMessages: step.response.messages.map((m) => ({
-              role: m.role,
-              contentTypes: Array.isArray(m.content)
-                ? m.content.map((c: { type: string }) => c.type)
-                : typeof m.content,
-            })),
-          });
-        },
-      },
+      { promptMessageId },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result.consumeStream();
@@ -346,26 +329,6 @@ export const listThreadMessages = query({
     });
 
     const paginated = await listUIMessages(ctx, components.agent, args);
-
-    // Debug logging
-    if (streams?.kind === "list" && streams.messages.length > 0) {
-      console.log("[listThreadMessages] Active streams:", streams.messages.map(m => ({
-        streamId: m.streamId,
-        order: m.order,
-        stepOrder: m.stepOrder,
-        status: m.status,
-      })));
-    }
-    if (paginated.page.length > 0) {
-      console.log("[listThreadMessages] Paginated UIMessages:", paginated.page.map(m => ({
-        order: m.order,
-        stepOrder: m.stepOrder,
-        status: m.status,
-        role: m.role,
-        textLen: m.text?.length,
-        partsCount: m.parts?.length,
-      })));
-    }
 
     return {
       ...paginated,
