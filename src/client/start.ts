@@ -81,6 +81,13 @@ export async function startGeneration<
      */
     abortSignal?: AbortSignal;
     stopWhen?: StopCondition<Tools> | Array<StopCondition<Tools>>;
+    /**
+     * If true, the new message will get a fresh order (one higher than the max
+     * existing order) instead of using the promptMessageId's order. Useful for
+     * continuing generation after tool approval where you want the continuation
+     * to be a separate message from the original tool call.
+     */
+    forceNewOrder?: boolean;
     _internal?: { generateId?: IdGenerator };
   },
   {
@@ -133,8 +140,10 @@ export async function startGeneration<
   });
 
   const saveMessages = opts.storageOptions?.saveMessages ?? "promptAndOutput";
+  // When forceNewOrder is true, skip creating a pendingMessage because it would
+  // be created with the wrong order. The message will be created fresh when saved.
   const { promptMessageId, pendingMessage, savedMessages } =
-    threadId && saveMessages !== "none"
+    threadId && saveMessages !== "none" && !args.forceNewOrder
       ? await saveInputMessages(ctx, component, {
           ...opts,
           userId,
@@ -150,8 +159,16 @@ export async function startGeneration<
           savedMessages: [] as MessageDoc[],
         };
 
-  const order = pendingMessage?.order ?? context.order;
-  const stepOrder = pendingMessage?.stepOrder ?? context.stepOrder;
+  // Determine order for the new message
+  // If forceNewOrder is set, increment from the context order to create a separate message
+  let order = pendingMessage?.order ?? context.order;
+  let stepOrder = pendingMessage?.stepOrder ?? context.stepOrder;
+  const useForceNewOrder = args.forceNewOrder && order !== undefined;
+  if (useForceNewOrder) {
+    // TypeScript can't infer order is defined here from the compound condition above
+    order = order! + 1;
+    stepOrder = 0;
+  }
   let pendingMessageId = pendingMessage?._id;
 
   const model = args.model ?? opts.languageModel;
@@ -260,11 +277,15 @@ export async function startGeneration<
           userId,
           threadId,
           agentName: opts.agentName,
-          promptMessageId,
+          // When forceNewOrder is true, don't pass promptMessageId and use overrideOrder
+          // to ensure the continuation message gets a fresh order (N+1)
+          promptMessageId: useForceNewOrder ? undefined : promptMessageId,
           pendingMessageId,
           messages: serialized.messages,
           embeddings,
           failPendingSteps: false,
+          // Pass the computed order when forceNewOrder is true
+          overrideOrder: useForceNewOrder ? order : undefined,
         });
         const lastMessage = saved.messages.at(-1)!;
         if (createPendingMessage) {
