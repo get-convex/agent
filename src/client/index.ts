@@ -18,6 +18,15 @@ import type {
   ToolSet,
 } from "ai";
 import { generateObject, generateText, stepCountIs, streamObject } from "ai";
+
+const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const warnedDeprecations = new Set<string>();
+function warnDeprecation(key: string, message: string) {
+  if (!warnedDeprecations.has(key)) {
+    warnedDeprecations.add(key);
+    console.warn(`[@convex-dev/agent] ${message}\n  See: ${MIGRATION_URL}`);
+  }
+}
 import { assert, omit, pick } from "convex-helpers";
 import {
   internalActionGeneric,
@@ -243,7 +252,14 @@ export class Agent<
         | StopCondition<NoInfer<AgentTools>>
         | Array<StopCondition<NoInfer<AgentTools>>>;
     },
-  ) {}
+  ) {
+    if (this.options.textEmbeddingModel && !this.options.embeddingModel) {
+      warnDeprecation(
+        "textEmbeddingModel",
+        "textEmbeddingModel is deprecated. Use embeddingModel instead.",
+      );
+    }
+  }
 
   /**
    * Get the embedding model, prioritizing embeddingModel over textEmbeddingModel.
