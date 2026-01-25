@@ -1,7 +1,7 @@
 import type {
-  LanguageModelV2,
-  LanguageModelV2Content,
-  LanguageModelV2StreamPart,
+  LanguageModelV3,
+  LanguageModelV3Content,
+  LanguageModelV3StreamPart,
 } from "@ai-sdk/provider";
 import { simulateReadableStream, type ProviderMetadata } from "ai";
 import { assert, pick } from "convex-helpers";
@@ -12,14 +12,20 @@ B B B B B B B B B B B B B B B
 C C C C C C C C C C C C C C C
 D D D D D D D D D D D D D D D
 `;
-const DEFAULT_USAGE = { outputTokens: 10, inputTokens: 3, totalTokens: 13 };
+const DEFAULT_USAGE = {
+  outputTokens: 10,
+  inputTokens: 3,
+  totalTokens: 13,
+  inputTokenDetails: undefined,
+  outputTokenDetails: undefined,
+};
 
 export type MockModelArgs = {
-  provider?: LanguageModelV2["provider"];
-  modelId?: LanguageModelV2["modelId"];
+  provider?: LanguageModelV3["provider"];
+  modelId?: LanguageModelV3["modelId"];
   supportedUrls?:
-    | LanguageModelV2["supportedUrls"]
-    | (() => LanguageModelV2["supportedUrls"]);
+    | LanguageModelV3["supportedUrls"]
+    | (() => LanguageModelV3["supportedUrls"]);
   chunkDelayInMs?: number;
   initialDelayInMs?: number;
   /** A list of the responses for multiple steps.
@@ -27,15 +33,15 @@ export type MockModelArgs = {
    * then the next list would be after the tool response or another tool call.
    * Tool responses come from actual tool calls!
    */
-  contentSteps?: LanguageModelV2Content[][];
+  contentSteps?: LanguageModelV3Content[][];
   /** A single list of content responded from each step.
    * Provide contentSteps instead if you want to do multi-step responses with
    * tool calls.
    */
-  content?: LanguageModelV2Content[];
+  content?: LanguageModelV3Content[];
   // provide either content, contentResponses or doGenerate & doStream
-  doGenerate?: LanguageModelV2["doGenerate"];
-  doStream?: LanguageModelV2["doStream"];
+  doGenerate?: LanguageModelV3["doGenerate"];
+  doStream?: LanguageModelV3["doStream"];
   providerMetadata?: ProviderMetadata;
   fail?:
     | boolean
@@ -49,23 +55,23 @@ function atMostOneOf(...args: unknown[]) {
   return args.filter(Boolean).length <= 1;
 }
 
-export function mockModel(args?: MockModelArgs): LanguageModelV2 {
+export function mockModel(args?: MockModelArgs): LanguageModelV3 {
   return new MockLanguageModel(args ?? {});
 }
 
-export class MockLanguageModel implements LanguageModelV2 {
-  readonly specificationVersion = "v2";
+export class MockLanguageModel implements LanguageModelV3 {
+  readonly specificationVersion = "v3";
 
-  private _supportedUrls: () => LanguageModelV2["supportedUrls"];
+  private _supportedUrls: () => LanguageModelV3["supportedUrls"];
 
-  readonly provider: LanguageModelV2["provider"];
-  readonly modelId: LanguageModelV2["modelId"];
+  readonly provider: LanguageModelV3["provider"];
+  readonly modelId: LanguageModelV3["modelId"];
 
-  doGenerate: LanguageModelV2["doGenerate"];
-  doStream: LanguageModelV2["doStream"];
+  doGenerate: LanguageModelV3["doGenerate"];
+  doStream: LanguageModelV3["doStream"];
 
-  doGenerateCalls: Parameters<LanguageModelV2["doGenerate"]>[0][] = [];
-  doStreamCalls: Parameters<LanguageModelV2["doStream"]>[0][] = [];
+  doGenerateCalls: Parameters<LanguageModelV3["doGenerate"]>[0][] = [];
+  doStreamCalls: Parameters<LanguageModelV3["doStream"]>[0][] = [];
 
   constructor(args: MockModelArgs) {
     assert(
@@ -95,19 +101,19 @@ export class MockLanguageModel implements LanguageModelV2 {
       "Mock error message";
     const metadata = pick(args, ["providerMetadata"]);
 
-    const chunkResponses: LanguageModelV2StreamPart[][] = contentSteps.map(
+    const chunkResponses: LanguageModelV3StreamPart[][] = contentSteps.map(
       (content) => {
-        const chunks: LanguageModelV2StreamPart[] = [
+        const chunks: LanguageModelV3StreamPart[] = [
           { type: "stream-start", warnings: [] },
         ];
         chunks.push(
-          ...content.flatMap((c, ci): LanguageModelV2StreamPart[] => {
+          ...content.flatMap((c, ci): LanguageModelV3StreamPart[] => {
             if (c.type !== "text" && c.type !== "reasoning") {
               return [c];
             }
             const metadata = pick(c, ["providerMetadata"]);
             const deltas = c.text.split(" ");
-            const parts: LanguageModelV2StreamPart[] = [];
+            const parts: LanguageModelV3StreamPart[] = [];
             if (c.type === "reasoning") {
               parts.push({
                 type: "reasoning-start",
@@ -122,7 +128,7 @@ export class MockLanguageModel implements LanguageModelV2 {
                       delta: (di ? " " : "") + delta,
                       id: `reasoning-${ci}`,
                       ...metadata,
-                    }) satisfies LanguageModelV2StreamPart,
+                    }) satisfies LanguageModelV3StreamPart,
                 ),
               );
               parts.push({
@@ -144,7 +150,7 @@ export class MockLanguageModel implements LanguageModelV2 {
                       delta: (di ? " " : "") + delta,
                       id: `txt-${ci}`,
                       ...metadata,
-                    }) satisfies LanguageModelV2StreamPart,
+                    }) satisfies LanguageModelV3StreamPart,
                 ),
               );
               parts.push({
@@ -166,7 +172,7 @@ export class MockLanguageModel implements LanguageModelV2 {
           type: "finish",
           finishReason: fail ? "error" : "stop",
           usage: DEFAULT_USAGE,
-          ...metadata,
+          ...(metadata as any),
         });
         return chunks;
       },
@@ -187,7 +193,7 @@ export class MockLanguageModel implements LanguageModelV2 {
           content: contentSteps[callIndex % contentSteps.length],
           finishReason: "stop" as const,
           usage: DEFAULT_USAGE,
-          ...metadata,
+          ...(metadata as any),
           warnings: [],
         };
         callIndex++;

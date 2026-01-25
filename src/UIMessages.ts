@@ -8,6 +8,7 @@ import {
   type SourceUrlUIPart,
   type StepStartUIPart,
   type TextUIPart,
+  type ToolResultPart,
   type ToolUIPart,
   type UIDataTypes,
   type UITools,
@@ -54,7 +55,7 @@ export type UIMessage<
  * @param meta - The metadata to add to the MessageDocs.
  * @returns
  */
-export function fromUIMessages<METADATA = unknown>(
+export async function fromUIMessages<METADATA = unknown>(
   messages: UIMessage<METADATA>[],
   meta: {
     threadId: string;
@@ -64,59 +65,71 @@ export function fromUIMessages<METADATA = unknown>(
     providerOptions?: ProviderOptions;
     metadata?: METADATA;
   },
-): (MessageDoc & { streaming: boolean; metadata?: METADATA })[] {
-  return messages.flatMap((uiMessage) => {
-    const stepOrder = uiMessage.stepOrder;
-    const commonFields = {
-      ...pick(meta, [
-        "threadId",
-        "userId",
-        "model",
-        "provider",
-        "providerOptions",
-        "metadata",
-      ]),
-      ...omit(uiMessage, ["parts", "role", "key", "text", "userId"]),
-      userId: uiMessage.userId ?? meta.userId,
-      status: uiMessage.status === "streaming" ? "pending" : "success",
-      streaming: uiMessage.status === "streaming",
-      // to override
-      _id: uiMessage.id,
-      tool: false,
-    } satisfies MessageDoc & { streaming: boolean; metadata?: METADATA };
-    const modelMessages = convertToModelMessages([uiMessage]);
-    return modelMessages
-      .map((modelMessage, i) => {
-        if (modelMessage.content.length === 0) {
-          return undefined;
-        }
-        const message = fromModelMessage(modelMessage);
-        const tool = isTool(message);
-        const doc: MessageDoc & { streaming: boolean; metadata?: METADATA } = {
-          ...commonFields,
-          _id: uiMessage.id + `-${i}`,
-          stepOrder: stepOrder + i,
-          message,
-          tool,
-          text: extractText(message),
-          reasoning: extractReasoning(message),
-          finishReason: tool ? "tool-calls" : "stop",
-          sources: fromSourceParts(uiMessage.parts),
-        };
-        if (Array.isArray(modelMessage.content)) {
-          const providerOptions = modelMessage.content.find(
-            (c) => c.providerOptions,
-          )?.providerOptions;
-          if (providerOptions) {
-            // convertToModelMessages changes providerMetadata to providerOptions
-            doc.providerMetadata = providerOptions;
-            doc.providerOptions ??= providerOptions;
+): Promise<(MessageDoc & { streaming: boolean; metadata?: METADATA })[]> {
+  const nested = await Promise.all(
+    messages.map(async (uiMessage) => {
+      const stepOrder = uiMessage.stepOrder;
+      const commonFields = {
+        ...pick(meta, [
+          "threadId",
+          "userId",
+          "model",
+          "provider",
+          "providerOptions",
+          "metadata",
+        ]),
+        ...omit(uiMessage, ["parts", "role", "key", "text", "userId"]),
+        userId: uiMessage.userId ?? meta.userId,
+        status: uiMessage.status === "streaming" ? "pending" : "success",
+        streaming: uiMessage.status === "streaming",
+        // to override
+        _id: uiMessage.id,
+        tool: false,
+      } satisfies MessageDoc & { streaming: boolean; metadata?: METADATA };
+      const modelMessages = await convertToModelMessages([uiMessage]);
+      return modelMessages
+        .map((modelMessage, i) => {
+          if (modelMessage.content.length === 0) {
+            return undefined;
           }
-        }
-        return doc;
-      })
-      .filter((d) => d !== undefined);
-  });
+          const message = fromModelMessage(modelMessage);
+          const tool = isTool(message);
+          const doc: MessageDoc & { streaming: boolean; metadata?: METADATA } =
+            {
+              ...commonFields,
+              _id: uiMessage.id + `-${i}`,
+              stepOrder: stepOrder + i,
+              message,
+              tool,
+              text: extractText(message),
+              reasoning: extractReasoning(message),
+              finishReason: tool ? "tool-calls" : "stop",
+              sources: fromSourceParts(uiMessage.parts),
+            };
+          if (Array.isArray(modelMessage.content)) {
+            // Find a content part with providerOptions (type assertion needed for SDK compatibility)
+            const partWithProviderOptions = modelMessage.content.find(
+              (c): c is typeof c & { providerOptions: unknown } =>
+                "providerOptions" in c && c.providerOptions !== undefined,
+            );
+            if (partWithProviderOptions?.providerOptions) {
+              // convertToModelMessages changes providerMetadata to providerOptions
+              const providerOptions =
+                partWithProviderOptions.providerOptions as
+                  | Record<string, Record<string, unknown>>
+                  | undefined;
+              if (providerOptions) {
+                doc.providerMetadata = providerOptions;
+                doc.providerOptions ??= providerOptions;
+              }
+            }
+          }
+          return doc;
+        })
+        .filter((d) => d !== undefined);
+    }),
+  );
+  return nested.flat();
 }
 
 function fromSourceParts(parts: UIMessage["parts"]): Infer<typeof vSource>[] {
@@ -464,10 +477,50 @@ function createAssistantUIMessage<
           break;
         }
         case "tool-result": {
+          const typedPart = contentPart as unknown as ToolResultPart & {
+            output: { type: string; value?: unknown; reason?: string };
+          };
+
+          // Check if this is an execution-denied result
+          if (typedPart.output?.type === "execution-denied") {
+            const call = allParts.find(
+              (part) =>
+                part.type === `tool-${contentPart.toolName}` &&
+                "toolCallId" in part &&
+                part.toolCallId === contentPart.toolCallId,
+            ) as ToolUIPart | undefined;
+
+            if (call) {
+              call.state = "output-denied";
+              if (!("approval" in call) || !call.approval) {
+                (call as ToolUIPart & { approval?: object }).approval = {
+                  id: "",
+                  approved: false,
+                  reason: typedPart.output.reason,
+                };
+              } else {
+                const approval = (
+                  call as ToolUIPart & {
+                    approval: { approved?: boolean; reason?: string };
+                  }
+                ).approval;
+                approval.approved = false;
+                approval.reason = typedPart.output.reason;
+              }
+            }
+            break;
+          }
+
           const output =
-            typeof contentPart.output?.type === "string"
-              ? contentPart.output.value
-              : contentPart.output;
+            typeof typedPart.output?.type === "string"
+              ? typedPart.output.value
+              : typedPart.output;
+          // Check for error at both the content part level (isError) and message level
+          // isError may exist on stored tool results but isn't in ToolResultPart type
+          const hasError =
+            (contentPart as { isError?: boolean }).isError || message.error;
+          const errorText =
+            message.error || (hasError ? String(output) : undefined);
           const call = allParts.find(
             (part) =>
               part.type === `tool-${contentPart.toolName}` &&
@@ -475,9 +528,9 @@ function createAssistantUIMessage<
               part.toolCallId === contentPart.toolCallId,
           ) as ToolUIPart | undefined;
           if (call) {
-            if (message.error) {
+            if (hasError) {
               call.state = "output-error";
-              call.errorText = message.error;
+              call.errorText = errorText ?? "Unknown error";
               call.output = output;
             } else {
               call.state = "output-available";
@@ -488,13 +541,13 @@ function createAssistantUIMessage<
               "Tool result without preceding tool call.. adding anyways",
               contentPart,
             );
-            if (message.error) {
+            if (hasError) {
               allParts.push({
                 type: `tool-${contentPart.toolName}`,
                 toolCallId: contentPart.toolCallId,
                 state: "output-error",
                 input: undefined,
-                errorText: message.error,
+                errorText: errorText ?? "Unknown error",
                 callProviderMetadata: message.providerMetadata,
               } satisfies ToolUIPart<TOOLS>);
             } else {
@@ -510,8 +563,70 @@ function createAssistantUIMessage<
           }
           break;
         }
+        case "tool-approval-request": {
+          // Find the matching tool call
+          const typedPart = contentPart as {
+            toolCallId: string;
+            approvalId: string;
+          };
+          const toolCallPart = allParts.find(
+            (part) =>
+              "toolCallId" in part && part.toolCallId === typedPart.toolCallId,
+          ) as ToolUIPart | undefined;
+
+          if (toolCallPart) {
+            toolCallPart.state = "approval-requested";
+            (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+              id: typedPart.approvalId,
+            };
+          } else {
+            console.warn(
+              "Tool approval request without preceding tool call",
+              contentPart,
+            );
+          }
+          break;
+        }
+        case "tool-approval-response": {
+          // Find the tool call that has this approval by matching approval.id
+          const typedPart = contentPart as {
+            approvalId: string;
+            approved: boolean;
+            reason?: string;
+          };
+          const toolCallPart = allParts.find(
+            (part) =>
+              "approval" in part &&
+              (part as ToolUIPart & { approval?: { id: string } }).approval
+                ?.id === typedPart.approvalId,
+          ) as ToolUIPart | undefined;
+
+          if (toolCallPart) {
+            if (typedPart.approved) {
+              toolCallPart.state = "approval-responded";
+              (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+                id: typedPart.approvalId,
+                approved: true,
+                reason: typedPart.reason,
+              };
+            } else {
+              toolCallPart.state = "output-denied";
+              (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+                id: typedPart.approvalId,
+                approved: false,
+                reason: typedPart.reason,
+              };
+            }
+          } else {
+            console.warn(
+              "Tool approval response without matching approval request",
+              contentPart,
+            );
+          }
+          break;
+        }
         default: {
-          const maybeSource = contentPart as SourcePart;
+          const maybeSource = contentPart as unknown as SourcePart;
           if (maybeSource.type === "source") {
             allParts.push(toSourcePart(maybeSource));
           } else {

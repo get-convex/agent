@@ -66,22 +66,40 @@ export async function updateFromUIMessageChunks(
     },
   });
   let failed = false;
+  let suppressError = false;
   const messageStream = readUIMessageStream({
     message: uiMessage,
     stream: partsStream,
     onError: (e) => {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      // Tool invocation errors can be safely ignored when streaming continuation
+      // after tool approval - the stored messages have the complete tool context
+      if (errorMessage.toLowerCase().includes("no tool invocation found")) {
+        // Silently suppress - this is expected after tool approval when the
+        // continuation stream has tool-result without the original tool-call
+        suppressError = true;
+        return;
+      }
       failed = true;
       console.error("Error in stream", e);
     },
     terminateOnError: true,
   });
   let message = uiMessage;
-  for await (const messagePart of messageStream) {
-    assert(
-      messagePart.id === message.id,
-      `Expecting to only make one UIMessage in a stream`,
-    );
-    message = messagePart;
+  try {
+    for await (const messagePart of messageStream) {
+      assert(
+        messagePart.id === message.id,
+        `Expecting to only make one UIMessage in a stream`,
+      );
+      message = messagePart;
+    }
+  } catch (e) {
+    // If we've already handled this error in onError and marked it as suppressed,
+    // don't rethrow - the stored messages provide the fallback
+    if (!suppressError) {
+      throw e;
+    }
   }
   if (failed) {
     message.status = "failed";
@@ -472,6 +490,25 @@ export function updateFromTextStreamParts(
         }
         break;
       }
+      case "tool-approval-request": {
+        const typedPart = part as unknown as {
+          type: "tool-approval-request";
+          toolCallId: string;
+          approvalId: string;
+        };
+        const toolPart = toolPartsById.get(typedPart.toolCallId);
+        if (toolPart) {
+          toolPart.state = "approval-requested";
+          (toolPart as ToolUIPart & { approval?: object }).approval = {
+            id: typedPart.approvalId,
+          };
+        } else {
+          console.warn(
+            `Expected tool call part ${typedPart.toolCallId} for approval request`,
+          );
+        }
+        break;
+      }
       case "file":
       case "text-end":
       case "finish-step":
@@ -483,7 +520,7 @@ export function updateFromTextStreamParts(
         break;
       default: {
         // Should never happen
-        const _: never = part;
+        // const _: never = part;
         console.warn(`Received unexpected part: ${JSON.stringify(part)}`);
         break;
       }

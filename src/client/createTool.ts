@@ -1,9 +1,15 @@
-import type { FlexibleSchema } from "@ai-sdk/provider-utils";
-import type { Tool, ToolCallOptions, ToolSet } from "ai";
+import type { ToolResultOutput } from "@ai-sdk/provider-utils";
+import type {
+  FlexibleSchema,
+  ModelMessage,
+  Tool,
+  ToolExecutionOptions,
+  ToolSet,
+} from "ai";
 import { tool } from "ai";
-import type { Agent } from "./index.js";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import type { ProviderOptions } from "../validators.js";
+import type { Agent } from "./index.js";
 
 export type ToolCtx<DataModel extends GenericDataModel = GenericDataModel> =
   GenericActionCtx<DataModel> & {
@@ -14,78 +20,240 @@ export type ToolCtx<DataModel extends GenericDataModel = GenericDataModel> =
   };
 
 /**
+ * Function that is called to determine if the tool needs approval before it can be executed.
+ */
+export type ToolNeedsApprovalFunctionCtx<
+  INPUT,
+  Ctx extends ToolCtx = ToolCtx,
+> = (
+  ctx: Ctx,
+  input: INPUT,
+  options: {
+    /**
+     * The ID of the tool call. You can use it e.g. when sending tool-call related information with stream data.
+     */
+    toolCallId: string;
+    /**
+     * Messages that were sent to the language model to initiate the response that contained the tool call.
+     * The messages **do not** include the system prompt nor the assistant response that contained the tool call.
+     */
+    messages: ModelMessage[];
+    /**
+     * Additional context.
+     *
+     * Experimental (can break in patch releases).
+     */
+    experimental_context?: unknown;
+  },
+) => boolean | PromiseLike<boolean>;
+
+export type ToolExecuteFunctionCtx<
+  INPUT,
+  OUTPUT,
+  Ctx extends ToolCtx = ToolCtx,
+> = (
+  ctx: Ctx,
+  input: INPUT,
+  options: ToolExecutionOptions,
+) => AsyncIterable<OUTPUT> | PromiseLike<OUTPUT>;
+
+type NeverOptional<N, T> = 0 extends 1 & N
+  ? Partial<T>
+  : [N] extends [never]
+    ? Partial<Record<keyof T, undefined>>
+    : T;
+
+export type ToolOutputPropertiesCtx<
+  INPUT,
+  OUTPUT,
+  Ctx extends ToolCtx = ToolCtx,
+> = NeverOptional<
+  OUTPUT,
+  | {
+      /**
+       * An async function that is called with the arguments from the tool call and produces a result.
+       * If `execute` (or `handler`) is not provided, the tool will not be executed automatically.
+       *
+       * @param input - The input of the tool call.
+       * @param options.abortSignal - A signal that can be used to abort the tool call.
+       */
+      execute: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
+      outputSchema?: FlexibleSchema<OUTPUT>;
+      handler?: never;
+    }
+  | {
+      /** @deprecated Use execute instead. */
+      handler: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
+      outputSchema?: FlexibleSchema<OUTPUT>;
+      execute?: never;
+    }
+  | {
+      outputSchema: FlexibleSchema<OUTPUT>;
+      execute?: never;
+      handler?: never;
+    }
+>;
+
+export type ToolInputProperties<INPUT> =
+  | {
+      /**
+       * The schema of the input that the tool expects.
+       * The language model will use this to generate the input.
+       * It is also used to validate the output of the language model.
+       *
+       * You can use descriptions on the schema properties to make the input understandable for the language model.
+       */
+      inputSchema: FlexibleSchema<INPUT>;
+      args?: never;
+    }
+  | {
+      /**
+       * The schema of the input that the tool expects. The language model will use this to generate the input.
+       * It is also used to validate the output of the language model.
+       * Use descriptions to make the input understandable for the language model.
+       *
+       * @deprecated Use inputSchema instead.
+       */
+      args: FlexibleSchema<INPUT>;
+      inputSchema?: never;
+    };
+
+/**
  * This is a wrapper around the ai.tool function that adds extra context to the
  * tool call, including the action context, userId, threadId, and messageId.
  * @param tool The tool. See https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling
- * but swap parameters for args and handler for execute.
+ * Currently contains deprecated parameters `args` and `handler` to maintain backwards compatibility
+ * but these will be removed in the future. Use `inputSchema` and `execute` instead, respectively.
+ * 
  * @returns A tool to be used with the AI SDK.
  */
-export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
-  /**
-  An optional description of what the tool does.
-  Will be used by the language model to decide whether to use the tool.
-  Not used for provider-defined tools.
+export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
+  def: {
+    /**
+     * An optional description of what the tool does.
+     * Will be used by the language model to decide whether to use the tool.
+     * Not used for provider-defined tools.
      */
-  description?: string;
-  /**
-  The schema of the input that the tool expects. The language model will use this to generate the input.
-  It is also used to validate the output of the language model.
-  Use descriptions to make the input understandable for the language model.
+    description?: string;
+    /**
+     * An optional title of the tool.
      */
-  args: FlexibleSchema<INPUT>;
-  /**
-  An async function that is called with the arguments from the tool call and produces a result.
-  If not provided, the tool will not be executed automatically.
+    title?: string;
+    /**
+     * Additional provider-specific metadata. They are passed through
+     * to the provider from the AI SDK and enable provider-specific
+     * functionality that can be fully encapsulated in the provider.
+     */
+    providerOptions?: ProviderOptions;
+  } & ToolInputProperties<INPUT> & {
+      /**
+       * An optional list of input examples that show the language
+       * model what the input should look like.
+       */
+      inputExamples?: Array<{
+        input: NoInfer<INPUT>;
+      }>;
+      /**
+       * Whether the tool needs approval before it can be executed.
+       */
+      needsApproval?:
+        | boolean
+        | ToolNeedsApprovalFunctionCtx<
+            [INPUT] extends [never] ? unknown : INPUT,
+            Ctx
+          >;
+      /**
+       * Strict mode setting for the tool.
+       *
+       * Providers that support strict mode will use this setting to determine
+       * how the input should be generated. Strict mode will always produce
+       * valid inputs, but it might limit what input schemas are supported.
+       */
+      strict?: boolean;
+      /**
+       * Provide the context to use, e.g. when defining the tool at runtime.
+       */
+      ctx?: Ctx;
+      /**
+       * Optional function that is called when the argument streaming starts.
+       * Only called when the tool is used in a streaming context.
+       */
+      onInputStart?: (
+        ctx: Ctx,
+        options: ToolExecutionOptions,
+      ) => void | PromiseLike<void>;
+      /**
+       * Optional function that is called when an argument streaming delta is available.
+       * Only called when the tool is used in a streaming context.
+       */
+      onInputDelta?: (
+        ctx: Ctx,
+        options: { inputTextDelta: string } & ToolExecutionOptions,
+      ) => void | PromiseLike<void>;
+      /**
+       * Optional function that is called when a tool call can be started,
+       * even if the execute function is not provided.
+       */
+      onInputAvailable?: (
+        ctx: Ctx,
+        options: {
+          input: [INPUT] extends [never] ? unknown : INPUT;
+        } & ToolExecutionOptions,
+      ) => void | PromiseLike<void>;
+    } & ToolOutputPropertiesCtx<INPUT, OUTPUT, Ctx> & {
+      /**
+       * Optional conversion function that maps the tool result to an output that can be used by the language model.
+       *
+       * If not provided, the tool result will be sent as a JSON object.
+       */
+      toModelOutput?: (
+        ctx: Ctx,
+        options: {
+          /**
+           * The ID of the tool call. You can use it e.g. when sending tool-call related information with stream data.
+           */
+          toolCallId: string;
+          /**
+           * The input of the tool call.
+           */
+          input: [INPUT] extends [never] ? unknown : INPUT;
+          /**
+           * The output of the tool call.
+           */
+          output: 0 extends 1 & OUTPUT
+            ? any
+            : [OUTPUT] extends [never]
+              ? any
+              : NoInfer<OUTPUT>;
+        },
+      ) => ToolResultOutput | PromiseLike<ToolResultOutput>;
+    },
+): Tool<INPUT, OUTPUT> {
+  const inputSchema = def.inputSchema ?? def.args;
+  if (!inputSchema)
+    throw new Error("To use a Convex tool, you must provide an `inputSchema` (or `args`)");
 
-  @args is the input of the tool call.
-  @options.abortSignal is a signal that can be used to abort the tool call.
-     */
-  handler: (
-    ctx: Ctx,
-    args: INPUT,
-    options: ToolCallOptions,
-  ) => PromiseLike<OUTPUT> | AsyncIterable<OUTPUT>;
-  /**
-   * Provide the context to use, e.g. when defining the tool at runtime.
-   */
-  ctx?: Ctx;
-  /**
-   * Optional function that is called when the argument streaming starts.
-   * Only called when the tool is used in a streaming context.
-   */
-  onInputStart?: (
-    ctx: Ctx,
-    options: ToolCallOptions,
-  ) => void | PromiseLike<void>;
-  /**
-   * Optional function that is called when an argument streaming delta is available.
-   * Only called when the tool is used in a streaming context.
-   */
-  onInputDelta?: (
-    ctx: Ctx,
-    options: { inputTextDelta: string } & ToolCallOptions,
-  ) => void | PromiseLike<void>;
-  /**
-   * Optional function that is called when a tool call can be started,
-   * even if the execute function is not provided.
-   */
-  onInputAvailable?: (
-    ctx: Ctx,
-    options: {
-      input: [INPUT] extends [never] ? undefined : INPUT;
-    } & ToolCallOptions,
-  ) => void | PromiseLike<void>;
+  const executeHandler = def.execute ?? def.handler;
+  if (!executeHandler && !def.outputSchema)
+    throw new Error(
+      "To use a Convex tool, you must either provide an execute" +
+        " handler function, define an outputSchema, or both",
+    );
 
-  // Extra AI SDK pass-through options.
-  providerOptions?: ProviderOptions;
-}): Tool<INPUT, OUTPUT> {
-  const t = tool({
+  const t = tool<INPUT, OUTPUT>({
     type: "function",
     __acceptsCtx: true,
     ctx: def.ctx,
     description: def.description,
-    inputSchema: def.args,
-    execute(args: INPUT, options: ToolCallOptions) {
+    title: def.title,
+    providerOptions: def.providerOptions,
+    inputSchema,
+    inputExamples: def.inputExamples,
+    needsApproval(this: Tool<INPUT, OUTPUT>, input, options) {
+      const needsApproval = def.needsApproval;
+      if (!needsApproval || typeof needsApproval === "boolean")
+        return Boolean(needsApproval);
+
       if (!getCtx(this)) {
         throw new Error(
           "To use a Convex tool, you must either provide the ctx" +
@@ -93,9 +261,28 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
             " call it (which injects the ctx, userId and threadId)",
         );
       }
-      return def.handler(getCtx(this), args, options);
+      return needsApproval(getCtx(this), input, options);
     },
-    providerOptions: def.providerOptions,
+    strict: def.strict,
+    ...(executeHandler
+      ? {
+          execute(
+            this: Tool<INPUT, OUTPUT>,
+            input: INPUT,
+            options: ToolExecutionOptions,
+          ) {
+            if (!getCtx(this)) {
+              throw new Error(
+                "To use a Convex tool, you must either provide the ctx" +
+                  " at definition time (dynamically in an action), or use the Agent to" +
+                  " call it (which injects the ctx, userId and threadId)",
+              );
+            }
+            return executeHandler(getCtx(this), input, options);
+          },
+        }
+      : {}),
+    outputSchema: def.outputSchema,
   });
   if (def.onInputStart) {
     t.onInputStart = def.onInputStart.bind(t, getCtx(t));
@@ -105,6 +292,9 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(def: {
   }
   if (def.onInputAvailable) {
     t.onInputAvailable = def.onInputAvailable.bind(t, getCtx(t));
+  }
+  if (def.toModelOutput) {
+    t.toModelOutput = def.toModelOutput.bind(t, getCtx(t));
   }
   return t;
 }
