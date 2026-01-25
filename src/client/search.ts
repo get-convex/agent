@@ -458,8 +458,17 @@ export async function embedMany(
         inputTokens: result.usage.tokens,
         outputTokens: 0,
         totalTokens: result.usage.tokens,
-        inputTokenDetails: {} as any,
-        outputTokenDetails: {} as any,
+        // These detail fields are required by LanguageModelUsage type but we don't
+        // have the granular data, so we provide objects with undefined values.
+        inputTokenDetails: {
+          cacheReadTokens: undefined,
+          cacheWriteTokens: undefined,
+          noCacheTokens: undefined,
+        },
+        outputTokenDetails: {
+          textTokens: undefined,
+          reasoningTokens: undefined,
+        },
       },
     });
   }

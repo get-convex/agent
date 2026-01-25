@@ -158,8 +158,17 @@ export function toModelMessageUsage(usage: Usage): LanguageModelUsage {
     totalTokens: usage.totalTokens,
     reasoningTokens: usage.reasoningTokens,
     cachedInputTokens: usage.cachedInputTokens,
-    inputTokenDetails: {} as any,
-    outputTokenDetails: {} as any,
+    // These detail fields are required by LanguageModelUsage type but we don't
+    // have the granular data, so we provide empty objects with undefined values.
+    inputTokenDetails: {
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+      noCacheTokens: undefined,
+    },
+    outputTokenDetails: {
+      textTokens: undefined,
+      reasoningTokens: undefined,
+    },
   };
 }
 

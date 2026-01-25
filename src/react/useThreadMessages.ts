@@ -16,7 +16,7 @@ import type {
   PaginationOptions,
   PaginationResult,
 } from "convex/server";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import type { SyncStreamsReturnValue } from "../client/types.js";
 import { sorted } from "../shared.js";
 import { fromUIMessages } from "../UIMessages.js";
@@ -240,24 +240,22 @@ export function useStreamingThreadMessages<Query extends StreamQuery<any>>(
   const queryOptions = { startOrder, ...options };
   const uiMessages = useStreamingUIMessages(query, queryArgs, queryOptions);
   const [messages, setMessages] = useState<Array<MessageDoc> | undefined>();
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (args === "skip" || !uiMessages) {
       setMessages(undefined);
       return;
     }
-    let isMounted = true;
+    const currentGeneration = ++generationRef.current;
     (async () => {
       const nested = await Promise.all(
         uiMessages.map((m) => fromUIMessages([m], { threadId: args.threadId })),
       );
-      if (isMounted) {
+      if (generationRef.current === currentGeneration) {
         setMessages(nested.flat());
       }
     })();
-    return () => {
-      isMounted = false;
-    };
   }, [uiMessages, args === "skip" ? undefined : args.threadId]);
 
   return messages;

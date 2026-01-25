@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @convex-dev/agent is a TypeScript/NPM package that provides an AI Agent component for Convex. It enables building agentic AI applications with thread/message management, LLM integration via AI SDK, WebSocket streaming, tool calling, vector embeddings, and RAG.
 
-Documentation: https://docs.convex.dev/agents
+Documentation: [Convex Agent Docs](https://docs.convex.dev/agents)
 
 ## Commands
 

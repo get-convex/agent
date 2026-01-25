@@ -519,7 +519,9 @@ export function updateFromTextStreamParts(
         // ignore
         break;
       default: {
-        // Should never happen
+        // Exhaustiveness check disabled intentionally for forwards compatibility.
+        // New TextStreamPart types from future AI SDK versions will trigger a
+        // runtime warning rather than a compile error, allowing graceful degradation.
         // const _: never = part;
         console.warn(`Received unexpected part: ${JSON.stringify(part)}`);
         break;

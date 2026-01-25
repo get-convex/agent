@@ -6,6 +6,8 @@ import { groq } from "@ai-sdk/groq";
 import { mockModel } from "@convex-dev/agent";
 
 let languageModel: LanguageModelV3;
+// Note: This is only defined when OPENAI_API_KEY is set. Consumers should
+// handle the undefined case at runtime when using non-OpenAI providers.
 let textEmbeddingModel: EmbeddingModel;
 
 if (process.env.ANTHROPIC_API_KEY) {
