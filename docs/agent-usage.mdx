@@ -43,7 +43,7 @@ requiring the LLM to always pass through full context to each tool call. It also
 allows dynamically choosing a model or other options for the Agent.
 
 ```ts
-import { Agent } from "@convex-dev/agent";
+import { Agent, stepCountIs } from "@convex-dev/agent";
 import { type LanguageModel } from "ai";
 import type { ActionCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -63,7 +63,7 @@ function createAuthorAgent(
       researchCharacter: researchCharacterTool(ctx, bookId),
       writeChapter: writeChapterTool(ctx, bookId),
     },
-    maxSteps: 10, // Alternative to stopWhen: stepCountIs(10)
+    stopWhen: stepCountIs(10),
   });
 }
 ```
@@ -249,7 +249,7 @@ const supportAgent = new Agent(components.agent, {
       },
     }),
     // Standard AI SDK tool
-    myTool: tool({ description, parameters, execute: () => {}}),
+    myTool: tool({ description, inputSchema: parameters, execute: () => {}}),
   },
   // Used for limiting the number of steps when tool calls are involved.
   // NOTE: if you want tool calls to happen automatically with a single call,

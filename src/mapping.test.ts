@@ -209,4 +209,52 @@ describe("mapping", () => {
     const { fileIds } = await serializeContent(ctx, component, content);
     expect(fileIds).toBeUndefined();
   });
+
+  test("tool-approval-request is preserved after serialization", async () => {
+    const approvalRequest = {
+      type: "tool-approval-request" as const,
+      approvalId: "approval-123",
+      toolCallId: "tool-call-456",
+    };
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      [approvalRequest],
+    );
+    expect(content).toHaveLength(1);
+    expect((content as unknown[])[0]).toMatchObject(approvalRequest);
+  });
+
+  test("tool-approval-response with approved: true is preserved", async () => {
+    const approvalResponse = {
+      type: "tool-approval-response" as const,
+      approvalId: "approval-123",
+      approved: true,
+      reason: "User approved",
+    };
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      [approvalResponse],
+    );
+    expect(content).toHaveLength(1);
+    expect((content as unknown[])[0]).toMatchObject(approvalResponse);
+  });
+
+  test("tool-approval-response with approved: false is preserved", async () => {
+    const approvalResponse = {
+      type: "tool-approval-response" as const,
+      approvalId: "approval-123",
+      approved: false,
+      reason: "User denied",
+      providerExecuted: false,
+    };
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      [approvalResponse],
+    );
+    expect(content).toHaveLength(1);
+    expect((content as unknown[])[0]).toMatchObject(approvalResponse);
+  });
 });

@@ -159,6 +159,7 @@ describe("search.ts", () => {
                 type: "tool-call",
                 toolCallId: "call_123",
                 toolName: "test",
+                input: {},
                 args: {},
               },
             ],
@@ -202,6 +203,7 @@ describe("search.ts", () => {
                 type: "tool-call",
                 toolCallId: "call_orphaned",
                 toolName: "test",
+                input: {},
                 args: {},
               },
             ],
@@ -233,6 +235,170 @@ describe("search.ts", () => {
       expect(result).toHaveLength(2);
       expect(result[0]._id).toBe("0");
       expect(result[1]._id).toBe("3");
+    });
+
+    it("should keep tool calls with approval responses (but no tool-result yet)", () => {
+      const messages: MessageDoc[] = [
+        {
+          _id: "1",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "I'll run the dangerous tool" },
+              {
+                type: "tool-call",
+                toolCallId: "call_123",
+                toolName: "dangerousTool",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                toolCallId: "call_123",
+                approvalId: "approval_456",
+              },
+            ],
+          },
+          order: 1,
+        } as MessageDoc,
+        {
+          _id: "2",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval_456",
+                approved: true,
+              },
+            ],
+          },
+          order: 2,
+        } as MessageDoc,
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+      expect(result).toHaveLength(2);
+      // The assistant message should still contain the tool-call
+      expect(result[0]._id).toBe("1");
+      const assistantContent = result[0].message?.content;
+      expect(Array.isArray(assistantContent)).toBe(true);
+      if (Array.isArray(assistantContent)) {
+        const toolCall = assistantContent.find((p) => p.type === "tool-call");
+        expect(toolCall).toBeDefined();
+        expect(toolCall?.toolCallId).toBe("call_123");
+      }
+      // The tool message with approval response should be kept
+      expect(result[1]._id).toBe("2");
+    });
+
+    it("should filter out tool calls with approval request but NO approval response", () => {
+      const messages: MessageDoc[] = [
+        {
+          _id: "1",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "I'll run the dangerous tool" },
+              {
+                type: "tool-call",
+                toolCallId: "call_123",
+                toolName: "dangerousTool",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                toolCallId: "call_123",
+                approvalId: "approval_456",
+              },
+            ],
+          },
+          order: 1,
+        } as MessageDoc,
+        // No approval response provided
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+      expect(result).toHaveLength(1);
+      // The assistant message should have the tool-call filtered out
+      const assistantContent = result[0].message?.content;
+      expect(Array.isArray(assistantContent)).toBe(true);
+      if (Array.isArray(assistantContent)) {
+        // Text and approval-request should remain, but tool-call should be filtered
+        expect(assistantContent).toHaveLength(2);
+        expect(assistantContent.find((p) => p.type === "text")).toBeDefined();
+        expect(
+          assistantContent.find((p) => p.type === "tool-approval-request"),
+        ).toBeDefined();
+        expect(
+          assistantContent.find((p) => p.type === "tool-call"),
+        ).toBeUndefined();
+      }
+    });
+
+    it("should handle mix of tool calls with results and with approvals", () => {
+      const messages: MessageDoc[] = [
+        {
+          _id: "1",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "call_with_result",
+                toolName: "safeTool",
+                input: {},
+                args: {},
+              },
+              {
+                type: "tool-call",
+                toolCallId: "call_with_approval",
+                toolName: "dangerousTool",
+                input: {},
+                args: {},
+              },
+              {
+                type: "tool-approval-request",
+                toolCallId: "call_with_approval",
+                approvalId: "approval_789",
+              },
+            ],
+          },
+          order: 1,
+        } as MessageDoc,
+        {
+          _id: "2",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_with_result",
+                result: "success",
+              },
+              {
+                type: "tool-approval-response",
+                approvalId: "approval_789",
+                approved: true,
+              },
+            ],
+          },
+          order: 2,
+        } as MessageDoc,
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+      expect(result).toHaveLength(2);
+      // Both tool calls should be kept
+      const assistantContent = result[0].message?.content;
+      expect(Array.isArray(assistantContent)).toBe(true);
+      if (Array.isArray(assistantContent)) {
+        const toolCalls = assistantContent.filter(
+          (p) => p.type === "tool-call",
+        );
+        expect(toolCalls).toHaveLength(2);
+      }
     });
   });
 

@@ -1,4 +1,5 @@
-import { v, type Infer, type Validator, type Value } from "convex/values";
+import type { Infer, Validator, Value } from "convex/values";
+import { v } from "convex/values";
 import { vVectorDimension } from "./component/vector/tables.js";
 
 // const deprecated = v.optional(v.any()) as unknown as VNull<unknown, "optional">;
@@ -42,6 +43,8 @@ export const vTextPart = v.object({
 export const vImagePart = v.object({
   type: v.literal("image"),
   image: v.union(v.string(), v.bytes()),
+  mediaType: v.optional(v.string()),
+  /** @deprecated Use `mediaType` instead. */
   mimeType: v.optional(v.string()),
   providerOptions,
 });
@@ -50,7 +53,9 @@ export const vFilePart = v.object({
   type: v.literal("file"),
   data: v.union(v.string(), v.bytes()),
   filename: v.optional(v.string()),
-  mimeType: v.string(),
+  mediaType: v.optional(v.string()),
+  /** @deprecated Use `mediaType` instead. */
+  mimeType: v.optional(v.string()),
   providerOptions,
   providerMetadata,
 });
@@ -110,15 +115,34 @@ export const vSourcePart = v.union(
 );
 export type SourcePart = Infer<typeof vSourcePart>;
 
-export const vToolCallPart = v.object({
-  type: v.literal("tool-call"),
-  toolCallId: v.string(),
-  toolName: v.string(),
-  args: v.any(),
-  providerExecuted: v.optional(v.boolean()),
-  providerOptions,
-  providerMetadata,
-});
+// Union type to support both old (args) and new (input) formats
+// Both include input for type hint support
+export const vToolCallPart = v.union(
+  // New format: input is primary, args is optional for backwards compat
+  v.object({
+    type: v.literal("tool-call"),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    input: v.any(),
+    /** @deprecated Use `input` instead. */
+    args: v.optional(v.any()),
+    providerExecuted: v.optional(v.boolean()),
+    providerOptions,
+    providerMetadata,
+  }),
+  // Legacy format: args is present, input is optional
+  v.object({
+    type: v.literal("tool-call"),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    /** @deprecated Use `input` instead. */
+    args: v.any(),
+    input: v.optional(v.any()),
+    providerExecuted: v.optional(v.boolean()),
+    providerOptions,
+    providerMetadata,
+  }),
+);
 
 const vToolResultContent = v.array(
   v.union(
@@ -132,24 +156,154 @@ const vToolResultContent = v.array(
 );
 
 export const vToolResultOutput = v.union(
-  v.object({ type: v.literal("text"), value: v.string() }),
-  v.object({ type: v.literal("json"), value: v.any() }),
-  v.object({ type: v.literal("error-text"), value: v.string() }),
-  v.object({ type: v.literal("error-json"), value: v.any() }),
+  v.object({ type: v.literal("text"), value: v.string(), providerOptions }),
+  v.object({ type: v.literal("json"), value: v.any(), providerOptions }),
+  v.object({
+    type: v.literal("error-text"),
+    value: v.string(),
+    providerOptions,
+  }),
+  v.object({ type: v.literal("error-json"), value: v.any(), providerOptions }),
+  v.object({
+    type: v.literal("execution-denied"),
+    reason: v.optional(v.string()),
+    providerOptions,
+  }),
   v.object({
     type: v.literal("content"),
     value: v.array(
       v.union(
-        v.object({ type: v.literal("text"), text: v.string() }),
+        v.object({
+          type: v.literal("text"),
+          text: v.string(),
+          providerOptions,
+        }),
+        /** @deprecated Use `image-data` or `file-data` instead. */
         v.object({
           type: v.literal("media"),
           data: v.string(),
           mediaType: v.string(),
         }),
+        v.object({
+          type: v.literal("file-data"),
+          /** Base-64 encoded */
+          data: v.string(),
+          /**
+           * IANA media type.
+           * @see https://www.iana.org/assignments/media-types/media-types.xhtml
+           */
+          mediaType: v.string(),
+          filename: v.optional(v.string()),
+          providerOptions,
+        }),
+        v.object({
+          type: v.literal("file-url"),
+          url: v.string(),
+          providerOptions,
+        }),
+        v.object({
+          type: v.literal("file-id"),
+          /**
+           * ID of the file.
+           *
+           * If you use multiple providers, you need to
+           * specify the provider specific ids using
+           * the Record option. The key is the provider
+           * name, e.g. 'openai' or 'anthropic'.
+           */
+          fileId: v.union(v.string(), v.record(v.string(), v.string())),
+          providerOptions,
+        }),
+        v.object({
+          type: v.literal("image-data"),
+          data: v.string(),
+          /**
+           * IANA media type.
+           * @see https://www.iana.org/assignments/media-types/media-types.xhtml
+           */
+          mediaType: v.string(),
+          providerOptions,
+        }),
+        v.object({
+          type: v.literal("image-url"),
+          url: v.string(),
+          providerOptions,
+        }),
+        v.object({
+          /**
+           * Images that are referenced using a provider file id.
+           */
+          type: v.literal("image-file-id"),
+          /**
+           * Image that is referenced using a provider file id.
+           *
+           * If you use multiple providers, you need to
+           * specify the provider specific ids using
+           * the Record option. The key is the provider
+           * name, e.g. 'openai' or 'anthropic'.
+           */
+          fileId: v.union(v.string(), v.record(v.string(), v.string())),
+          providerOptions,
+        }),
+        v.object({
+          /**
+           * Custom content part. This can be used to implement
+           * provider-specific content parts.
+           */
+          type: v.literal("custom"),
+          providerOptions,
+        }),
       ),
     ),
   }),
 );
+
+/**
+ * Tool approval request prompt part.
+ */
+export const vToolApprovalRequest = v.object({
+  type: v.literal("tool-approval-request"),
+  /**
+   * ID of the tool approval.
+   */
+  approvalId: v.string(),
+  /**
+   * ID of the tool call that the approval request is for.
+   */
+  toolCallId: v.string(),
+  /** @todo Should we continue to include? */
+  providerMetadata,
+  /** @todo Should we continue to include? */
+  providerOptions,
+});
+
+/**
+ * Tool approval response prompt part.
+ */
+export const vToolApprovalResponse = v.object({
+  type: v.literal("tool-approval-response"),
+  /**
+   * ID of the tool approval.
+   */
+  approvalId: v.string(),
+  /**
+   * Flag indicating whether the approval was granted or denied.
+   */
+  approved: v.boolean(),
+  /**
+   * Optional reason for the approval or denial.
+   */
+  reason: v.optional(v.string()),
+  /**
+   * Flag indicating whether the tool call is provider-executed.
+   * Only provider-executed tool approval responses should be sent to the model.
+   */
+  providerExecuted: v.optional(v.boolean()),
+  /** @todo Should we continue to include? */
+  providerMetadata,
+  /** @todo Should we continue to include? */
+  providerOptions,
+});
 
 export const vToolResultPart = v.object({
   type: v.literal("tool-result"),
@@ -169,7 +323,9 @@ export const vToolResultPart = v.object({
   args: v.optional(v.any()),
   experimental_content: v.optional(vToolResultContent),
 });
-export const vToolContent = v.array(vToolResultPart);
+export const vToolContent = v.array(
+  v.union(vToolResultPart, vToolApprovalResponse),
+);
 
 export const vAssistantContent = v.union(
   v.string(),
@@ -182,6 +338,7 @@ export const vAssistantContent = v.union(
       vToolCallPart,
       vToolResultPart,
       vSourcePart,
+      vToolApprovalRequest,
     ),
   ),
 );
@@ -462,7 +619,7 @@ export const vStreamMessage = v.object({
   agentName: v.optional(v.string()),
   model: v.optional(v.string()),
   provider: v.optional(v.string()),
-  providerOptions: v.optional(vProviderOptions), // Sent to model
+  providerOptions, // Sent to model
 });
 export type StreamMessage = Infer<typeof vStreamMessage>;
 
@@ -490,7 +647,7 @@ export const vMessageDoc = v.object({
   agentName: v.optional(v.string()),
   model: v.optional(v.string()),
   provider: v.optional(v.string()),
-  providerOptions: v.optional(vProviderOptions), // Sent to model
+  providerOptions, // Sent to model
 
   // The result
   message: v.optional(vMessage),
