@@ -11,6 +11,15 @@ import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import type { ProviderOptions } from "../validators.js";
 import type { Agent } from "./index.js";
 
+const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const warnedDeprecations = new Set<string>();
+function warnDeprecation(key: string, message: string) {
+  if (!warnedDeprecations.has(key)) {
+    warnedDeprecations.add(key);
+    console.warn(`[@convex-dev/agent] ${message}\n  See: ${MIGRATION_URL}`);
+  }
+}
+
 export type ToolCtx<DataModel extends GenericDataModel = GenericDataModel> =
   GenericActionCtx<DataModel> & {
     agent?: Agent;
@@ -232,6 +241,19 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
   const inputSchema = def.inputSchema ?? def.args;
   if (!inputSchema)
     throw new Error("To use a Convex tool, you must provide an `inputSchema` (or `args`)");
+
+  if (def.args && !def.inputSchema) {
+    warnDeprecation(
+      "createTool.args",
+      "createTool: 'args' is deprecated. Use 'inputSchema' instead.",
+    );
+  }
+  if (def.handler && !def.execute) {
+    warnDeprecation(
+      "createTool.handler",
+      "createTool: 'handler' is deprecated. Use 'execute' instead.",
+    );
+  }
 
   const executeHandler = def.execute ?? def.handler;
   if (!executeHandler && !def.outputSchema)
