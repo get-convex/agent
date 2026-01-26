@@ -59,6 +59,7 @@ npm run typecheck    # Full TypeScript validation including example/convex
 - **Message-centric design** - All operations revolve around message persistence/retrieval
 - **Component-based encapsulation** - Uses Convex Components pattern
 - **Multi-user support** - Threads have optional `userId` for ownership
+- **Tool approval flow** - Tools can require human approval via `needsApproval`, with `agent.approveToolCall()` and `agent.denyToolCall()` methods
 
 ### Database Tables (Convex Component)
 
@@ -87,82 +88,138 @@ Follow the rules in `.cursor/rules/convex_rules.mdc`:
 - `@convex-dev/agent/validators` - Convex validators for integration
 - `@convex-dev/agent/test` - Testing utilities
 
-## Upgrading to v0.6.0 (AI SDK v6)
+## AI Guidance: Helping Users Upgrade to v0.6.0
 
-When helping users upgrade from @convex-dev/agent v0.3.x to v0.6.0, follow these steps:
+**IMPORTANT: v0.6.0 requires AI SDK v6 (ai@^6.0.0)**
 
-### Step 1: Update dependencies in package.json
+When helping users upgrade from @convex-dev/agent v0.3.x (AI SDK v5) to v0.6.0 (AI SDK v6):
+
+### Step 1: Update Dependencies First
+
+Update all AI SDK packages together to avoid peer dependency conflicts:
 
 ```bash
 npm install @convex-dev/agent@^0.6.0 ai@^6.0.35 @ai-sdk/provider-utils@^4.0.6
+npm install @ai-sdk/openai@^3.0.10  # or whichever provider
 ```
 
-Also update any AI SDK provider packages:
-```bash
-npm install @ai-sdk/openai@^3.0.10 @ai-sdk/anthropic@^3.0.13
-```
+**Compatible sibling packages:**
+- `@convex-dev/rag@^0.7.0` (v0.6.0 has type conflicts with AI SDK v6)
+- `@convex-dev/workflow@^0.3.2`
 
-### Step 2: Update tool definitions
+### Step 2: Detect v5 Patterns
 
-Replace `parameters` with `inputSchema`:
+Search for these patterns indicating v5 usage:
+- `createTool({ args:` - should be `inputSchema`
+- `createTool({ handler:` - should be `execute`
+- `textEmbeddingModel:` - should be `embeddingModel`
+- `maxSteps:` in generateText/streamText - should be `stopWhen: stepCountIs(N)`
+- `mode: "json"` in generateObject - removed in v6
+- `@ai-sdk/*` packages at v1.x or v2.x - should be v3.x
+- Type imports: `LanguageModelV2` → `LanguageModelV3`, `EmbeddingModel<string>` → `EmbeddingModelV3`
 
+### Step 3: Apply Transformations
+
+**Tool definitions:**
 ```typescript
-// Before (v5)
+// BEFORE (v5)
 const myTool = createTool({
   description: "...",
   parameters: z.object({ query: z.string() }),
-  execute: async (ctx, args) => { ... }
+  handler: async (ctx, args) => {
+    return args.query.toUpperCase();
+  }
 })
 
-// After (v6)
+// AFTER (v6)
 const myTool = createTool({
   description: "...",
   inputSchema: z.object({ query: z.string() }),
-  execute: async (ctx, input, options) => { ... }
+  execute: async (ctx, input, options) => {
+    return input.query.toUpperCase();
+  }
 })
 ```
 
-### Step 3: Update maxSteps usage (if applicable)
-
+**Agent embedding config:**
 ```typescript
-// Before (v5)
+// BEFORE
+new Agent(components.agent, {
+  textEmbeddingModel: openai.embedding("text-embedding-3-small")
+})
+
+// AFTER
+new Agent(components.agent, {
+  embeddingModel: openai.embedding("text-embedding-3-small")
+})
+```
+
+**Step limits:**
+```typescript
+// BEFORE
 await agent.generateText(ctx, { threadId }, {
   prompt: "...",
   maxSteps: 5
 })
 
-// After (v6) - maxSteps still works but stopWhen is preferred
-import { stepCountIs } from "ai"
+// AFTER
+import { stepCountIs } from "@convex-dev/agent"
 await agent.generateText(ctx, { threadId }, {
   prompt: "...",
   stopWhen: stepCountIs(5)
 })
 ```
 
-### Step 4: Update embedding model config (optional)
-
+**Type imports:**
 ```typescript
-// Before
-new Agent(components.agent, {
-  textEmbeddingModel: openai.embedding("text-embedding-3-small")
+// BEFORE (v5)
+import type { LanguageModelV2 } from "@ai-sdk/provider";
+import type { EmbeddingModel } from "ai";
+let model: LanguageModelV2;
+let embedder: EmbeddingModel<string>;
+
+// AFTER (v6)
+import type { LanguageModelV3, EmbeddingModelV3 } from "@ai-sdk/provider";
+let model: LanguageModelV3;
+let embedder: EmbeddingModelV3;
+```
+
+**generateObject (remove mode: "json"):**
+```typescript
+// BEFORE (v5)
+await generateObject({
+  model,
+  mode: "json",
+  schema: z.object({ ... }),
+  prompt: "..."
 })
 
-// After (textEmbeddingModel still works but embeddingModel is preferred)
-new Agent(components.agent, {
-  embeddingModel: openai.embedding("text-embedding-3-small")
+// AFTER (v6) - mode: "json" removed, just use schema
+await generateObject({
+  model,
+  schema: z.object({ ... }),
+  prompt: "..."
 })
 ```
 
-### Step 5: Verify the upgrade
+### Step 4: Verify
 
 ```bash
 npm run typecheck
-npm run lint
 npm test
 ```
 
-### Common issues
+### Common Issues
 
-- **EmbeddingModelV2 vs V3 errors**: Ensure all @ai-sdk/* packages are updated to v3.x
-- **Tool input/args**: v6 uses `input` instead of `args` in tool calls (backwards compat maintained)
-- **mimeType vs mediaType**: v6 uses `mediaType` (backwards compat maintained)
+- **EmbeddingModelV2 vs V3 errors**: Ensure all `@ai-sdk/*` packages are v3.x
+- **Tool `args` vs `input`**: v6 uses `input` in execute signature (2nd param)
+- **`mimeType` vs `mediaType`**: v6 prefers `mediaType` (backwards compat maintained)
+- **Type import errors**: `LanguageModelV2` is now `LanguageModelV3`, `EmbeddingModel<string>` is now `EmbeddingModelV3` (no longer generic)
+- **generateObject mode errors**: `mode: "json"` was removed in v6 - just remove the mode option
+
+### New v6 Features to Mention
+
+After upgrade, users can now use:
+- **Tool approval**: `needsApproval` in createTool, `agent.approveToolCall()`, `agent.denyToolCall()`
+- **Reasoning streaming**: Works with models like Groq that support reasoning
+- **Detailed token usage**: `inputTokenDetails`, `outputTokenDetails` in usage tracking
