@@ -41,13 +41,13 @@ export const runAgentAsTool = action({
     const agentWithToolsAsTool = createTool({
       description:
         "agentWithTools which can either doSomething or doSomethingElse",
-      args: z.object({
+      inputSchema: z.object({
         whatToDo: z.union([
           z.literal("doSomething"),
           z.literal("doSomethingElse"),
         ]),
       }),
-      handler: async (ctx, args) => {
+      execute: async (ctx, input) => {
         // Create a nested thread to call the agent with tools
         const threadId = await createThread(ctx, components.agent, {
           userId: ctx.userId,
@@ -59,7 +59,7 @@ export const runAgentAsTool = action({
             messages: [
               {
                 role: "assistant",
-                content: `I'll do this now: ${args.whatToDo}`,
+                content: `I'll do this now: ${input.whatToDo}`,
               },
             ],
           },
