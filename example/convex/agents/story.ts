@@ -14,10 +14,10 @@ export const storyAgent = new Agent(components.agent, {
     getCharacterNames: createTool({
       description:
         "Get the names of characters for the story. Only call this once.",
-      args: z.object({
+      inputSchema: z.object({
         count: z.number().describe("The number of character names to get"),
       }),
-      handler: async (ctx, args) => {
+      execute: async (ctx, input) => {
         return [
           "Eleanor",
           "Henry",
@@ -39,7 +39,7 @@ export const storyAgent = new Agent(components.agent, {
           "Malachai",
           "Selene",
           "Victor",
-        ].slice(0, args.count);
+        ].slice(0, input.count);
       },
     }),
   },

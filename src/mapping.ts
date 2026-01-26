@@ -46,8 +46,6 @@ import {
   convertUint8ArrayToBase64,
   type ProviderOptions,
   type ReasoningPart,
-  type ToolApprovalRequest,
-  type ToolApprovalResponse,
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
 import {
