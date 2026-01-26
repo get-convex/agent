@@ -39,9 +39,13 @@
     "release": "npm version patch && npm publish && git push --follow-tags",
     "version": "vim -c 'normal o' -c 'normal o## '$npm_package_version CHANGELOG.md && prettier -w CHANGELOG.md && git add CHANGELOG.md"
   },
+  "bin": {
+    "convex-agent-upgrade-check": "./scripts/check-upgrade.js"
+  },
   "files": [
     "dist",
-    "src"
+    "src",
+    "scripts"
   ],
   "exports": {
     "./package.json": "./package.json",

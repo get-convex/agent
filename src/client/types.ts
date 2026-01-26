@@ -46,6 +46,14 @@ import type {
 import type { StreamingOptions } from "./streaming.js";
 import type { ComponentApi } from "../component/_generated/component.js";
 
+/**
+ * Type-level check that ensures models are from AI SDK v6.
+ * If a v5 model (LanguageModelV2) is passed, TypeScript will show the error message string.
+ */
+type AssertAISDKv6<T> = T extends { specificationVersion: "v3" }
+  ? T
+  : "⚠️ @convex-dev/agent v0.6.0 requires AI SDK v6. Update your dependencies: npm install ai@^6.0.35 @ai-sdk/openai@^3.0.10 (or other provider). See: https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+
 export type AgentPrompt = {
   /**
    * System message to include in the prompt. Overwrites Agent instructions.
@@ -98,23 +106,17 @@ export type AgentPrompt = {
 export type Config = {
   /**
    * The LLM model to use for generating / streaming text and objects.
-   * e.g.
+   * Requires AI SDK v6 (@ai-sdk/* packages v3.x).
+   *
+   * @example
    * import { openai } from "@ai-sdk/openai"
    * const myAgent = new Agent(components.agent, {
    *   languageModel: openai.chat("gpt-4o-mini"),
+   * })
    */
-  languageModel?: LanguageModel;
+  languageModel?: AssertAISDKv6<LanguageModel>;
   /**
-   * The model to use for text embeddings. Optional.
-   * If specified, it will use this for generating vector embeddings
-   * of chats, and can opt-in to doing vector search for automatic context
-   * on generateText, etc.
-   * e.g.
-   * import { openai } from "@ai-sdk/openai"
-   * const myAgent = new Agent(components.agent, {
-   *   ...
-   *   textEmbeddingModel: openai.embedding("text-embedding-3-small")
-   * @deprecated — Use embeddingModel instead.
+   * @deprecated Use `embeddingModel` instead.
    */
   textEmbeddingModel?: EmbeddingModel;
   /**
