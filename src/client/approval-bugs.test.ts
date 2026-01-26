@@ -523,7 +523,7 @@ describe("Bug: Tool execution error handling", () => {
           description: "Throws an error",
           inputSchema: z.object({}),
           needsApproval: () => true,
-          execute: async () => {
+          execute: async (): Promise<string> => {
             throw new Error("Intentional test error");
           },
         }),
@@ -698,8 +698,9 @@ describe("Bug: Tool input normalization", () => {
               type: "tool-call",
               toolCallId: "no-input-call",
               toolName: "testTool",
-              // No args, no input!
-            },
+              input: undefined, // Explicitly undefined to test fallback
+              args: undefined,
+            } as any, // Cast to any since we're testing edge case with missing fields
             {
               type: "tool-approval-request",
               approvalId: "no-input-approval",

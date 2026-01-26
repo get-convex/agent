@@ -104,6 +104,13 @@ export type SaveMessagesArgs = {
    * A pending message ID to replace when adding messages.
    */
   pendingMessageId?: string;
+  /**
+   * If provided, makes the save operation idempotent for approval responses.
+   * If a message with this approval ID already exists, returns that message
+   * instead of saving a duplicate. This prevents race conditions when
+   * concurrent approval requests are processed.
+   */
+  approvalIdempotencyKey?: string;
 };
 
 /**
@@ -137,6 +144,7 @@ export async function saveMessages(
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
     pendingMessageId: args.pendingMessageId,
+    approvalIdempotencyKey: args.approvalIdempotencyKey,
     embeddings,
     messages: await Promise.all(
       args.messages.map(async (m, i) => {

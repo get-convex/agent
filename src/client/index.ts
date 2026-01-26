@@ -721,6 +721,12 @@ export class Agent<
        * action later that calls `agent.generateAndSaveEmbeddings`.
        */
       skipEmbeddings?: boolean;
+      /**
+       * If provided, makes the save operation idempotent for approval responses.
+       * If a message with this approval ID already exists, returns that message
+       * instead of saving a duplicate.
+       */
+      approvalIdempotencyKey?: string;
     },
   ) {
     const { messages } = await this.saveMessages(ctx, {
@@ -737,6 +743,7 @@ export class Agent<
       skipEmbeddings: args.skipEmbeddings,
       promptMessageId: args.promptMessageId,
       pendingMessageId: args.pendingMessageId,
+      approvalIdempotencyKey: args.approvalIdempotencyKey,
     });
     const message = messages.at(-1)!;
     return { messageId: message._id, message };
@@ -1537,6 +1544,17 @@ export class Agent<
       throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
     }
 
+    // Handle idempotent case - approval was already processed
+    if (toolInfo.alreadyHandled) {
+      // Continue generation from the existing approval message
+      return this.streamText(
+        ctx,
+        { threadId },
+        { promptMessageId: toolInfo.existingMessageId, forceNewOrder: true },
+        { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+      );
+    }
+
     const { toolCallId, toolName, toolInput, parentMessageId } = toolInfo;
 
     // Execute the tool
@@ -1570,9 +1588,12 @@ export class Agent<
     }
 
     // Save approval response and tool result together
+    // The approvalIdempotencyKey makes this atomic - if a concurrent request
+    // already saved this approval, the mutation returns the existing message.
     const { messageId: toolResultId } = await this.saveMessage(ctx, {
       threadId,
       promptMessageId: parentMessageId,
+      approvalIdempotencyKey: approvalId,
       message: {
         role: "tool",
         content: [
@@ -1630,13 +1651,27 @@ export class Agent<
       throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
     }
 
+    // Handle idempotent case - approval was already processed
+    if (toolInfo.alreadyHandled) {
+      // Continue generation from the existing approval message
+      return this.streamText(
+        ctx,
+        { threadId },
+        { promptMessageId: toolInfo.existingMessageId, forceNewOrder: true },
+        { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+      );
+    }
+
     const { toolCallId, toolName, parentMessageId } = toolInfo;
     const denialReason = reason ?? "Tool execution was denied by the user";
 
     // Save approval response (denied) and tool result with execution-denied
+    // The approvalIdempotencyKey makes this atomic - if a concurrent request
+    // already saved this approval, the mutation returns the existing message.
     const { messageId: toolResultId } = await this.saveMessage(ctx, {
       threadId,
       promptMessageId: parentMessageId,
+      approvalIdempotencyKey: approvalId,
       message: {
         role: "tool",
         content: [
@@ -1671,18 +1706,27 @@ export class Agent<
 
   /**
    * Find tool call information for an approval ID.
+   * Returns either:
+   * - Tool info if approval is pending
+   * - { alreadyHandled: true, existingMessageId } if already processed
+   * - null if approval request not found
    * @internal
    */
   private async _findToolCallInfo(
     ctx: ActionCtx,
     threadId: string,
     approvalId: string,
-  ): Promise<{
-    toolCallId: string;
-    toolName: string;
-    toolInput: Record<string, unknown>;
-    parentMessageId: string;
-  } | null> {
+  ): Promise<
+    | {
+        toolCallId: string;
+        toolName: string;
+        toolInput: Record<string, unknown>;
+        parentMessageId: string;
+        alreadyHandled?: false;
+      }
+    | { alreadyHandled: true; existingMessageId: string }
+    | null
+  > {
     const messagesResult = await this.listMessages(ctx, {
       threadId,
       paginationOpts: { numItems: 20, cursor: null },
@@ -1693,7 +1737,7 @@ export class Agent<
     let toolName: string | undefined;
     let toolInput: Record<string, unknown> | undefined;
 
-    // First, check if this approval has already been handled (idempotency guard)
+    // First, check if this approval has already been handled
     for (const msg of messagesResult.page) {
       if (msg.message?.role === "tool" && Array.isArray(msg.message.content)) {
         for (const part of msg.message.content) {
@@ -1701,8 +1745,8 @@ export class Agent<
             part.type === "tool-approval-response" &&
             (part as any).approvalId === approvalId
           ) {
-            // Already handled - return null to prevent duplicate execution
-            return null;
+            // Already handled - return existing message ID for idempotent response
+            return { alreadyHandled: true, existingMessageId: msg._id };
           }
         }
       }
@@ -1729,7 +1773,7 @@ export class Agent<
       return null;
     }
 
-    // Second pass: find the tool-call with matching toolCallId to get toolName and input
+    // Third pass: find the tool-call with matching toolCallId to get toolName and input
     for (const msg of messagesResult.page) {
       if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
         for (const part of msg.message.content) {

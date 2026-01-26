@@ -73,7 +73,7 @@ const approvalAgent = new Agent(components.agent, {
           type: "tool-call",
           toolCallId: "call-123",
           toolName: "deleteFile",
-          args: { filename: "important.txt" },
+          input: JSON.stringify({ filename: "important.txt" }),
         },
       ],
       // Second step: after approval, generate final response
@@ -97,7 +97,7 @@ const noApprovalAgent = new Agent(components.agent, {
           type: "tool-call",
           toolCallId: "call-456",
           toolName: "checkBalance",
-          args: { accountId: "ABC123" },
+          input: JSON.stringify({ accountId: "ABC123" }),
         },
       ],
       [{ type: "text", text: "Your balance is $500." }],
@@ -239,12 +239,15 @@ describe("Tool Approval Workflow", () => {
         }),
       );
 
-      // Should return null because approval was already handled
+      // Should return alreadyHandled because approval was already processed
       const toolInfo = await t.run(async (ctx) =>
         (approvalAgent as any)._findToolCallInfo(ctx, threadId, "approval-xyz"),
       );
 
-      expect(toolInfo).toBeNull();
+      // Now returns { alreadyHandled: true, existingMessageId } for idempotent handling
+      expect(toolInfo).not.toBeNull();
+      expect(toolInfo?.alreadyHandled).toBe(true);
+      expect(toolInfo?.existingMessageId).toBeDefined();
     });
   });
 
