@@ -43,7 +43,8 @@
   "files": [
     "dist",
     "src",
-    "scripts"
+    "scripts",
+    "MIGRATION.md"
   ],
   "exports": {
     "./package.json": "./package.json",
