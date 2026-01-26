@@ -721,12 +721,6 @@ export class Agent<
        * action later that calls `agent.generateAndSaveEmbeddings`.
        */
       skipEmbeddings?: boolean;
-      /**
-       * If provided, makes the save operation idempotent for approval responses.
-       * If a message with this approval ID already exists, returns that message
-       * instead of saving a duplicate.
-       */
-      approvalIdempotencyKey?: string;
     },
   ) {
     const { messages } = await this.saveMessages(ctx, {
@@ -743,7 +737,6 @@ export class Agent<
       skipEmbeddings: args.skipEmbeddings,
       promptMessageId: args.promptMessageId,
       pendingMessageId: args.pendingMessageId,
-      approvalIdempotencyKey: args.approvalIdempotencyKey,
     });
     const message = messages.at(-1)!;
     return { messageId: message._id, message };
@@ -1544,14 +1537,14 @@ export class Agent<
       throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
     }
 
-    // Handle idempotent case - approval was already processed
     if (toolInfo.alreadyHandled) {
-      // Continue generation from the existing approval message
-      return this.streamText(
-        ctx,
-        { threadId },
-        { promptMessageId: toolInfo.existingMessageId, forceNewOrder: true },
-        { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+      if (toolInfo.wasApproved) {
+        throw new Error(
+          `Tool call was already approved for approval ID: ${approvalId}`,
+        );
+      }
+      throw new Error(
+        `Cannot approve tool call that was already denied for approval ID: ${approvalId}`,
       );
     }
 
@@ -1588,12 +1581,9 @@ export class Agent<
     }
 
     // Save approval response and tool result together
-    // The approvalIdempotencyKey makes this atomic - if a concurrent request
-    // already saved this approval, the mutation returns the existing message.
     const { messageId: toolResultId } = await this.saveMessage(ctx, {
       threadId,
       promptMessageId: parentMessageId,
-      approvalIdempotencyKey: approvalId,
       message: {
         role: "tool",
         content: [
@@ -1651,14 +1641,14 @@ export class Agent<
       throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
     }
 
-    // Handle idempotent case - approval was already processed
     if (toolInfo.alreadyHandled) {
-      // Continue generation from the existing approval message
-      return this.streamText(
-        ctx,
-        { threadId },
-        { promptMessageId: toolInfo.existingMessageId, forceNewOrder: true },
-        { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+      if (!toolInfo.wasApproved) {
+        throw new Error(
+          `Tool call was already denied for approval ID: ${approvalId}`,
+        );
+      }
+      throw new Error(
+        `Cannot deny tool call that was already approved for approval ID: ${approvalId}`,
       );
     }
 
@@ -1666,12 +1656,9 @@ export class Agent<
     const denialReason = reason ?? "Tool execution was denied by the user";
 
     // Save approval response (denied) and tool result with execution-denied
-    // The approvalIdempotencyKey makes this atomic - if a concurrent request
-    // already saved this approval, the mutation returns the existing message.
     const { messageId: toolResultId } = await this.saveMessage(ctx, {
       threadId,
       promptMessageId: parentMessageId,
-      approvalIdempotencyKey: approvalId,
       message: {
         role: "tool",
         content: [
@@ -1708,7 +1695,7 @@ export class Agent<
    * Find tool call information for an approval ID.
    * Returns either:
    * - Tool info if approval is pending
-   * - { alreadyHandled: true, existingMessageId } if already processed
+   * - { alreadyHandled: true, wasApproved } if already approved/denied
    * - null if approval request not found
    * @internal
    */
@@ -1724,7 +1711,7 @@ export class Agent<
         parentMessageId: string;
         alreadyHandled?: false;
       }
-    | { alreadyHandled: true; existingMessageId: string }
+    | { alreadyHandled: true; wasApproved: boolean }
     | null
   > {
     const messagesResult = await this.listMessages(ctx, {
@@ -1745,8 +1732,7 @@ export class Agent<
             part.type === "tool-approval-response" &&
             (part as any).approvalId === approvalId
           ) {
-            // Already handled - return existing message ID for idempotent response
-            return { alreadyHandled: true, existingMessageId: msg._id };
+            return { alreadyHandled: true, wasApproved: (part as any).approved === true };
           }
         }
       }

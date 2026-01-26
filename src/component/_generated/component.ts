@@ -138,7 +138,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "internal",
         {
           agentName?: string;
-          approvalIdempotencyKey?: string;
           embeddings?: {
             dimension:
               | 128

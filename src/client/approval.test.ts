@@ -244,10 +244,10 @@ describe("Tool Approval Workflow", () => {
         (approvalAgent as any)._findToolCallInfo(ctx, threadId, "approval-xyz"),
       );
 
-      // Now returns { alreadyHandled: true, existingMessageId } for idempotent handling
+      // Returns { alreadyHandled: true, wasApproved: true } when already approved
       expect(toolInfo).not.toBeNull();
       expect(toolInfo?.alreadyHandled).toBe(true);
-      expect(toolInfo?.existingMessageId).toBeDefined();
+      expect(toolInfo?.wasApproved).toBe(true);
     });
   });
 
