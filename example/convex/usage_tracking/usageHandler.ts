@@ -37,9 +37,21 @@ export const insertRawUsage = internalMutation({
       outputTokens: v.optional(v.number()),
       reasoningTokens: v.optional(v.number()),
       cachedInputTokens: v.optional(v.number()),
-      // AI SDK v6 adds these detailed token breakdown fields
-      inputTokenDetails: v.optional(v.any()),
-      outputTokenDetails: v.optional(v.any()),
+      // AI SDK v6 detailed token breakdown fields
+      inputTokenDetails: v.optional(
+        v.object({
+          noCacheTokens: v.optional(v.number()),
+          cacheReadTokens: v.optional(v.number()),
+          cacheWriteTokens: v.optional(v.number()),
+        })
+      ),
+      outputTokenDetails: v.optional(
+        v.object({
+          textTokens: v.optional(v.number()),
+          reasoningTokens: v.optional(v.number()),
+        })
+      ),
+      // Provider-specific raw usage data (varies by provider)
       raw: v.optional(v.any()),
     }),
     providerMetadata: v.optional(vProviderMetadata),
