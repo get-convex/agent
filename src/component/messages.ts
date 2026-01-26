@@ -144,6 +144,10 @@ const addMessagesArgs = {
   // If provided, forces the messages to use this order instead of computing it.
   // Used by forceNewOrder to ensure continuation messages get a fresh order.
   overrideOrder: v.optional(v.number()),
+  // If provided, checks for existing approval response with this ID before saving.
+  // Used for idempotent approval handling - if approval already exists, returns
+  // early without saving duplicate. This makes the check-and-write atomic.
+  approvalIdempotencyKey: v.optional(v.string()),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -169,8 +173,35 @@ async function addMessagesHandler(
     pendingMessageId,
     hideFromUserIdSearch,
     overrideOrder,
+    approvalIdempotencyKey,
     ...rest
   } = args;
+
+  // Idempotency check for approval responses - prevents duplicate approvals
+  // when concurrent requests race. This check is atomic with the write.
+  if (approvalIdempotencyKey && threadId) {
+    const existingMessages = await ctx.db
+      .query("messages")
+      .withIndex("threadId_status_tool_order_stepOrder", (q) =>
+        q.eq("threadId", threadId),
+      )
+      .order("desc")
+      .take(50);
+
+    for (const msg of existingMessages) {
+      if (msg.message?.role === "tool" && Array.isArray(msg.message.content)) {
+        for (const part of msg.message.content) {
+          if (
+            part.type === "tool-approval-response" &&
+            (part as { approvalId?: string }).approvalId === approvalIdempotencyKey
+          ) {
+            // Approval already processed - return existing message for idempotency
+            return { messages: [publicMessage(msg)] };
+          }
+        }
+      }
+    }
+  }
   const promptMessage = promptMessageId && (await ctx.db.get(promptMessageId));
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
