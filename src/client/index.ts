@@ -1546,12 +1546,15 @@ export class Agent<
       throw new Error(`Tool not found: ${toolName}`);
     }
 
+    // Get thread metadata to propagate userId to tool context
+    const threadMetadata = await this.getThreadMetadata(ctx, { threadId });
+
     let result: string;
     try {
       // Execute with context injection (like wrapTools does)
       const toolCtx = {
         ...ctx,
-        userId: undefined,
+        userId: threadMetadata?.userId ?? undefined,
         threadId,
         agent: this,
       };
@@ -1690,7 +1693,22 @@ export class Agent<
     let toolName: string | undefined;
     let toolInput: Record<string, unknown> | undefined;
 
-    // First pass: find the approval request to get toolCallId and parent message
+    // First, check if this approval has already been handled (idempotency guard)
+    for (const msg of messagesResult.page) {
+      if (msg.message?.role === "tool" && Array.isArray(msg.message.content)) {
+        for (const part of msg.message.content) {
+          if (
+            part.type === "tool-approval-response" &&
+            (part as any).approvalId === approvalId
+          ) {
+            // Already handled - return null to prevent duplicate execution
+            return null;
+          }
+        }
+      }
+    }
+
+    // Second pass: find the approval request to get toolCallId and parent message
     for (const msg of messagesResult.page) {
       if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
         for (const part of msg.message.content) {
