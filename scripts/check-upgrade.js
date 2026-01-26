@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable no-undef */
 
 /**
  * Pre-typecheck script that detects AI SDK v5 patterns and provides
@@ -62,7 +63,7 @@ function findFiles(dir, extensions = ['.ts', '.tsx']) {
           files.push(fullPath);
         }
       }
-    } catch (e) {
+    } catch {
       // Skip directories we can't read
     }
   }
