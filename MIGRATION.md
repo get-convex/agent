@@ -147,22 +147,6 @@ This means a third-party provider needs updating. Common solutions:
 | @ai-sdk/groq | v1.x-v2.x | v3.x |
 | @ai-sdk/google | v1.x-v2.x | v3.x |
 
-## Automated Upgrade Check
-
-Run the upgrade check script to find v5 patterns in your code:
-
-```bash
-npx convex-agent-upgrade-check ./convex
-```
-
-Or check your entire project:
-
-```bash
-npx convex-agent-upgrade-check .
-```
-
-This will detect both code patterns that need updating and incompatible package versions in your package.json.
-
 ## More Information
 
 - [AI SDK v6 Migration Guide](https://ai-sdk.dev/docs/migration-guides/migration-guide-6-0)
