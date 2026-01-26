@@ -52,7 +52,7 @@ import type { ComponentApi } from "../component/_generated/component.js";
  */
 type AssertAISDKv6<T> = T extends { specificationVersion: "v3" }
   ? T
-  : "⚠️ @convex-dev/agent v0.6.0 requires AI SDK v6. Update your dependencies: npm install ai@^6.0.35 @ai-sdk/openai@^3.0.10 (or other provider). See: https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+  : "⚠️ @convex-dev/agent v0.6.0 requires AI SDK v6. Update your dependencies: npm install ai@^6.0.35 @ai-sdk/openai@^3.0.10 (or other provider). See: node_modules/@convex-dev/agent/MIGRATION.md";
 
 export type AgentPrompt = {
   /**
