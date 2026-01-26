@@ -90,23 +90,33 @@ Follow the rules in `.cursor/rules/convex_rules.mdc`:
 
 ## AI Guidance: Helping Users Upgrade to v0.6.0
 
+**IMPORTANT: v0.6.0 requires AI SDK v6 (ai@^6.0.0)**
+
 When helping users upgrade from @convex-dev/agent v0.3.x (AI SDK v5) to v0.6.0 (AI SDK v6):
 
-### Step 1: Detect v5 Patterns
+### Step 1: Update Dependencies First
 
-Search for these patterns indicating v5 usage:
-- `createTool({ parameters:` - should be `inputSchema`
-- `createTool({ handler:` - should be `execute`
-- `textEmbeddingModel:` - should be `embeddingModel`
-- `maxSteps:` in generateText/streamText - should be `stopWhen: stepCountIs(N)`
-- `@ai-sdk/*` packages at v1.x or v2.x - should be v3.x
-
-### Step 2: Update Dependencies
+Update all AI SDK packages together to avoid peer dependency conflicts:
 
 ```bash
 npm install @convex-dev/agent@^0.6.0 ai@^6.0.35 @ai-sdk/provider-utils@^4.0.6
 npm install @ai-sdk/openai@^3.0.10  # or whichever provider
 ```
+
+**Compatible sibling packages:**
+- `@convex-dev/rag@^0.7.0` (v0.6.0 has type conflicts with AI SDK v6)
+- `@convex-dev/workflow@^0.3.2`
+
+### Step 2: Detect v5 Patterns
+
+Search for these patterns indicating v5 usage:
+- `createTool({ args:` - should be `inputSchema`
+- `createTool({ handler:` - should be `execute`
+- `textEmbeddingModel:` - should be `embeddingModel`
+- `maxSteps:` in generateText/streamText - should be `stopWhen: stepCountIs(N)`
+- `mode: "json"` in generateObject - removed in v6
+- `@ai-sdk/*` packages at v1.x or v2.x - should be v3.x
+- Type imports: `LanguageModelV2` → `LanguageModelV3`, `EmbeddingModel<string>` → `EmbeddingModelV3`
 
 ### Step 3: Apply Transformations
 
@@ -160,6 +170,38 @@ await agent.generateText(ctx, { threadId }, {
 })
 ```
 
+**Type imports:**
+```typescript
+// BEFORE (v5)
+import type { LanguageModelV2 } from "@ai-sdk/provider";
+import type { EmbeddingModel } from "ai";
+let model: LanguageModelV2;
+let embedder: EmbeddingModel<string>;
+
+// AFTER (v6)
+import type { LanguageModelV3, EmbeddingModelV3 } from "@ai-sdk/provider";
+let model: LanguageModelV3;
+let embedder: EmbeddingModelV3;
+```
+
+**generateObject (remove mode: "json"):**
+```typescript
+// BEFORE (v5)
+await generateObject({
+  model,
+  mode: "json",
+  schema: z.object({ ... }),
+  prompt: "..."
+})
+
+// AFTER (v6) - mode: "json" removed, just use schema
+await generateObject({
+  model,
+  schema: z.object({ ... }),
+  prompt: "..."
+})
+```
+
 ### Step 4: Verify
 
 ```bash
@@ -172,6 +214,8 @@ npm test
 - **EmbeddingModelV2 vs V3 errors**: Ensure all `@ai-sdk/*` packages are v3.x
 - **Tool `args` vs `input`**: v6 uses `input` in execute signature (2nd param)
 - **`mimeType` vs `mediaType`**: v6 prefers `mediaType` (backwards compat maintained)
+- **Type import errors**: `LanguageModelV2` is now `LanguageModelV3`, `EmbeddingModel<string>` is now `EmbeddingModelV3` (no longer generic)
+- **generateObject mode errors**: `mode: "json"` was removed in v6 - just remove the mode option
 
 ### New v6 Features to Mention
 
