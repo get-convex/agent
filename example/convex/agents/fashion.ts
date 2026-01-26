@@ -11,15 +11,15 @@ export const fashionAgent = new Agent(components.agent, {
   tools: {
     getUserPreferences: createTool({
       description: "Get clothing preferences for a user",
-      args: z.object({
+      inputSchema: z.object({
         search: z.string().describe("Which preferences are requested"),
       }),
-      handler: async (ctx, args) => {
-        console.log("getting user preferences", args);
+      execute: async (ctx, input) => {
+        console.log("getting user preferences", input);
         return {
           userId: ctx.userId,
           threadId: ctx.threadId,
-          search: args.search,
+          search: input.search,
           information: `The user likes to look stylish`,
         };
       },
