@@ -59,6 +59,7 @@ npm run typecheck    # Full TypeScript validation including example/convex
 - **Message-centric design** - All operations revolve around message persistence/retrieval
 - **Component-based encapsulation** - Uses Convex Components pattern
 - **Multi-user support** - Threads have optional `userId` for ownership
+- **Tool approval flow** - Tools can require human approval via `needsApproval`, with `agent.approveToolCall()` and `agent.denyToolCall()` methods
 
 ### Database Tables (Convex Component)
 
@@ -87,82 +88,94 @@ Follow the rules in `.cursor/rules/convex_rules.mdc`:
 - `@convex-dev/agent/validators` - Convex validators for integration
 - `@convex-dev/agent/test` - Testing utilities
 
-## Upgrading to v0.6.0 (AI SDK v6)
+## AI Guidance: Helping Users Upgrade to v0.6.0
 
-When helping users upgrade from @convex-dev/agent v0.3.x to v0.6.0, follow these steps:
+When helping users upgrade from @convex-dev/agent v0.3.x (AI SDK v5) to v0.6.0 (AI SDK v6):
 
-### Step 1: Update dependencies in package.json
+### Step 1: Detect v5 Patterns
+
+Search for these patterns indicating v5 usage:
+- `createTool({ parameters:` - should be `inputSchema`
+- `createTool({ handler:` - should be `execute`
+- `textEmbeddingModel:` - should be `embeddingModel`
+- `maxSteps:` in generateText/streamText - should be `stopWhen: stepCountIs(N)`
+- `@ai-sdk/*` packages at v1.x or v2.x - should be v3.x
+
+### Step 2: Update Dependencies
 
 ```bash
 npm install @convex-dev/agent@^0.6.0 ai@^6.0.35 @ai-sdk/provider-utils@^4.0.6
+npm install @ai-sdk/openai@^3.0.10  # or whichever provider
 ```
 
-Also update any AI SDK provider packages:
-```bash
-npm install @ai-sdk/openai@^3.0.10 @ai-sdk/anthropic@^3.0.13
-```
+### Step 3: Apply Transformations
 
-### Step 2: Update tool definitions
-
-Replace `parameters` with `inputSchema`:
-
+**Tool definitions:**
 ```typescript
-// Before (v5)
+// BEFORE (v5)
 const myTool = createTool({
   description: "...",
   parameters: z.object({ query: z.string() }),
-  execute: async (ctx, args) => { ... }
+  handler: async (ctx, args) => {
+    return args.query.toUpperCase();
+  }
 })
 
-// After (v6)
+// AFTER (v6)
 const myTool = createTool({
   description: "...",
   inputSchema: z.object({ query: z.string() }),
-  execute: async (ctx, input, options) => { ... }
+  execute: async (ctx, input, options) => {
+    return input.query.toUpperCase();
+  }
 })
 ```
 
-### Step 3: Update maxSteps usage (if applicable)
-
+**Agent embedding config:**
 ```typescript
-// Before (v5)
+// BEFORE
+new Agent(components.agent, {
+  textEmbeddingModel: openai.embedding("text-embedding-3-small")
+})
+
+// AFTER
+new Agent(components.agent, {
+  embeddingModel: openai.embedding("text-embedding-3-small")
+})
+```
+
+**Step limits:**
+```typescript
+// BEFORE
 await agent.generateText(ctx, { threadId }, {
   prompt: "...",
   maxSteps: 5
 })
 
-// After (v6) - maxSteps still works but stopWhen is preferred
-import { stepCountIs } from "ai"
+// AFTER
+import { stepCountIs } from "@convex-dev/agent"
 await agent.generateText(ctx, { threadId }, {
   prompt: "...",
   stopWhen: stepCountIs(5)
 })
 ```
 
-### Step 4: Update embedding model config (optional)
-
-```typescript
-// Before
-new Agent(components.agent, {
-  textEmbeddingModel: openai.embedding("text-embedding-3-small")
-})
-
-// After (textEmbeddingModel still works but embeddingModel is preferred)
-new Agent(components.agent, {
-  embeddingModel: openai.embedding("text-embedding-3-small")
-})
-```
-
-### Step 5: Verify the upgrade
+### Step 4: Verify
 
 ```bash
 npm run typecheck
-npm run lint
 npm test
 ```
 
-### Common issues
+### Common Issues
 
-- **EmbeddingModelV2 vs V3 errors**: Ensure all @ai-sdk/* packages are updated to v3.x
-- **Tool input/args**: v6 uses `input` instead of `args` in tool calls (backwards compat maintained)
-- **mimeType vs mediaType**: v6 uses `mediaType` (backwards compat maintained)
+- **EmbeddingModelV2 vs V3 errors**: Ensure all `@ai-sdk/*` packages are v3.x
+- **Tool `args` vs `input`**: v6 uses `input` in execute signature (2nd param)
+- **`mimeType` vs `mediaType`**: v6 prefers `mediaType` (backwards compat maintained)
+
+### New v6 Features to Mention
+
+After upgrade, users can now use:
+- **Tool approval**: `needsApproval` in createTool, `agent.approveToolCall()`, `agent.denyToolCall()`
+- **Reasoning streaming**: Works with models like Groq that support reasoning
+- **Detailed token usage**: `inputTokenDetails`, `outputTokenDetails` in usage tracking

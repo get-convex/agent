@@ -124,7 +124,6 @@ export async function deriveUIMessagesFromDeltas(
         blankUIMessage(streamMessage, threadId),
         parts,
       );
-      // TODO: this fails on partial tool calls
       messages.push(uiMessage);
     } else {
       const [uiMessages] = deriveUIMessagesFromTextStreamParts(
