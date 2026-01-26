@@ -37,13 +37,9 @@
     "release": "npm run clean && npm ci && run-p test lint typecheck && npm version patch && npm publish && git push --tags",
     "version": "pbcopy <<<$npm_package_version; vim CHANGELOG.md && prettier -w CHANGELOG.md && git add CHANGELOG.md"
   },
-  "bin": {
-    "convex-agent-upgrade-check": "./scripts/check-upgrade.js"
-  },
   "files": [
     "dist",
     "src",
-    "scripts",
     "MIGRATION.md"
   ],
   "exports": {
