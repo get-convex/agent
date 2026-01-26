@@ -624,9 +624,7 @@ function normalizeToolResult(
   },
 ): ToolResultPart & Infer<typeof vToolResultPart> {
   let output = part.output
-    ? validate(vToolResultOutput, part.output)
-      ? (part.output as any)
-      : normalizeToolOutput(JSON.stringify(part.output))
+    ? normalizeToolOutput(part.output as any)
     : normalizeToolOutput("result" in part ? part.result : undefined);
 
   // Convert execution-denied to text format for provider compatibility
