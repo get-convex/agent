@@ -25,7 +25,8 @@ export function blankUIMessage<METADATA = unknown>(
 ): UIMessage<METADATA> {
   return {
     id: `stream:${streamMessage.streamId}`,
-    key: `${threadId}-${streamMessage.order}-${streamMessage.stepOrder}`,
+    // Key uses only order (not stepOrder) to prevent React remounting when combined with saved messages
+    key: `${threadId}-${streamMessage.order}`,
     order: streamMessage.order,
     stepOrder: streamMessage.stepOrder,
     status: statusFromStreamStatus(streamMessage.status),

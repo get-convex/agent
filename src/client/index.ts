@@ -1604,11 +1604,11 @@ export class Agent<
       skipEmbeddings: true,
     });
 
-    // Continue generation with forceNewOrder to create a separate message
+    // Continue generation in the same order (incrementing stepOrder)
     return this.streamText(
       ctx,
       { threadId },
-      { promptMessageId: toolResultId, forceNewOrder: true },
+      { promptMessageId: toolResultId },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
   }
@@ -1682,11 +1682,11 @@ export class Agent<
       skipEmbeddings: true,
     });
 
-    // Continue generation with forceNewOrder to create a separate message
+    // Continue generation in the same order (incrementing stepOrder)
     return this.streamText(
       ctx,
       { threadId },
-      { promptMessageId: toolResultId, forceNewOrder: true },
+      { promptMessageId: toolResultId },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
   }

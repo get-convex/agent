@@ -5,7 +5,6 @@ import { Toaster } from "../components/ui/toaster";
 import { api } from "../../convex/_generated/api";
 import {
   optimisticallySendMessage,
-  useSmoothText,
   useUIMessages,
   type UIMessage,
 } from "@convex-dev/agent/react";
@@ -191,86 +190,72 @@ function Message({
   onApproval: (approvalId: string, approved: boolean) => void;
 }) {
   const isUser = message.role === "user";
-  const [visibleText] = useSmoothText(message.text, {
-    startStreaming: message.status === "streaming",
-  });
 
-  // Find tool calls that need approval
-  const toolParts = message.parts.filter(
-    (p): p is ToolUIPart => p.type.startsWith("tool-"),
-  );
+  // Render parts in order to show approval UI in the correct position
+  const renderPart = (part: UIMessage["parts"][number], index: number) => {
+    // Skip step-start parts (visual separator, not needed here)
+    if (part.type === "step-start") {
+      return null;
+    }
 
-  // Check for pending approvals - tools that are still waiting for user decision
-  const pendingApprovals = toolParts.filter(
-    (p) => p.state === "approval-requested" && "approval" in p && p.approval?.id,
-  );
+    // Text part
+    if (part.type === "text") {
+      const textPart = part as { text: string; state?: string };
+      return (
+        <div key={index} className="whitespace-pre-wrap">
+          {textPart.text}
+          {textPart.state === "streaming" && (
+            <span className="animate-pulse">▋</span>
+          )}
+        </div>
+      );
+    }
 
-  // Check for completed tool calls - tools that were approved and executed
-  // States: "output-available" (normal completion), "approval-responded" (approved, executing/executed)
-  const completedTools = toolParts.filter(
-    (p) => p.state === "output-available" || p.state === "approval-responded",
-  );
+    // Tool part
+    if (part.type.startsWith("tool-")) {
+      const tool = part as ToolUIPart;
+      const approvalId = "approval" in tool ? (tool.approval as { id?: string })?.id : undefined;
 
-  // Check for denied tool calls
-  const deniedTools = toolParts.filter((p) => p.state === "output-denied");
-
-  return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "rounded-lg px-4 py-3 max-w-xl shadow-sm",
-          isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800",
-          {
-            "bg-green-100": message.status === "streaming",
-            "bg-red-100": message.status === "failed",
-          },
-        )}
-      >
-        {/* Main text */}
-        {visibleText && (
-          <div className="whitespace-pre-wrap">{visibleText}</div>
-        )}
-
-        {/* Pending approval requests */}
-        {pendingApprovals.map((tool) => {
-          const approvalId = "approval" in tool ? tool.approval?.id : undefined;
-          return (
-            <div
-              key={tool.toolCallId}
-              className="mt-3 p-3 bg-orange-100 border-2 border-orange-500 rounded-lg"
-            >
-              <div className="font-semibold text-yellow-800 mb-2">
-                ⚠️ Approval Required: {getToolName(tool.type)}
-              </div>
-              <div className="text-sm text-yellow-700 mb-3">
-                <strong>Action:</strong>{" "}
-                {JSON.stringify(tool.input, null, 2)}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => approvalId && onApproval(approvalId, true)}
-                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm font-medium"
-                >
-                  ✓ Approve
-                </button>
-                <button
-                  type="button"
-                  onClick={() => approvalId && onApproval(approvalId, false)}
-                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm font-medium"
-                >
-                  ✗ Deny
-                </button>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Completed tool calls */}
-        {completedTools.map((tool) => (
+      // Pending approval
+      if (tool.state === "approval-requested" && approvalId) {
+        return (
           <div
             key={tool.toolCallId}
-            className="mt-3 p-3 bg-green-50 border border-green-300 rounded-lg"
+            className="my-3 p-3 bg-orange-100 border-2 border-orange-500 rounded-lg"
+          >
+            <div className="font-semibold text-yellow-800 mb-2">
+              ⚠️ Approval Required: {getToolName(tool.type)}
+            </div>
+            <div className="text-sm text-yellow-700 mb-3">
+              <strong>Action:</strong>{" "}
+              {JSON.stringify(tool.input, null, 2)}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onApproval(approvalId, true)}
+                className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm font-medium"
+              >
+                ✓ Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => onApproval(approvalId, false)}
+                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm font-medium"
+              >
+                ✗ Deny
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Completed tool
+      if (tool.state === "output-available" || tool.state === "approval-responded") {
+        return (
+          <div
+            key={tool.toolCallId}
+            className="my-3 p-3 bg-green-50 border border-green-300 rounded-lg"
           >
             <div className="font-semibold text-green-800">
               ✓ {getToolName(tool.type)}
@@ -284,13 +269,15 @@ function Message({
               </div>
             ) : null}
           </div>
-        ))}
+        );
+      }
 
-        {/* Denied tool calls */}
-        {deniedTools.map((tool) => (
+      // Denied tool
+      if (tool.state === "output-denied") {
+        return (
           <div
             key={tool.toolCallId}
-            className="mt-3 p-3 bg-red-50 border border-red-300 rounded-lg"
+            className="my-3 p-3 bg-red-50 border border-red-300 rounded-lg"
           >
             <div className="font-semibold text-red-800">
               ✗ Denied: {getToolName(tool.type)}
@@ -299,10 +286,50 @@ function Message({
               <strong>Action:</strong> {JSON.stringify(tool.input)}
             </div>
           </div>
-        ))}
+        );
+      }
+
+      // Tool in other states (input-available, input-streaming, etc.)
+      return (
+        <div
+          key={tool.toolCallId}
+          className="my-3 p-3 bg-gray-100 border border-gray-300 rounded-lg"
+        >
+          <div className="font-semibold text-gray-700">
+            🔧 {getToolName(tool.type)}
+          </div>
+          <div className="text-sm text-gray-600 mt-1">
+            <strong>Input:</strong> {JSON.stringify(tool.input)}
+          </div>
+          {tool.state === "input-streaming" && (
+            <div className="text-xs text-gray-500 mt-1 animate-pulse">
+              Processing...
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "rounded-lg px-4 py-3 max-w-xl shadow-sm transition-all duration-200",
+          isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800",
+          {
+            "bg-green-100": message.status === "streaming",
+            "bg-red-100": message.status === "failed",
+          },
+        )}
+      >
+        {/* Render parts in order */}
+        {message.parts.map((part, index) => renderPart(part, index))}
 
         {/* Status indicator */}
-        {message.status === "streaming" && (
+        {message.status === "streaming" && !message.parts.some(p => p.type === "text" && (p as { state?: string }).state === "streaming") && (
           <div className="mt-2 text-xs text-gray-500 animate-pulse">
             Generating...
           </div>
