@@ -450,15 +450,15 @@ describe("Tool Approval Workflow", () => {
     });
   });
 
-  describe("forceNewOrder behavior", () => {
-    test("messages with forceNewOrder get incremented order", async () => {
+  describe("order behavior after approval", () => {
+    test("continuation messages stay in the same order", async () => {
       const t = initConvexTest(schema);
 
       const threadId = await t.run(async (ctx) =>
         createThread(ctx, components.agent, { userId: "user1" }),
       );
 
-      // Save initial message at order 0
+      // Save initial user message at order 0
       const { messageId: firstMsgId } = await t.run(async (ctx) =>
         approvalAgent.saveMessage(ctx, {
           threadId,
@@ -476,11 +476,9 @@ describe("Tool Approval Workflow", () => {
       });
 
       expect(firstMsg?.order).toBeDefined();
-      const initialOrder = firstMsg!.order;
-
-      // When using forceNewOrder, the continuation message should have order+1
-      // This is tested indirectly through the approval workflow
-      // The forceNewOrder flag is used internally by approveToolCall/denyToolCall
+      // After tool approval, continuation messages should stay in the same order
+      // (incrementing stepOrder) rather than creating a new order.
+      // This keeps all assistant responses for a single user turn grouped together.
     });
   });
 

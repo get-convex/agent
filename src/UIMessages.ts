@@ -379,19 +379,21 @@ function createAssistantUIMessage<
   const group = sorted(groupUnordered);
   const firstMessage = group[0];
 
-  // Use first message for special fields
+  const lastMessage = group[group.length - 1];
+
+  // Use first message for ID/timestamp, but last message's stepOrder for deduplication with streaming
+  // Key uses only order (not stepOrder) to prevent React remounting when messages are added to the group
   const common = {
     id: firstMessage._id,
     _creationTime: firstMessage._creationTime,
     order: firstMessage.order,
-    stepOrder: firstMessage.stepOrder,
-    key: `${firstMessage.threadId}-${firstMessage.order}-${firstMessage.stepOrder}`,
+    stepOrder: lastMessage.stepOrder,
+    key: `${firstMessage.threadId}-${firstMessage.order}`,
     agentName: firstMessage.agentName,
     userId: firstMessage.userId,
   };
 
   // Get status from last message
-  const lastMessage = group[group.length - 1];
   const status = lastMessage.streaming
     ? ("streaming" as const)
     : lastMessage.status;
@@ -746,7 +748,8 @@ export function combineUIMessages(messages: UIMessage[]): UIMessage[] {
     }
     acc.push({
       ...previous,
-      ...pick(message, ["status", "metadata", "agentName"]),
+      // Use the later message's stepOrder so deduplication with streaming works
+      ...pick(message, ["status", "metadata", "agentName", "stepOrder"]),
       parts: newParts,
       text: joinText(newParts),
     });

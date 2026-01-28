@@ -226,8 +226,8 @@ describe("fromUIMessages round-trip tests", () => {
       // Check that tool information is preserved
       const toolMessages = backToMessageDocs.filter((msg) => msg.tool);
       expect(toolMessages.length).toBeGreaterThan(0);
-      expect(toolMessages[0].stepOrder).toBe(1);
-      expect(toolMessages[1].stepOrder).toBe(2);
+      // stepOrders should be consecutive (the base is now the last message's stepOrder)
+      expect(toolMessages[1].stepOrder).toBe(toolMessages[0].stepOrder + 1);
     }
   });
 

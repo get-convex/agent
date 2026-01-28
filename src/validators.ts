@@ -430,12 +430,27 @@ export const vFinishReason = v.union(
   v.literal("unknown"),
 );
 
+// AI SDK v6 detailed token breakdown fields
+export const vInputTokenDetails = v.object({
+  noCacheTokens: v.optional(v.number()),
+  cacheReadTokens: v.optional(v.number()),
+  cacheWriteTokens: v.optional(v.number()),
+});
+
+export const vOutputTokenDetails = v.object({
+  textTokens: v.optional(v.number()),
+  reasoningTokens: v.optional(v.number()),
+});
+
 export const vUsage = v.object({
   promptTokens: v.number(),
   completionTokens: v.number(),
   totalTokens: v.number(),
   reasoningTokens: v.optional(v.number()),
   cachedInputTokens: v.optional(v.number()),
+  // AI SDK v6 detailed token breakdown
+  inputTokenDetails: v.optional(vInputTokenDetails),
+  outputTokenDetails: v.optional(vOutputTokenDetails),
 });
 export type Usage = Infer<typeof vUsage>;
 
