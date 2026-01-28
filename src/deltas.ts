@@ -25,7 +25,8 @@ export function blankUIMessage<METADATA = unknown>(
 ): UIMessage<METADATA> {
   return {
     id: `stream:${streamMessage.streamId}`,
-    key: `${threadId}-${streamMessage.order}-${streamMessage.stepOrder}`,
+    // Key uses only order (not stepOrder) to prevent React remounting when combined with saved messages
+    key: `${threadId}-${streamMessage.order}`,
     order: streamMessage.order,
     stepOrder: streamMessage.stepOrder,
     status: statusFromStreamStatus(streamMessage.status),
@@ -124,7 +125,6 @@ export async function deriveUIMessagesFromDeltas(
         blankUIMessage(streamMessage, threadId),
         parts,
       );
-      // TODO: this fails on partial tool calls
       messages.push(uiMessage);
     } else {
       const [uiMessages] = deriveUIMessagesFromTextStreamParts(

@@ -19,7 +19,7 @@ import type {
 } from "ai";
 import { generateObject, generateText, stepCountIs, streamObject } from "ai";
 
-const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
 function warnDeprecation(key: string, message: string) {
   if (!warnedDeprecations.has(key)) {
@@ -1507,5 +1507,279 @@ export class Agent<
         };
       },
     });
+  }
+
+  /**
+   * Approve a pending tool call and continue generation.
+   *
+   * This is a helper for the AI SDK v6 tool approval workflow. When a tool
+   * with `needsApproval: true` is called, it returns a `tool-approval-request`.
+   * Call this method to approve the tool, execute it, and continue generation.
+   *
+   * @param ctx The context from an action.
+   * @param args.threadId The thread containing the tool call.
+   * @param args.approvalId The approval ID from the tool-approval-request.
+   * @param args.reason Optional reason for the approval.
+   * @returns The result of the continued generation.
+   */
+  async approveToolCall(
+    ctx: ActionCtx & CustomCtx,
+    args: {
+      threadId: string;
+      approvalId: string;
+      reason?: string;
+    },
+  ): Promise<StreamTextResult<ToolSet, never> & GenerationOutputMetadata> {
+    const { threadId, approvalId, reason } = args;
+    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+
+    if (!toolInfo) {
+      throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
+    }
+
+    if (toolInfo.alreadyHandled) {
+      if (toolInfo.wasApproved) {
+        throw new Error(
+          `Tool call was already approved for approval ID: ${approvalId}`,
+        );
+      }
+      throw new Error(
+        `Cannot approve tool call that was already denied for approval ID: ${approvalId}`,
+      );
+    }
+
+    const { toolCallId, toolName, toolInput, parentMessageId } = toolInfo;
+
+    // Execute the tool
+    const tools = this.options.tools as Record<string, any> | undefined;
+    const tool = tools?.[toolName];
+    if (!tool) {
+      throw new Error(`Tool not found: ${toolName}`);
+    }
+
+    // Get thread metadata to propagate userId to tool context
+    const threadMetadata = await this.getThreadMetadata(ctx, { threadId });
+
+    let result: string;
+    try {
+      // Execute with context injection (like wrapTools does)
+      const toolCtx = {
+        ...ctx,
+        userId: threadMetadata?.userId ?? undefined,
+        threadId,
+        agent: this,
+      };
+      const wrappedTool = tool.__acceptsCtx ? { ...tool, ctx: toolCtx } : tool;
+      const output = await wrappedTool.execute.call(wrappedTool, toolInput, {
+        toolCallId,
+        messages: [],
+      });
+      result = typeof output === "string" ? output : JSON.stringify(output);
+    } catch (error) {
+      result = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      console.error("Tool execution error:", error);
+    }
+
+    // Save approval response and tool result together
+    const { messageId: toolResultId } = await this.saveMessage(ctx, {
+      threadId,
+      promptMessageId: parentMessageId,
+      message: {
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId,
+            approved: true,
+            reason,
+          },
+          {
+            type: "tool-result",
+            toolCallId,
+            toolName,
+            output: { type: "text", value: result },
+          },
+        ],
+      },
+      skipEmbeddings: true,
+    });
+
+    // Continue generation in the same order (incrementing stepOrder)
+    return this.streamText(
+      ctx,
+      { threadId },
+      { promptMessageId: toolResultId },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
+  }
+
+  /**
+   * Deny a pending tool call and continue generation.
+   *
+   * This is a helper for the AI SDK v6 tool approval workflow. When a tool
+   * with `needsApproval: true` is called, it returns a `tool-approval-request`.
+   * Call this method to deny the tool and let the LLM respond to the denial.
+   *
+   * @param ctx The context from an action.
+   * @param args.threadId The thread containing the tool call.
+   * @param args.approvalId The approval ID from the tool-approval-request.
+   * @param args.reason Optional reason for the denial.
+   * @returns The result of the continued generation.
+   */
+  async denyToolCall(
+    ctx: ActionCtx & CustomCtx,
+    args: {
+      threadId: string;
+      approvalId: string;
+      reason?: string;
+    },
+  ): Promise<StreamTextResult<ToolSet, never> & GenerationOutputMetadata> {
+    const { threadId, approvalId, reason } = args;
+    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+
+    if (!toolInfo) {
+      throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
+    }
+
+    if (toolInfo.alreadyHandled) {
+      if (!toolInfo.wasApproved) {
+        throw new Error(
+          `Tool call was already denied for approval ID: ${approvalId}`,
+        );
+      }
+      throw new Error(
+        `Cannot deny tool call that was already approved for approval ID: ${approvalId}`,
+      );
+    }
+
+    const { toolCallId, toolName, parentMessageId } = toolInfo;
+    const denialReason = reason ?? "Tool execution was denied by the user";
+
+    // Save approval response (denied) and tool result with execution-denied
+    const { messageId: toolResultId } = await this.saveMessage(ctx, {
+      threadId,
+      promptMessageId: parentMessageId,
+      message: {
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId,
+            approved: false,
+            reason: denialReason,
+          },
+          {
+            type: "tool-result",
+            toolCallId,
+            toolName,
+            output: {
+              type: "execution-denied",
+              reason: denialReason,
+            },
+          },
+        ],
+      },
+      skipEmbeddings: true,
+    });
+
+    // Continue generation in the same order (incrementing stepOrder)
+    return this.streamText(
+      ctx,
+      { threadId },
+      { promptMessageId: toolResultId },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
+  }
+
+  /**
+   * Find tool call information for an approval ID.
+   * Returns either:
+   * - Tool info if approval is pending
+   * - { alreadyHandled: true, wasApproved } if already approved/denied
+   * - null if approval request not found
+   * @internal
+   */
+  private async _findToolCallInfo(
+    ctx: ActionCtx,
+    threadId: string,
+    approvalId: string,
+  ): Promise<
+    | {
+        toolCallId: string;
+        toolName: string;
+        toolInput: Record<string, unknown>;
+        parentMessageId: string;
+        alreadyHandled?: false;
+      }
+    | { alreadyHandled: true; wasApproved: boolean }
+    | null
+  > {
+    const messagesResult = await this.listMessages(ctx, {
+      threadId,
+      paginationOpts: { numItems: 20, cursor: null },
+    });
+
+    let toolCallId: string | undefined;
+    let parentMessageId: string | undefined;
+    let toolName: string | undefined;
+    let toolInput: Record<string, unknown> | undefined;
+
+    // First, check if this approval has already been handled
+    for (const msg of messagesResult.page) {
+      if (msg.message?.role === "tool" && Array.isArray(msg.message.content)) {
+        for (const part of msg.message.content) {
+          if (
+            part.type === "tool-approval-response" &&
+            (part as any).approvalId === approvalId
+          ) {
+            return { alreadyHandled: true, wasApproved: (part as any).approved === true };
+          }
+        }
+      }
+    }
+
+    // Second pass: find the approval request to get toolCallId and parent message
+    for (const msg of messagesResult.page) {
+      if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
+        for (const part of msg.message.content) {
+          if (
+            part.type === "tool-approval-request" &&
+            (part as any).approvalId === approvalId
+          ) {
+            parentMessageId = msg._id;
+            toolCallId = (part as any).toolCallId;
+            break;
+          }
+        }
+      }
+      if (toolCallId) break;
+    }
+
+    if (!toolCallId || !parentMessageId) {
+      return null;
+    }
+
+    // Third pass: find the tool-call with matching toolCallId to get toolName and input
+    for (const msg of messagesResult.page) {
+      if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
+        for (const part of msg.message.content) {
+          if (
+            part.type === "tool-call" &&
+            (part as any).toolCallId === toolCallId
+          ) {
+            toolName = (part as any).toolName;
+            toolInput = (part as any).input ?? (part as any).args ?? {};
+            break;
+          }
+        }
+      }
+      if (toolName) break;
+    }
+
+    if (!toolName || !toolInput) {
+      return null;
+    }
+
+    return { toolCallId, toolName, toolInput, parentMessageId };
   }
 }

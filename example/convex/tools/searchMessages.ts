@@ -11,10 +11,10 @@ import { textEmbeddingModel } from "../modelsForDemo";
 
 export const searchMessages = createTool({
   description: "Search for messages in the thread",
-  args: z.object({
+  inputSchema: z.object({
     query: z.string().describe("The query to search for"),
   }),
-  handler: async (ctx, { query }) => {
+  execute: async (ctx, { query }) => {
     return fetchContextMessages(ctx, components.agent, {
       userId: ctx.userId,
       threadId: ctx.threadId,

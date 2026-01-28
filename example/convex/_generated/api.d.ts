@@ -8,11 +8,13 @@
  * @module
  */
 
+import type * as agents_approval from "../agents/approval.js";
 import type * as agents_config from "../agents/config.js";
 import type * as agents_fashion from "../agents/fashion.js";
 import type * as agents_simple from "../agents/simple.js";
 import type * as agents_story from "../agents/story.js";
 import type * as agents_weather from "../agents/weather.js";
+import type * as chat_approval from "../chat/approval.js";
 import type * as chat_basic from "../chat/basic.js";
 import type * as chat_human from "../chat/human.js";
 import type * as chat_streamAbort from "../chat/streamAbort.js";
@@ -55,11 +57,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "agents/approval": typeof agents_approval;
   "agents/config": typeof agents_config;
   "agents/fashion": typeof agents_fashion;
   "agents/simple": typeof agents_simple;
   "agents/story": typeof agents_story;
   "agents/weather": typeof agents_weather;
+  "chat/approval": typeof chat_approval;
   "chat/basic": typeof chat_basic;
   "chat/human": typeof chat_human;
   "chat/streamAbort": typeof chat_streamAbort;

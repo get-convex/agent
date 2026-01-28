@@ -145,13 +145,24 @@ export async function streamText<
   const stream = streamer?.consumeStream(
     result.toUIMessageStream<AIUIMessage<TOOLS>>(),
   );
-  if (
-    (typeof options?.saveStreamDeltas === "object" &&
-      !options.saveStreamDeltas.returnImmediately) ||
-    options?.saveStreamDeltas === true
-  ) {
-    await stream;
-    await result.consumeStream();
+  let streamConsumed = false;
+  try {
+    if (
+      (typeof options?.saveStreamDeltas === "object" &&
+        !options.saveStreamDeltas.returnImmediately) ||
+      options?.saveStreamDeltas === true
+    ) {
+      await stream;
+      await result.consumeStream();
+      streamConsumed = true;
+    }
+  } catch (error) {
+    // If an error occurs during streaming (e.g., in onStepFinish callbacks),
+    // make sure to abort the streaming message so it doesn't get stuck
+    if (streamer && !streamConsumed) {
+      await streamer.fail(errorToString(error));
+    }
+    throw error;
   }
   const metadata: GenerationOutputMetadata = {
     promptMessageId,
