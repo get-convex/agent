@@ -3,6 +3,7 @@ import type {
   FlexibleSchema,
   IdGenerator,
   InferSchema,
+  ToolContent,
 } from "@ai-sdk/provider-utils";
 import type {
   CallSettings,
@@ -11,9 +12,12 @@ import type {
   GenerateTextResult,
   LanguageModel,
   ModelMessage,
+  StaticToolError,
+  StaticToolResult,
   StepResult,
   StopCondition,
   StreamTextResult,
+  Tool,
   ToolChoice,
   ToolSet,
 } from "ai";
@@ -46,7 +50,11 @@ import {
   serializeNewMessagesInStep,
   serializeObjectResult,
 } from "../mapping.js";
-import { getModelName, getProviderName } from "../shared.js";
+import {
+  createToolModelOutput,
+  getModelName,
+  getProviderName,
+} from "../shared.js";
 import {
   vMessageEmbeddings,
   vMessageWithMetadata,
@@ -1516,25 +1524,69 @@ export class Agent<
    * with `needsApproval: true` is called, it returns a `tool-approval-request`.
    * Call this method to approve the tool, execute it, and continue generation.
    *
-   * @param ctx The context from an action.
-   * @param args.threadId The thread containing the tool call.
-   * @param args.approvalId The approval ID from the tool-approval-request.
-   * @param args.reason Optional reason for the approval.
-   * @returns The result of the continued generation.
+   * @param ctx - The action context, optionally extended with custom context.
+   * @param threadOpts - Thread options.
+   * @param threadOpts.userId - Optional user ID to associate with the tool execution.
+   * @param threadOpts.threadId - The thread containing the pending tool call.
+   * @param approvalArgs - Approval response details.
+   * @param approvalArgs.approvalId - The approval ID from the `tool-approval-request` content part.
+   * @param approvalArgs.reason - Optional reason for approving the tool call.
+   * @param streamTextArgs - Arguments for continuing text generation after tool execution.
+   *   Similar to the AI SDK's `streamText` function, along with Agent prompt options.
+   *   Note: `promptMessageId` and `forceNewOrder` will be overridden internally.
+   * @param options - Optional context, storage, and streaming configuration.
+   * @param options.saveStreamDeltas - Whether to save incremental streaming data.
+   *   Defaults to `{ chunking: "word", throttleMs: 100 }`.
+   * @returns The streaming text result with generation output metadata.
    */
   async approveToolCall(
     ctx: ActionCtx & CustomCtx,
-    args: {
+    {
+      userId,
+      threadId,
+    }: {
+      userId?: string | null;
       threadId: string;
+    },
+    approvalArgs: {
       approvalId: string;
       reason?: string;
     },
-  ): Promise<StreamTextResult<ToolSet, never> & GenerationOutputMetadata> {
-    const { threadId, approvalId, reason } = args;
+    /**
+     * The arguments to the streamText function, similar to the ai sdk's
+     * {@link streamText} function, along with Agent prompt options.
+     *
+     * * `promptMessageId` & `forceNewOrder` will be overridden by the approval tool call
+     */
+    streamTextArgs: AgentPrompt &
+      StreamingTextArgs<AgentTools extends undefined ? AgentTools : AgentTools>,
+    /**
+     * The {@link ContextOptions} and {@link StorageOptions}
+     * options to use for fetching contextual messages and saving input/output messages.
+     */
+    options?: Options & {
+      /**
+       * Whether to save incremental data (deltas) from streaming responses.
+       * Defaults to `{ chunking: "word", throttleMs: 100 }`.
+       * If false, it will not save any deltas to the database.
+       * If true, it will save deltas with {@link DEFAULT_STREAMING_OPTIONS}.
+       */
+      saveStreamDeltas?: boolean | StreamingOptions;
+    },
+  ): Promise<
+    StreamTextResult<
+      AgentTools extends undefined ? AgentTools : AgentTools,
+      never
+    > &
+      GenerationOutputMetadata
+  > {
+    const { approvalId, reason } = approvalArgs;
     const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
 
     if (!toolInfo) {
-      throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
+      throw new Error(
+        `Could not find tool call for approval ID: ${approvalId}`,
+      );
     }
 
     if (toolInfo.alreadyHandled) {
@@ -1551,32 +1603,72 @@ export class Agent<
     const { toolCallId, toolName, toolInput, parentMessageId } = toolInfo;
 
     // Execute the tool
-    const tools = this.options.tools as Record<string, any> | undefined;
-    const tool = tools?.[toolName];
+    const tools = this.options.tools;
+    const tool = tools?.[toolName] as Tool<
+      any,
+      StaticToolResult<AgentTools> | StaticToolError<AgentTools>
+    >;
     if (!tool) {
       throw new Error(`Tool not found: ${toolName}`);
     }
 
-    // Get thread metadata to propagate userId to tool context
-    const threadMetadata = await this.getThreadMetadata(ctx, { threadId });
+    // Get thread metadata to propagate userId to tool context if needed
+    if (!userId) {
+      ({ userId } = await this.getThreadMetadata(ctx, { threadId }));
+    }
 
-    let result: string;
+    const toolResult: ToolContent = [
+      {
+        type: "tool-approval-response" as const,
+        approvalId,
+        approved: true,
+        reason,
+      },
+    ];
     try {
       // Execute with context injection (like wrapTools does)
       const toolCtx = {
         ...ctx,
-        userId: threadMetadata?.userId ?? undefined,
+        userId,
         threadId,
         agent: this,
       };
-      const wrappedTool = tool.__acceptsCtx ? { ...tool, ctx: toolCtx } : tool;
-      const output = await wrappedTool.execute.call(wrappedTool, toolInput, {
+      const wrappedTool = (tool as any).__acceptsCtx
+        ? { ...tool, ctx: toolCtx }
+        : tool;
+      const output = await wrappedTool.execute?.call(wrappedTool, toolInput, {
         toolCallId,
         messages: [],
       });
-      result = typeof output === "string" ? output : JSON.stringify(output);
+      if (!output || !("type" in output)) {
+        const errorMessage =
+          output && !("type" in output)
+            ? "Async iterator is not supported"
+            : "Tool execution failed";
+        throw new Error(errorMessage);
+      }
+      toolResult.push({
+        type: "tool-result" as const,
+        toolCallId,
+        toolName,
+        output: await createToolModelOutput({
+          toolCallId,
+          input: toolInput,
+          tool: tool,
+          output: output.type === "tool-result" ? output.output : output.error,
+          errorMode: output.type === "tool-error" ? "json" : "none",
+        }),
+      });
     } catch (error) {
-      result = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      toolResult.push({
+        type: "tool-result" as const,
+        toolCallId,
+        toolName,
+        output: {
+          type: "error-text",
+          value: error instanceof Error ? error.message : String(error),
+        },
+      });
       console.error("Tool execution error:", error);
     }
 
@@ -1586,30 +1678,22 @@ export class Agent<
       promptMessageId: parentMessageId,
       message: {
         role: "tool",
-        content: [
-          {
-            type: "tool-approval-response",
-            approvalId,
-            approved: true,
-            reason,
-          },
-          {
-            type: "tool-result",
-            toolCallId,
-            toolName,
-            output: { type: "text", value: result },
-          },
-        ],
+        content: toolResult,
       },
       skipEmbeddings: true,
     });
 
     // Continue generation with forceNewOrder to create a separate message
-    return this.streamText(
+    return this.streamText<AgentTools>(
       ctx,
       { threadId },
-      { promptMessageId: toolResultId, forceNewOrder: true },
-      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+      { ...streamTextArgs, promptMessageId: toolResultId, forceNewOrder: true },
+      {
+        ...options,
+        saveStreamDeltas: options?.saveStreamDeltas
+          ? options.saveStreamDeltas
+          : { chunking: "word", throttleMs: 100 },
+      },
     );
   }
 

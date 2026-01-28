@@ -2,8 +2,10 @@ import type {
   FilePart,
   ImagePart,
   ReasoningPart,
+  Tool,
   ToolCallPart,
   ToolResultPart,
+  ToolResultOutput,
   ToolApprovalRequest,
 } from "@ai-sdk/provider-utils";
 import type {
@@ -13,7 +15,45 @@ import type {
   UIMessagePart,
   UITools,
 } from "ai";
+import { getErrorMessage } from "@ai-sdk/provider";
+import type { JSONValue } from "@ai-sdk/provider";
 import type { Message, MessageContentParts } from "./validators.js";
+
+/**
+ * Helper function to create a tool model output for approval responses.
+ * @see ai `src/prompt/create-tool-model-output.ts`
+ */
+export async function createToolModelOutput({
+  toolCallId,
+  input,
+  output,
+  tool,
+  errorMode,
+}: {
+  toolCallId: string;
+  input: unknown;
+  output: unknown;
+  tool: Tool | undefined;
+  errorMode: 'none' | 'text' | 'json';
+}): Promise<ToolResultOutput> {
+  if (errorMode === 'text') {
+    return { type: 'error-text', value: getErrorMessage(output) };
+  } else if (errorMode === 'json') {
+    return { type: 'error-json', value: toJSONValue(output) };
+  }
+
+  if (tool?.toModelOutput) {
+    return await tool.toModelOutput({ toolCallId, input, output });
+  }
+
+  return typeof output === 'string'
+    ? { type: 'text', value: output }
+    : { type: 'json', value: toJSONValue(output) };
+}
+
+function toJSONValue(value: unknown): JSONValue {
+  return value === undefined ? null : (value as JSONValue);
+}
 
 export const DEFAULT_RECENT_MESSAGES = 100;
 
