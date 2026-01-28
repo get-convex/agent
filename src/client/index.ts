@@ -1640,13 +1640,6 @@ export class Agent<
         toolCallId,
         messages: [],
       });
-      if (!output || !("type" in output)) {
-        const errorMessage =
-          output && !("type" in output)
-            ? "Async iterator is not supported"
-            : "Tool execution failed";
-        throw new Error(errorMessage);
-      }
       toolResult.push({
         type: "tool-result" as const,
         toolCallId,
@@ -1655,8 +1648,8 @@ export class Agent<
           toolCallId,
           input: toolInput,
           tool: tool,
-          output: output.type === "tool-result" ? output.output : output.error,
-          errorMode: output.type === "tool-error" ? "json" : "none",
+          output: output,
+          errorMode: "none",
         }),
       });
     } catch (error) {
