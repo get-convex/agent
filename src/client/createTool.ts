@@ -66,12 +66,6 @@ export type ToolExecuteFunctionCtx<
   options: ToolExecutionOptions,
 ) => AsyncIterable<OUTPUT> | PromiseLike<OUTPUT>;
 
-type NeverOptional<N, T> = 0 extends 1 & N
-  ? Partial<T>
-  : [N] extends [never]
-    ? Partial<Record<keyof T, undefined>>
-    : T;
-
 /**
  * Error message type for deprecated 'handler' property.
  * Using a string literal type causes TypeScript to show this message in errors.
@@ -83,24 +77,21 @@ export type ToolOutputPropertiesCtx<
   INPUT,
   OUTPUT,
   Ctx extends ToolCtx = ToolCtx,
-> = NeverOptional<
-  OUTPUT,
-  {
-    /**
-     * An async function that is called with the arguments from the tool call and produces a result.
-     * If `execute` is not provided, the tool will not be executed automatically.
-     *
-     * @param input - The input of the tool call.
-     * @param options.abortSignal - A signal that can be used to abort the tool call.
-     */
-    execute?: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
-    outputSchema?: FlexibleSchema<OUTPUT>;
-    /**
-     * @deprecated Removed in v0.6.0. Use `execute` instead.
-     */
-    handler?: HANDLER_REMOVED_ERROR;
-  }
->;
+> = {
+      /**
+       * An async function that is called with the arguments from the tool call and produces a result.
+       * If `execute` is not provided, the tool will not be executed automatically.
+       *
+       * @param input - The input of the tool call.
+       * @param options.abortSignal - A signal that can be used to abort the tool call.
+       */
+      execute: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
+      outputSchema?: FlexibleSchema<OUTPUT>;
+      /**
+       * @deprecated Removed in v0.6.0. Use `execute` instead.
+       */
+      handler?: HANDLER_REMOVED_ERROR;
+    };
 
 /**
  * Error message type for deprecated 'args' property.
@@ -128,9 +119,8 @@ export type ToolInputProperties<INPUT> = {
  * This is a wrapper around the ai.tool function that adds extra context to the
  * tool call, including the action context, userId, threadId, and messageId.
  * @param tool The tool. See https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling
- * Currently contains deprecated parameters `args` and `handler` to maintain backwards compatibility
- * but these will be removed in the future. Use `inputSchema` and `execute` instead, respectively.
- * 
+ * The parameters `args` and `handler` have been removed in v0.6.0, use `inputSchema` and `execute` instead.
+ *
  * @returns A tool to be used with the AI SDK.
  */
 export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
