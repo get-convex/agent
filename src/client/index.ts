@@ -1558,7 +1558,7 @@ export class Agent<
      *
      * * `promptMessageId` & `forceNewOrder` will be overridden by the approval tool call
      */
-    streamTextArgs: AgentPrompt &
+    streamTextArgs?: AgentPrompt &
       StreamingTextArgs<AgentTools extends undefined ? AgentTools : AgentTools>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
