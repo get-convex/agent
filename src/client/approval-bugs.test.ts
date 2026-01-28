@@ -3,12 +3,7 @@
  * These tests probe edge cases and stress conditions.
  */
 import { describe, expect, test } from "vitest";
-import {
-  Agent,
-  createThread,
-  createTool,
-  type MessageDoc,
-} from "./index.js";
+import { Agent, createThread, createTool, type MessageDoc } from "./index.js";
 import type { DataModelFromSchemaDefinition } from "convex/server";
 import { defineSchema } from "convex/server";
 import { stepCountIs } from "ai";
@@ -238,10 +233,11 @@ describe("Bug: Tool not registered on agent calling approveToolCall", () => {
     // BUG: This will throw "Tool not found" even though the approval is valid
     await expect(
       t.run(async (ctx) =>
-        agentWithoutTool.approveToolCall(ctx as any, {
-          threadId,
-          approvalId: "cross-agent-approval",
-        }),
+        agentWithoutTool.approveToolCall(
+          ctx as any,
+          { threadId },
+          { approvalId: "cross-agent-approval" },
+        ),
       ),
     ).rejects.toThrow("Tool not found");
   });
@@ -565,10 +561,11 @@ describe("Bug: Tool execution error handling", () => {
     // This test documents the current behavior
     try {
       await t.run(async (ctx) =>
-        throwingAgent.approveToolCall(ctx as any, {
-          threadId,
-          approvalId: "throwing-approval",
-        }),
+        throwingAgent.approveToolCall(
+          ctx as any,
+          { threadId },
+          { approvalId: "throwing-approval" },
+        ),
       );
       // If we get here, the error was swallowed
     } catch (e) {
