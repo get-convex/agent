@@ -1,0 +1,59 @@
+name: Preview Playground PR
+
+on:
+    pull_request:
+        branches:
+            - playground
+
+permissions:
+    contents: read
+    pull-requests: write
+
+jobs:
+    preview:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version: 20
+                  cache: "npm"
+
+            - name: Install root dependencies & build
+              run: npm ci && npm run build
+
+            - name: Install playground dependencies
+              run: cd playground && npm i
+
+            - name: Build Vite project
+              run: cd playground && npm run build
+
+            - name: Enable SPA routing
+              run: cp playground/dist/index.html playground/dist/200.html
+
+            - name: Deploy to Surge
+              run: |
+                  npm install -g surge
+                  surge playground/dist agent-pr-${{ github.event.pull_request.number }}.surge.sh --token ${{ secrets.SURGE_TOKEN }}
+
+            - name: Comment PR with preview URL
+              uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+              with:
+                  script: |
+                      const { data: comments } = await github.rest.issues.listComments({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                      });
+
+                      if (comments.some(c => c.body.includes('🚀 Preview Deployment'))) {
+                          return; // Already commented
+                      }
+
+                      await github.rest.issues.createComment({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                          body: `## 🚀 Preview Deployment\n\nYour preview is ready!\n\n**URL:** https://agent-pr-${{ github.event.pull_request.number }}.surge.sh`
+                      });
