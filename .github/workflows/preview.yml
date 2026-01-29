@@ -2,8 +2,8 @@ name: Preview Playground PR
 
 on:
     pull_request:
-        branches:
-            - playground
+        paths:
+            - "playground/**"
 
 permissions:
     contents: read
