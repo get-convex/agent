@@ -8,7 +8,6 @@ import {
   Bot,
   User as UserIcon,
   Wrench,
-  FileIcon,
   AlertCircle,
   CheckCircle,
   Clock,
@@ -22,14 +21,14 @@ import {
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 
-interface RawMessageItemProps {
+interface MessageDocItemProps {
   user: User | undefined;
   message: Message;
   isSelected: boolean;
   onClick: React.MouseEventHandler<HTMLDivElement>;
 }
 
-const RawMessageItem: React.FC<RawMessageItemProps> = ({
+const MessageDocItem: React.FC<MessageDocItemProps> = ({
   user,
   message,
   isSelected,
@@ -306,142 +305,12 @@ const RawMessageItem: React.FC<RawMessageItemProps> = ({
           )}
         </Button>
 
-        {/* Expanded details */}
+        {/* Expanded details - full message document JSON */}
         {expanded && (
-          <div className="mt-3 space-y-3">
-            {/* Message content */}
-            <div>
-              <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                Message Content
-              </h4>
-              <pre className="bg-muted p-2 rounded text-xs overflow-x-auto max-h-60 overflow-y-auto">
-                {JSON.stringify(message.message, null, 2)}
-              </pre>
-            </div>
-
-            {/* Usage */}
-            {message.usage && (
-              <div>
-                <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                  Usage
-                </h4>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="bg-muted px-2 py-1 rounded">
-                    Prompt: {message.usage.promptTokens}
-                  </span>
-                  <span className="bg-muted px-2 py-1 rounded">
-                    Completion: {message.usage.completionTokens}
-                  </span>
-                  <span className="bg-muted px-2 py-1 rounded">
-                    Total: {message.usage.totalTokens}
-                  </span>
-                  {message.usage.reasoningTokens && (
-                    <span className="bg-muted px-2 py-1 rounded">
-                      Reasoning: {message.usage.reasoningTokens}
-                    </span>
-                  )}
-                  {message.usage.cachedInputTokens && (
-                    <span className="bg-muted px-2 py-1 rounded">
-                      Cached: {message.usage.cachedInputTokens}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Sources */}
-            {message.sources && message.sources.length > 0 && (
-              <div>
-                <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                  Sources
-                </h4>
-                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto max-h-40 overflow-y-auto">
-                  {JSON.stringify(message.sources, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* Provider metadata */}
-            {message.providerMetadata && (
-              <div>
-                <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                  Provider Metadata
-                </h4>
-                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto max-h-40 overflow-y-auto">
-                  {JSON.stringify(message.providerMetadata, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* Provider options */}
-            {message.providerOptions && (
-              <div>
-                <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                  Provider Options
-                </h4>
-                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto max-h-40 overflow-y-auto">
-                  {JSON.stringify(message.providerOptions, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* Reasoning */}
-            {message.reasoning && (
-              <div>
-                <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                  Reasoning
-                </h4>
-                <pre className="bg-muted p-2 rounded text-xs overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap">
-                  {message.reasoning}
-                </pre>
-              </div>
-            )}
-
-            {/* Warnings */}
-            {message.warnings && message.warnings.length > 0 && (
-              <div>
-                <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                  Warnings
-                </h4>
-                <pre className="bg-yellow-50 p-2 rounded text-xs overflow-x-auto max-h-40 overflow-y-auto">
-                  {JSON.stringify(message.warnings, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* IDs and metadata */}
-            <div>
-              <h4 className="text-xs font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
-                IDs & Metadata
-              </h4>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-muted px-2 py-1 rounded">
-                  <span className="font-medium">_id:</span> {message._id}
-                </div>
-                <div className="bg-muted px-2 py-1 rounded">
-                  <span className="font-medium">threadId:</span>{" "}
-                  {message.threadId}
-                </div>
-                {message.userId && (
-                  <div className="bg-muted px-2 py-1 rounded">
-                    <span className="font-medium">userId:</span>{" "}
-                    {message.userId}
-                  </div>
-                )}
-                {message.embeddingId && (
-                  <div className="bg-muted px-2 py-1 rounded">
-                    <span className="font-medium">embeddingId:</span>{" "}
-                    {message.embeddingId}
-                  </div>
-                )}
-                {message.fileIds && message.fileIds.length > 0 && (
-                  <div className="bg-muted px-2 py-1 rounded col-span-2">
-                    <span className="font-medium">fileIds:</span>{" "}
-                    {message.fileIds.join(", ")}
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="mt-3">
+            <pre className="bg-muted p-3 rounded text-xs overflow-x-auto max-h-96 overflow-y-auto">
+              {JSON.stringify(message, null, 2)}
+            </pre>
           </div>
         )}
       </div>
@@ -449,4 +318,4 @@ const RawMessageItem: React.FC<RawMessageItemProps> = ({
   );
 };
 
-export default RawMessageItem;
+export default MessageDocItem;

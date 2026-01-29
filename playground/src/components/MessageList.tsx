@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useEffect, useState } from "react";
-import MessageItem from "./MessageItem";
-import RawMessageItem from "./RawMessageItem";
+import UIMessageItem from "./UIMessageItem";
+import MessageDocItem from "./MessageDocItem";
 import { Message, User } from "../types";
 import { toUIMessages } from "@convex-dev/agent/react";
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,7 @@ const MessageList: React.FC<MessageListProps> = ({
       <div className="flex-1 overflow-y-auto">
         {viewMode === "raw"
           ? messages.map((message) => (
-              <RawMessageItem
+              <MessageDocItem
                 key={message._id}
                 user={users.find((user) => user._id === message.userId)}
                 message={message}
@@ -113,7 +113,7 @@ const MessageList: React.FC<MessageListProps> = ({
               />
             ))
           : uiMessages.map((message) => (
-              <MessageItem
+              <UIMessageItem
                 key={message._id}
                 user={users.find((user) => user._id === message.userId)}
                 message={message}
