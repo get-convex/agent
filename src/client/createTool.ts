@@ -11,7 +11,7 @@ import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import type { ProviderOptions } from "../validators.js";
 import type { Agent } from "./index.js";
 
-const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
+const MIGRATION_URL = "https://github.com/get-convex/agent/blob/v0.6.0/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
 function warnDeprecation(key: string, message: string) {
   if (!warnedDeprecations.has(key)) {

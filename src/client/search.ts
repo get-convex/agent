@@ -294,7 +294,8 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
         (p) =>
           p.type !== "tool-call" ||
           toolResultIds.has(p.toolCallId) ||
-          hasApprovalResponse(p.toolCallId),
+          hasApprovalResponse(p.toolCallId) ||
+          approvalRequestsByToolCallId.has(p.toolCallId),
       );
       if (content.length) {
         result.push({

@@ -145,7 +145,6 @@ export async function streamText<
   const stream = streamer?.consumeStream(
     result.toUIMessageStream<AIUIMessage<TOOLS>>(),
   );
-  let streamConsumed = false;
   try {
     if (
       (typeof options?.saveStreamDeltas === "object" &&
@@ -154,12 +153,11 @@ export async function streamText<
     ) {
       await stream;
       await result.consumeStream();
-      streamConsumed = true;
     }
   } catch (error) {
     // If an error occurs during streaming (e.g., in onStepFinish callbacks),
     // make sure to abort the streaming message so it doesn't get stuck
-    if (streamer && !streamConsumed) {
+    if (streamer) {
       await streamer.fail(errorToString(error));
     }
     throw error;

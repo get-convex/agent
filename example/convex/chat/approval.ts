@@ -94,7 +94,7 @@ export const submitApproval = mutation({
 
 /**
  * Handle an approved tool call.
- * Uses the Agent helper to execute the tool and continue generation.
+ * Executes the tool, saves the result, then continues generation.
  */
 export const handleApproval = internalAction({
   args: {
@@ -103,18 +103,25 @@ export const handleApproval = internalAction({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { threadId, approvalId, reason }) => {
-    const result = await approvalAgent.approveToolCall(ctx, {
+    const { messageId } = await approvalAgent.approveToolCall(ctx, {
       threadId,
       approvalId,
       reason,
     });
+    // Continue generation with the tool result as the prompt
+    const result = await approvalAgent.streamText(
+      ctx,
+      { threadId },
+      { promptMessageId: messageId },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
     await result.consumeStream();
   },
 });
 
 /**
  * Handle a denied tool call.
- * Uses the Agent helper to save the denial and let the LLM respond.
+ * Saves the denial, then lets the LLM respond to it.
  */
 export const handleDenial = internalAction({
   args: {
@@ -123,11 +130,18 @@ export const handleDenial = internalAction({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { threadId, approvalId, reason }) => {
-    const result = await approvalAgent.denyToolCall(ctx, {
+    const { messageId } = await approvalAgent.denyToolCall(ctx, {
       threadId,
       approvalId,
       reason,
     });
+    // Continue generation so the LLM can respond to the denial
+    const result = await approvalAgent.streamText(
+      ctx,
+      { threadId },
+      { promptMessageId: messageId },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
     await result.consumeStream();
   },
 });

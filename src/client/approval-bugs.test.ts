@@ -195,8 +195,8 @@ describe("Bug: Tool call and approval request in different messages", () => {
   });
 });
 
-describe("Bug: Tool not registered on agent calling approveToolCall", () => {
-  test("throws when tool is not on the agent instance", async () => {
+describe("Tool not registered on agent calling approveToolCall", () => {
+  test("succeeds even when tool is not on the agent instance (save-only)", async () => {
     const t = initConvexTest(schema);
 
     // Agent without the tool
@@ -234,16 +234,35 @@ describe("Bug: Tool not registered on agent calling approveToolCall", () => {
       }),
     );
 
-    // Try to approve using an agent that doesn't have the tool
-    // BUG: This will throw "Tool not found" even though the approval is valid
-    await expect(
-      t.run(async (ctx) =>
-        agentWithoutTool.approveToolCall(ctx as any, {
-          threadId,
-          approvalId: "cross-agent-approval",
-        }),
-      ),
-    ).rejects.toThrow("Tool not found");
+    // approveToolCall no longer executes tools — it just saves the approval
+    // as a pending message. Any agent can approve regardless of tool registration.
+    const result = await t.run(async (ctx) =>
+      agentWithoutTool.approveToolCall(ctx as any, {
+        threadId,
+        approvalId: "cross-agent-approval",
+      }),
+    );
+
+    expect(result.messageId).toBeDefined();
+
+    // Verify the saved message is pending with approval content
+    const messages = await t.run(async (ctx) => {
+      const res = await agentWithoutTool.listMessages(ctx, {
+        threadId,
+        paginationOpts: { cursor: null, numItems: 10 },
+        statuses: ["pending"],
+      });
+      return res.page;
+    });
+
+    const approvalMsg = messages.find((m) => m._id === result.messageId);
+    expect(approvalMsg).toBeDefined();
+    expect(approvalMsg?.status).toBe("pending");
+    expect(approvalMsg?.message?.role).toBe("tool");
+    const content = approvalMsg?.message?.content;
+    expect(Array.isArray(content)).toBe(true);
+    expect((content as any[])?.[0]?.type).toBe("tool-approval-response");
+    expect((content as any[])?.[0]?.approved).toBe(true);
   });
 });
 
@@ -510,11 +529,11 @@ describe("Bug: String content instead of array", () => {
   });
 });
 
-describe("Bug: Tool execution error handling", () => {
-  test("error during tool execution is swallowed and returned as result", async () => {
+describe("approveToolCall saves pending approval (no tool execution)", () => {
+  test("approveToolCall saves approval without executing tool", async () => {
     const t = initConvexTest(schema);
 
-    // Agent with a tool that throws
+    // Agent with a tool that would throw — but approveToolCall won't execute it
     const throwingAgent = new Agent(components.agent, {
       name: "throwing-agent",
       instructions: "Test",
@@ -559,22 +578,17 @@ describe("Bug: Tool execution error handling", () => {
       }),
     );
 
-    // The tool execution error is caught and converted to a string result
-    // BUG: This might not be the desired behavior - should it fail the approval?
-    // Currently it continues with "Error: Intentional test error" as the result
-    // This test documents the current behavior
-    try {
-      await t.run(async (ctx) =>
-        throwingAgent.approveToolCall(ctx as any, {
-          threadId,
-          approvalId: "throwing-approval",
-        }),
-      );
-      // If we get here, the error was swallowed
-    } catch (e) {
-      // If we get here, the error propagated (might be expected)
-      expect(e).toBeDefined();
-    }
+    // approveToolCall no longer executes tools, so it should succeed
+    // even for tools that would throw. The tool execution happens later
+    // when the caller runs streamText/generateText.
+    const result = await t.run(async (ctx) =>
+      throwingAgent.approveToolCall(ctx as any, {
+        threadId,
+        approvalId: "throwing-approval",
+      }),
+    );
+
+    expect(result.messageId).toBeDefined();
   });
 });
 
@@ -717,5 +731,113 @@ describe("Bug: Tool input normalization", () => {
 
     // Should fallback to empty object
     expect(toolInfo?.toolInput).toEqual({});
+  });
+});
+
+describe("Content merge in addMessages", () => {
+  test("merges pending approval content with subsequent tool result", async () => {
+    const t = initConvexTest(schema);
+
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "user1" }),
+    );
+
+    // Save the assistant message with a tool call + approval request
+    const { messageId: assistantMsgId } = await t.run(async (ctx) =>
+      testAgent.saveMessage(ctx, {
+        threadId,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "merge-call",
+              toolName: "testTool",
+              input: { value: "merge-test" },
+              args: { value: "merge-test" },
+            },
+            {
+              type: "tool-approval-request",
+              approvalId: "merge-approval",
+              toolCallId: "merge-call",
+            },
+          ],
+        },
+      }),
+    );
+
+    // Approve the tool call — saves as pending with approval content
+    const { messageId: approvalMsgId } = await t.run(async (ctx) =>
+      testAgent.approveToolCall(ctx as any, {
+        threadId,
+        approvalId: "merge-approval",
+      }),
+    );
+
+    // Verify the pending message has approval content
+    const pendingMessages = await t.run(async (ctx) => {
+      const res = await testAgent.listMessages(ctx, {
+        threadId,
+        paginationOpts: { cursor: null, numItems: 10 },
+        statuses: ["pending"],
+      });
+      return res.page;
+    });
+    const pendingMsg = pendingMessages.find((m) => m._id === approvalMsgId);
+    expect(pendingMsg).toBeDefined();
+    expect(pendingMsg?.status).toBe("pending");
+    const pendingContent = pendingMsg?.message?.content;
+    expect(Array.isArray(pendingContent)).toBe(true);
+    expect((pendingContent as any[])?.[0]?.type).toBe(
+      "tool-approval-response",
+    );
+
+    // Now simulate what happens when addMessages replaces the pending message
+    // with a tool result (as streamText would do). The approval-response
+    // content should be preserved (merged/prepended).
+    await t.run(async (ctx) =>
+      testAgent.saveMessages(ctx, {
+        threadId,
+        promptMessageId: assistantMsgId,
+        pendingMessageId: approvalMsgId,
+        messages: [
+          {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "merge-call",
+                toolName: "testTool",
+                output: { type: "text", value: "Result: merge-test" },
+              },
+            ],
+          },
+        ],
+        skipEmbeddings: true,
+      }),
+    );
+
+    // Fetch the message that replaced the pending one
+    const allMessages = await t.run(async (ctx) => {
+      const res = await testAgent.listMessages(ctx, {
+        threadId,
+        paginationOpts: { cursor: null, numItems: 20 },
+      });
+      return res.page;
+    });
+
+    const mergedMsg = allMessages.find((m) => m._id === approvalMsgId);
+    expect(mergedMsg).toBeDefined();
+    expect(mergedMsg?.status).toBe("success");
+    const mergedContent = mergedMsg?.message?.content;
+    expect(Array.isArray(mergedContent)).toBe(true);
+
+    // Should have both the approval-response (prepended) and tool-result
+    const contentArr = mergedContent as any[];
+    expect(contentArr.length).toBe(2);
+    expect(contentArr[0].type).toBe("tool-approval-response");
+    expect(contentArr[0].approved).toBe(true);
+    expect(contentArr[1].type).toBe("tool-result");
+    expect(contentArr[1].toolName).toBe("testTool");
   });
 });

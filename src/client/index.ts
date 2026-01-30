@@ -19,7 +19,7 @@ import type {
 } from "ai";
 import { generateObject, generateText, stepCountIs, streamObject } from "ai";
 
-const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
+const MIGRATION_URL = "https://github.com/get-convex/agent/blob/v0.6.0/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
 function warnDeprecation(key: string, message: string) {
   if (!warnedDeprecations.has(key)) {
@@ -1510,26 +1510,29 @@ export class Agent<
   }
 
   /**
-   * Approve a pending tool call and continue generation.
+   * Approve a pending tool call and save the approval as a pending message.
    *
    * This is a helper for the AI SDK v6 tool approval workflow. When a tool
    * with `needsApproval: true` is called, it returns a `tool-approval-request`.
-   * Call this method to approve the tool, execute it, and continue generation.
+   * Call this method to approve the tool call, then call `streamText` (or
+   * `generateText`) with the returned `messageId` as `promptMessageId` to
+   * continue generation. The AI SDK will execute the tool during that call,
+   * so runtime tools and streaming options are available.
    *
-   * @param ctx The context from an action.
+   * @param ctx The context from a mutation or action.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request.
    * @param args.reason Optional reason for the approval.
-   * @returns The result of the continued generation.
+   * @returns The messageId of the saved approval, for use as promptMessageId.
    */
   async approveToolCall(
-    ctx: ActionCtx & CustomCtx,
+    ctx: (ActionCtx | MutationCtx) & CustomCtx,
     args: {
       threadId: string;
       approvalId: string;
       reason?: string;
     },
-  ): Promise<StreamTextResult<ToolSet, never> & GenerationOutputMetadata> {
+  ): Promise<{ messageId: string }> {
     const { threadId, approvalId, reason } = args;
     const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
 
@@ -1550,38 +1553,10 @@ export class Agent<
 
     const { toolCallId, toolName, toolInput, parentMessageId } = toolInfo;
 
-    // Execute the tool
-    const tools = this.options.tools as Record<string, any> | undefined;
-    const tool = tools?.[toolName];
-    if (!tool) {
-      throw new Error(`Tool not found: ${toolName}`);
-    }
-
-    // Get thread metadata to propagate userId to tool context
-    const threadMetadata = await this.getThreadMetadata(ctx, { threadId });
-
-    let result: string;
-    try {
-      // Execute with context injection (like wrapTools does)
-      const toolCtx = {
-        ...ctx,
-        userId: threadMetadata?.userId ?? undefined,
-        threadId,
-        agent: this,
-      };
-      const wrappedTool = tool.__acceptsCtx ? { ...tool, ctx: toolCtx } : tool;
-      const output = await wrappedTool.execute.call(wrappedTool, toolInput, {
-        toolCallId,
-        messages: [],
-      });
-      result = typeof output === "string" ? output : JSON.stringify(output);
-    } catch (error) {
-      result = `Error: ${error instanceof Error ? error.message : String(error)}`;
-      console.error("Tool execution error:", error);
-    }
-
-    // Save approval response and tool result together
-    const { messageId: toolResultId } = await this.saveMessage(ctx, {
+    // Save approval response as a pending message. The tool execution info
+    // is stored in providerOptions so startGeneration can execute the tool
+    // with the caller's runtime tools when streamText/generateText is called.
+    const { messageId } = await this.saveMessage(ctx, {
       threadId,
       promptMessageId: parentMessageId,
       message: {
@@ -1592,48 +1567,47 @@ export class Agent<
             approvalId,
             approved: true,
             reason,
-          },
-          {
-            type: "tool-result",
-            toolCallId,
-            toolName,
-            output: { type: "text", value: result },
+            providerOptions: {
+              "convex-agent": {
+                pendingToolExecution: true,
+                toolCallId,
+                toolName,
+                toolInput,
+              },
+            },
           },
         ],
       },
+      metadata: { status: "pending" },
       skipEmbeddings: true,
     });
 
-    // Continue generation in the same order (incrementing stepOrder)
-    return this.streamText(
-      ctx,
-      { threadId },
-      { promptMessageId: toolResultId },
-      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
-    );
+    return { messageId };
   }
 
   /**
-   * Deny a pending tool call and continue generation.
+   * Deny a pending tool call and save the denial.
    *
    * This is a helper for the AI SDK v6 tool approval workflow. When a tool
    * with `needsApproval: true` is called, it returns a `tool-approval-request`.
-   * Call this method to deny the tool and let the LLM respond to the denial.
+   * Call this method to deny the tool, then use the returned `messageId` as
+   * `promptMessageId` in a follow-up `streamText` call to let the LLM respond
+   * to the denial.
    *
    * @param ctx The context from an action.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request.
    * @param args.reason Optional reason for the denial.
-   * @returns The result of the continued generation.
+   * @returns The messageId of the saved denial, for use as promptMessageId.
    */
   async denyToolCall(
-    ctx: ActionCtx & CustomCtx,
+    ctx: (ActionCtx | MutationCtx) & CustomCtx,
     args: {
       threadId: string;
       approvalId: string;
       reason?: string;
     },
-  ): Promise<StreamTextResult<ToolSet, never> & GenerationOutputMetadata> {
+  ): Promise<{ messageId: string }> {
     const { threadId, approvalId, reason } = args;
     const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
 
@@ -1656,7 +1630,7 @@ export class Agent<
     const denialReason = reason ?? "Tool execution was denied by the user";
 
     // Save approval response (denied) and tool result with execution-denied
-    const { messageId: toolResultId } = await this.saveMessage(ctx, {
+    const { messageId } = await this.saveMessage(ctx, {
       threadId,
       promptMessageId: parentMessageId,
       message: {
@@ -1682,13 +1656,7 @@ export class Agent<
       skipEmbeddings: true,
     });
 
-    // Continue generation in the same order (incrementing stepOrder)
-    return this.streamText(
-      ctx,
-      { threadId },
-      { promptMessageId: toolResultId },
-      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
-    );
+    return { messageId };
   }
 
   /**
@@ -1700,7 +1668,7 @@ export class Agent<
    * @internal
    */
   private async _findToolCallInfo(
-    ctx: ActionCtx,
+    ctx: ActionCtx | MutationCtx,
     threadId: string,
     approvalId: string,
   ): Promise<
