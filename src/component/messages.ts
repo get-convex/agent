@@ -141,9 +141,6 @@ const addMessagesArgs = {
   // if set to true, these messages will not show up in text or vector search
   // results for the userId
   hideFromUserIdSearch: v.optional(v.boolean()),
-  // If provided, forces the messages to use this order instead of computing it.
-  // Used by forceNewOrder to ensure continuation messages get a fresh order.
-  overrideOrder: v.optional(v.number()),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -168,7 +165,6 @@ async function addMessagesHandler(
     promptMessageId,
     pendingMessageId,
     hideFromUserIdSearch,
-    overrideOrder,
     ...rest
   } = args;
 
@@ -201,11 +197,7 @@ async function addMessagesHandler(
   let order, stepOrder;
   let fail = false;
   let error: string | undefined;
-  // When overrideOrder is provided, use it directly instead of computing from promptMessage
-  if (overrideOrder !== undefined) {
-    order = overrideOrder;
-    stepOrder = -1; // Will be incremented to 0 for the first message
-  } else if (promptMessageId) {
+  if (promptMessageId) {
     assert(promptMessage, `Parent message ${promptMessageId} not found`);
     if (promptMessage.status === "failed") {
       fail = true;
@@ -227,6 +219,42 @@ async function addMessagesHandler(
       "embeddings.vectors.length must match messages.length",
     );
   }
+
+  // When the pending message already has content (e.g. approval response from
+  // approveToolCall), we need to merge that content into the first incoming
+  // message rather than discarding it. Handle role mismatches by swapping or
+  // finalizing the pending message.
+  let activePendingMessageId = pendingMessageId;
+  if (activePendingMessageId) {
+    const pm = await ctx.db.get(activePendingMessageId);
+    if (
+      pm?.message &&
+      Array.isArray(pm.message.content) &&
+      pm.message.content.length > 0
+    ) {
+      const matchIdx = messages.findIndex(
+        (m) => m.message.role === pm.message!.role,
+      );
+      if (matchIdx > 0) {
+        // Swap matching message to position 0 for merge
+        [messages[0], messages[matchIdx]] = [messages[matchIdx], messages[0]];
+        if (embeddings) {
+          [embeddings.vectors[0], embeddings.vectors[matchIdx]] = [
+            embeddings.vectors[matchIdx],
+            embeddings.vectors[0],
+          ];
+        }
+      } else if (
+        matchIdx === -1 &&
+        messages[0]?.message.role !== pm.message.role
+      ) {
+        // No matching role in batch — finalize pending as completed
+        await ctx.db.patch(activePendingMessageId, { status: "success" });
+        activePendingMessageId = undefined;
+      }
+    }
+  }
+
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     let embeddingId: VectorTableId | undefined;
@@ -260,17 +288,43 @@ async function addMessagesHandler(
     >;
     // If there is a pending message, we replace that one with the first message
     // and subsequent ones will follow the regular order/subOrder advancement.
-    if (i === 0 && pendingMessageId) {
-      const pendingMessage = await ctx.db.get(pendingMessageId);
-      assert(pendingMessage, `Pending msg ${pendingMessageId} not found`);
+    if (i === 0 && activePendingMessageId) {
+      const pendingMessage = await ctx.db.get(activePendingMessageId);
+      assert(
+        pendingMessage,
+        `Pending msg ${activePendingMessageId} not found`,
+      );
       if (pendingMessage.status === "failed") {
         fail = true;
         error =
-          `Trying to update a message that failed: ${pendingMessageId}, ` +
+          `Trying to update a message that failed: ${activePendingMessageId}, ` +
           `error: ${pendingMessage.error ?? error}`;
         messageDoc.status = "failed";
         messageDoc.error = error;
       }
+
+      // Merge: prepend any existing pending content into the new message.
+      // Both messages have the same role (ensured by the swap/finalize logic
+      // above), so the content arrays are compatible at runtime.
+      const pendingContent = pendingMessage.message?.content;
+      if (
+        Array.isArray(pendingContent) &&
+        pendingContent.length > 0 &&
+        Array.isArray(messageDoc.message?.content)
+      ) {
+        // The pending and incoming content have the same role, but TS can't
+        // prove the union is compatible across the role discriminant, so we
+        // cast the merged content to match the incoming message's content type.
+        (messageDoc.message as any).content = [
+          ...pendingContent,
+          ...messageDoc.message.content,
+        ];
+        messageDoc.tool = isTool(messageDoc.message);
+        messageDoc.text = hideFromUserIdSearch
+          ? undefined
+          : extractText(messageDoc.message);
+      }
+
       if (message.fileIds) {
         await changeRefcount(
           ctx,

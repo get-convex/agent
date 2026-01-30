@@ -52,7 +52,7 @@ export const insertRawUsage = internalMutation({
         })
       ),
       // Provider-specific raw usage data (varies by provider)
-      raw: v.optional(v.any()),
+      raw: v.optional(v.record(v.string(), v.any())),
     }),
     providerMetadata: v.optional(vProviderMetadata),
   },

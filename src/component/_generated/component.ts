@@ -683,6 +683,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             usage?: {
               cachedInputTokens?: number;
               completionTokens: number;
+              inputTokenDetails?: {
+                cacheReadTokens?: number;
+                cacheWriteTokens?: number;
+                noCacheTokens?: number;
+              };
+              outputTokenDetails?: {
+                reasoningTokens?: number;
+                textTokens?: number;
+              };
               promptTokens: number;
               reasoningTokens?: number;
               totalTokens: number;
@@ -697,7 +706,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | { message: string; type: "other" }
             >;
           }>;
-          overrideOrder?: number;
           pendingMessageId?: string;
           promptMessageId?: string;
           threadId: string;
@@ -1242,6 +1250,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             usage?: {
               cachedInputTokens?: number;
               completionTokens: number;
+              inputTokenDetails?: {
+                cacheReadTokens?: number;
+                cacheWriteTokens?: number;
+                noCacheTokens?: number;
+              };
+              outputTokenDetails?: {
+                reasoningTokens?: number;
+                textTokens?: number;
+              };
               promptTokens: number;
               reasoningTokens?: number;
               totalTokens: number;
@@ -1806,6 +1823,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           usage?: {
             cachedInputTokens?: number;
             completionTokens: number;
+            inputTokenDetails?: {
+              cacheReadTokens?: number;
+              cacheWriteTokens?: number;
+              noCacheTokens?: number;
+            };
+            outputTokenDetails?: {
+              reasoningTokens?: number;
+              textTokens?: number;
+            };
             promptTokens: number;
             reasoningTokens?: number;
             totalTokens: number;
@@ -2385,6 +2411,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             usage?: {
               cachedInputTokens?: number;
               completionTokens: number;
+              inputTokenDetails?: {
+                cacheReadTokens?: number;
+                cacheWriteTokens?: number;
+                noCacheTokens?: number;
+              };
+              outputTokenDetails?: {
+                reasoningTokens?: number;
+                textTokens?: number;
+              };
               promptTokens: number;
               reasoningTokens?: number;
               totalTokens: number;
@@ -2916,6 +2951,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           usage?: {
             cachedInputTokens?: number;
             completionTokens: number;
+            inputTokenDetails?: {
+              cacheReadTokens?: number;
+              cacheWriteTokens?: number;
+              noCacheTokens?: number;
+            };
+            outputTokenDetails?: {
+              reasoningTokens?: number;
+              textTokens?: number;
+            };
             promptTokens: number;
             reasoningTokens?: number;
             totalTokens: number;
@@ -3434,6 +3478,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           usage?: {
             cachedInputTokens?: number;
             completionTokens: number;
+            inputTokenDetails?: {
+              cacheReadTokens?: number;
+              cacheWriteTokens?: number;
+              noCacheTokens?: number;
+            };
+            outputTokenDetails?: {
+              reasoningTokens?: number;
+              textTokens?: number;
+            };
             promptTokens: number;
             reasoningTokens?: number;
             totalTokens: number;
@@ -4440,6 +4493,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           usage?: {
             cachedInputTokens?: number;
             completionTokens: number;
+            inputTokenDetails?: {
+              cacheReadTokens?: number;
+              cacheWriteTokens?: number;
+              noCacheTokens?: number;
+            };
+            outputTokenDetails?: {
+              reasoningTokens?: number;
+              textTokens?: number;
+            };
             promptTokens: number;
             reasoningTokens?: number;
             totalTokens: number;
