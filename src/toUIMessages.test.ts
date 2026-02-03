@@ -90,6 +90,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "myTool",
               toolCallId: "call1",
+              input: "an arg",
               args: "an arg",
             },
           ],
@@ -219,6 +220,7 @@ describe("toUIMessages", () => {
             },
             {
               type: "tool-call",
+              input: "What's the meaning of life?",
               args: "What's the meaning of life?",
               toolCallId: "call1",
               toolName: "myTool",
@@ -310,6 +312,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "myTool",
               toolCallId: "call1",
+              input: { query: "test" },
               args: { query: "test" },
             },
           ],
@@ -356,6 +359,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "myTool",
               toolCallId: "call1",
+              input: "hi",
               args: "hi",
             },
           ],
@@ -387,6 +391,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "myTool",
               toolCallId: "call1",
+              input: "",
               args: "",
             },
           ],
@@ -448,6 +453,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "calculator",
               toolCallId: "call1",
+              input: { operation: "add", a: 2, b: 3 },
               args: { operation: "add", a: 2, b: 3 },
             },
             {
@@ -490,6 +496,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "calculator",
               toolCallId: "call1",
+              input: { operation: "add", a: 1, b: 2 },
               args: { operation: "add", a: 1, b: 2 },
             },
           ],
@@ -561,6 +568,9 @@ describe("toUIMessages", () => {
               text: "**Finding the Time**\n\nI've pinpointed the core task: obtaining the current time in Paris. It involves using the `dateTime` tool. I've identified \"Europe/Paris\" as the necessary timezone identifier to provide to the tool. My next step is to test the tool.\n\n\n",
             },
             {
+              input: {
+                timezone: "Europe/Paris",
+              },
               args: {
                 timezone: "Europe/Paris",
               },
@@ -690,6 +700,7 @@ describe("toUIMessages", () => {
               type: "tool-call",
               toolName: "calculator",
               toolCallId: "call1",
+              input: { operation: "add", a: 40, b: 2 },
               args: { operation: "add", a: 40, b: 2 },
             },
           ],
@@ -727,6 +738,109 @@ describe("toUIMessages", () => {
     const textParts = uiMessages[0].parts.filter((p) => p.type === "text");
     expect(textParts).toHaveLength(1);
     expect(textParts[0].text).toBe("The result is 42.");
+  });
+
+  it("shows output-error state when tool result has isError: true (issue #162)", () => {
+    const messages = [
+      // Tool call
+      baseMessageDoc({
+        _id: "msg1",
+        order: 1,
+        stepOrder: 1,
+        tool: true,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolName: "generateImage",
+              toolCallId: "call1",
+              input: { id: "invalid-id" },
+              args: { id: "invalid-id" },
+            },
+          ],
+        },
+      }),
+      // Tool result with error
+      baseMessageDoc({
+        _id: "msg2",
+        order: 1,
+        stepOrder: 2,
+        tool: true,
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call1",
+              toolName: "generateImage",
+              output: {
+                type: "text",
+                value:
+                  'ArgumentValidationError: Value does not match validator.\nPath: .id\nValue: "invalid-id"\nValidator: v.id("images")',
+              },
+              isError: true,
+            },
+          ],
+        },
+      }),
+    ];
+
+    const uiMessages = toUIMessages(messages);
+
+    expect(uiMessages).toHaveLength(1);
+    expect(uiMessages[0].role).toBe("assistant");
+
+    const toolParts = uiMessages[0].parts.filter(
+      (p) => p.type === "tool-generateImage",
+    );
+    expect(toolParts).toHaveLength(1);
+
+    const toolPart = toolParts[0] as any;
+    expect(toolPart.toolCallId).toBe("call1");
+    // Should show output-error, not output-available
+    expect(toolPart.state).toBe("output-error");
+    expect(toolPart.output).toContain("ArgumentValidationError");
+  });
+
+  it("shows output-error when tool result has isError: true without tool call present (issue #162)", () => {
+    // This simulates the case where the tool-call message wasn't saved
+    const messages = [
+      baseMessageDoc({
+        _id: "msg1",
+        order: 1,
+        stepOrder: 1,
+        tool: true,
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call1",
+              toolName: "generateImage",
+              output: {
+                type: "text",
+                value: "Error: Something went wrong",
+              },
+              isError: true,
+            },
+          ],
+        },
+      }),
+    ];
+
+    const uiMessages = toUIMessages(messages);
+
+    expect(uiMessages).toHaveLength(1);
+    expect(uiMessages[0].role).toBe("assistant");
+
+    const toolParts = uiMessages[0].parts.filter(
+      (p) => p.type === "tool-generateImage",
+    );
+    expect(toolParts).toHaveLength(1);
+
+    const toolPart = toolParts[0] as any;
+    expect(toolPart.state).toBe("output-error");
   });
 
   describe("userId preservation", () => {
@@ -796,6 +910,7 @@ describe("toUIMessages", () => {
                 type: "tool-call",
                 toolName: "myTool",
                 toolCallId: "call1",
+                input: {},
                 args: {},
               },
             ],
@@ -853,6 +968,302 @@ describe("toUIMessages", () => {
       const uiMessages = toUIMessages(messages);
       expect(uiMessages).toHaveLength(1);
       expect(uiMessages[0].userId).toBeUndefined();
+    });
+  });
+
+  describe("tool approval workflow", () => {
+    it("sets state to approval-requested when tool-approval-request is present", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("approval-requested");
+      expect(toolPart.approval).toEqual({ id: "approval1" });
+    });
+
+    it("sets state to approval-responded when tool-approval-response with approved: true", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval1",
+                approved: true,
+                reason: "User confirmed",
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("approval-responded");
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        approved: true,
+        reason: "User confirmed",
+      });
+    });
+
+    it("sets state to output-denied when tool-approval-response with approved: false", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval1",
+                approved: false,
+                reason: "User declined the operation",
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("output-denied");
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        approved: false,
+        reason: "User declined the operation",
+      });
+    });
+
+    it("sets state to output-denied when tool-result has execution-denied output", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call1",
+                toolName: "dangerousTool",
+                output: {
+                  type: "execution-denied",
+                  reason: "Tool execution was denied by the user",
+                },
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      expect(toolPart.state).toBe("output-denied");
+      expect(toolPart.approval).toEqual({
+        id: "",
+        approved: false,
+        reason: "Tool execution was denied by the user",
+      });
+    });
+
+    it("handles full approval flow: request → approved → executed → output-available", () => {
+      const messages = [
+        baseMessageDoc({
+          _id: "msg1",
+          order: 1,
+          stepOrder: 1,
+          tool: true,
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolName: "dangerousTool",
+                toolCallId: "call1",
+                input: { action: "delete" },
+                args: { action: "delete" },
+              },
+              {
+                type: "tool-approval-request",
+                approvalId: "approval1",
+                toolCallId: "call1",
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg2",
+          order: 1,
+          stepOrder: 2,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-approval-response",
+                approvalId: "approval1",
+                approved: true,
+              },
+            ],
+          },
+        }),
+        baseMessageDoc({
+          _id: "msg3",
+          order: 1,
+          stepOrder: 3,
+          tool: true,
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call1",
+                toolName: "dangerousTool",
+                output: {
+                  type: "json",
+                  value: { deleted: true },
+                },
+              },
+            ],
+          },
+        }),
+      ];
+
+      const uiMessages = toUIMessages(messages);
+
+      expect(uiMessages).toHaveLength(1);
+      const toolPart = uiMessages[0].parts.find(
+        (p) => p.type === "tool-dangerousTool",
+      ) as any;
+      expect(toolPart).toBeDefined();
+      // After tool-result, state should be output-available
+      expect(toolPart.state).toBe("output-available");
+      expect(toolPart.output).toEqual({ deleted: true });
+      // approval should still be preserved from earlier
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        approved: true,
+        reason: undefined,
+      });
     });
   });
 });

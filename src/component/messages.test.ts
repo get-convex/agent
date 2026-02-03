@@ -68,7 +68,7 @@ describe("agent", () => {
             content: [
               {
                 type: "tool-call",
-                args: { a: 1 },
+                input: { a: 1 },
                 toolCallId: "1",
                 toolName: "tool",
               },
@@ -258,7 +258,7 @@ describe("agent", () => {
             content: [
               {
                 type: "tool-call",
-                args: { a: 1 },
+                input: { a: 1 },
                 toolCallId: "1",
                 toolName: "tool",
               },
@@ -389,7 +389,7 @@ describe("agent", () => {
             content: [
               {
                 type: "tool-call",
-                args: { a: 1 },
+                input: { a: 1 },
                 toolCallId: "1",
                 toolName: "tool",
               },
@@ -408,7 +408,7 @@ describe("agent", () => {
           content: [
             {
               type: "tool-call",
-              args: { a: 2, b: 3 },
+              input: { a: 2, b: 3 },
               toolCallId: "1",
               toolName: "tool",
             },
@@ -422,7 +422,7 @@ describe("agent", () => {
       content: [
         {
           type: "tool-call",
-          args: { a: 2, b: 3 },
+          input: { a: 2, b: 3 },
           toolCallId: "1",
           toolName: "tool",
         },

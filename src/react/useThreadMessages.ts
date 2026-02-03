@@ -16,7 +16,7 @@ import type {
   PaginationOptions,
   PaginationResult,
 } from "convex/server";
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import type { SyncStreamsReturnValue } from "../client/types.js";
 import { sorted } from "../shared.js";
 import { fromUIMessages } from "../UIMessages.js";
@@ -239,12 +239,24 @@ export function useStreamingThreadMessages<Query extends StreamQuery<any>>(
     args === "skip" ? undefined : (args.startOrder ?? undefined);
   const queryOptions = { startOrder, ...options };
   const uiMessages = useStreamingUIMessages(query, queryArgs, queryOptions);
-  if (args === "skip") {
-    return undefined;
-  }
-  // TODO: we aren't passing through as much metadata as we could here.
-  // We could share the stream metadata logic with useStreamingUIMessages.
-  return uiMessages
-    ?.map((m) => fromUIMessages([m], { threadId: args.threadId }))
-    .flat();
+  const [messages, setMessages] = useState<Array<MessageDoc> | undefined>();
+  const generationRef = useRef(0);
+
+  useEffect(() => {
+    if (args === "skip" || !uiMessages) {
+      setMessages(undefined);
+      return;
+    }
+    const currentGeneration = ++generationRef.current;
+    (async () => {
+      const nested = await Promise.all(
+        uiMessages.map((m) => fromUIMessages([m], { threadId: args.threadId })),
+      );
+      if (generationRef.current === currentGeneration) {
+        setMessages(nested.flat());
+      }
+    })();
+  }, [uiMessages, args === "skip" ? undefined : args.threadId]);
+
+  return messages;
 }

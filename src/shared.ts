@@ -4,6 +4,7 @@ import type {
   ReasoningPart,
   ToolCallPart,
   ToolResultPart,
+  ToolApprovalRequest,
 } from "@ai-sdk/provider-utils";
 import type {
   ModelMessage,
@@ -55,6 +56,7 @@ export function joinText(
     | ToolCallPart
     | ToolResultPart
     | MessageContentParts
+    | ToolApprovalRequest
   )[],
 ) {
   return parts

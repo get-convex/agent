@@ -9,7 +9,9 @@ const addFileArgs = v.object({
   storageId: v.string(),
   hash: v.string(),
   filename: v.optional(v.string()),
-  mimeType: v.string(),
+  mediaType: v.optional(v.string()),
+  /** @deprecated Use `mediaType` instead. */
+  mimeType: v.optional(v.string()),
 });
 
 export const addFile = mutation({
@@ -25,6 +27,9 @@ export async function addFileHandler(
   ctx: MutationCtx,
   args: Infer<typeof addFileArgs>,
 ) {
+  // Support both mediaType (preferred) and mimeType (deprecated)
+  const mediaType = args.mediaType ?? args.mimeType;
+  
   const existingFile = await ctx.db
     .query("files")
     .withIndex("hash", (q) => q.eq("hash", args.hash))
@@ -42,7 +47,11 @@ export async function addFileHandler(
     };
   }
   const fileId = await ctx.db.insert("files", {
-    ...args,
+    storageId: args.storageId,
+    hash: args.hash,
+    filename: args.filename,
+    mediaType,
+    mimeType: args.mimeType, // Keep for backwards compatibility
     // We start out with it unused - when it's saved in a message we increment.
     refcount: 0,
     lastTouchedAt: Date.now(),

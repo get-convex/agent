@@ -92,7 +92,7 @@ export async function storeFile(
     storageId: newStorageId,
     hash,
     filename,
-    mimeType: blob.type,
+    mediaType: blob.type,
   });
   const url = (await ctx.storage.getUrl(storageId as Id<"_storage">))!;
   if (storageId !== newStorageId) {
@@ -142,8 +142,10 @@ export async function getFile(
   if (!url) {
     throw new Error(`File not found in storage: ${file.storageId}`);
   }
+  // Support both mediaType (preferred) and mimeType (deprecated)
+  const mediaType = file.mediaType ?? file.mimeType ?? "";
   return {
-    ...getParts(url, file.mimeType, file.filename),
+    ...getParts(url, mediaType, file.filename),
     file: {
       fileId,
       url,
