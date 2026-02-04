@@ -39,7 +39,7 @@ import {
   vVectorId,
 } from "./vector/tables.js";
 import { changeRefcount } from "./files.js";
-import { getStreamingMessagesWithMetadata } from "./streams.js";
+import { getStreamingMessagesWithMetadata, finishHandler } from "./streams.js";
 import { partial } from "convex-helpers/validators";
 
 function publicMessage(message: Doc<"messages">): MessageDoc {
@@ -141,6 +141,9 @@ const addMessagesArgs = {
   // if set to true, these messages will not show up in text or vector search
   // results for the userId
   hideFromUserIdSearch: v.optional(v.boolean()),
+  // If provided, finish this stream atomically with the message save.
+  // This prevents UI flickering from separate mutations (issue #181).
+  finishStreamId: v.optional(v.id("streamingMessages")),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -365,6 +368,11 @@ async function addMessagesHandler(
     }
     // TODO: delete the associated stream data for the order/stepOrder
     toReturn.push((await ctx.db.get(messageId))!);
+  }
+  // Atomically finish the stream if requested, preventing UI flickering
+  // from separate mutations for message save and stream finish (issue #181).
+  if (args.finishStreamId) {
+    await finishHandler(ctx, { streamId: args.finishStreamId });
   }
   return { messages: toReturn.map(publicMessage) };
 }
