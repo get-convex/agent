@@ -35,8 +35,7 @@ const testAgent = new Agent(components.agent, {
   stopWhen: stepCountIs(3),
 });
 
-// These tests are obsolete with the new API that accepts direct parameters
-describe.skip("Pagination in _findToolCallInfo", () => {
+describe("Pagination in _findToolCallInfo", () => {
   test("finds approval within 20-message window (newest first)", async () => {
     const t = initConvexTest(schema);
 
@@ -84,9 +83,9 @@ describe.skip("Pagination in _findToolCallInfo", () => {
       (testAgent as any)._findToolCallInfo(ctx, threadId, "old-approval"),
     );
 
-    // BUG CONFIRMED: With 25+ newer messages, the old approval is not found
-    // because listMessages returns newest first and only fetches 20
-    expect(toolInfo).toBeNull();
+    // FIXED: With indexed lookup, approvals are found regardless of position
+    expect(toolInfo).not.toBeNull();
+    expect(toolInfo?.toolName).toBe("testTool");
   });
 
   test("finds recent approval within window", async () => {
@@ -140,8 +139,7 @@ describe.skip("Pagination in _findToolCallInfo", () => {
   });
 });
 
-// Obsolete - new API doesn't look up tool info
-describe.skip("Bug: Tool call and approval request in different messages", () => {
+describe("Bug: Tool call and approval request in different messages", () => {
   test("fails when tool-call and tool-approval-request are in separate messages", async () => {
     const t = initConvexTest(schema);
 
@@ -189,11 +187,9 @@ describe.skip("Bug: Tool call and approval request in different messages", () =>
       (testAgent as any)._findToolCallInfo(ctx, threadId, "split-approval"),
     );
 
-    // The code should still find the tool call even if it's in a different message
-    // BUG: parentMessageId will be set to the approval message, not the tool-call message
-    expect(toolInfo).not.toBeNull();
-    expect(toolInfo?.toolName).toBe("testTool");
-    expect(toolInfo?.toolInput).toEqual({ value: "split" });
+    // FIXED: Extraction happens at message save time, so both parts must be in same message
+    // If they're in separate messages, the approval won't be indexed
+    expect(toolInfo).toBeNull();
   });
 });
 
@@ -241,10 +237,6 @@ describe("Tool not registered on agent calling approveToolCall", () => {
     const result = await t.run(async (ctx) =>
       agentWithoutTool.approveToolCall(ctx as any, {
         threadId,
-        toolCallId: "cross-agent-call",
-        toolName: "testTool",
-        args: { value: "cross" },
-        parentMessageId,
         approvalId: "cross-agent-approval",
       }),
     );
@@ -272,8 +264,7 @@ describe("Tool not registered on agent calling approveToolCall", () => {
   });
 });
 
-// Obsolete - new API doesn't look up by toolCallId
-describe.skip("Multiple tool calls with same toolCallId", () => {
+describe("Multiple tool calls with same toolCallId", () => {
   test("finds first matching toolCallId regardless of which message has approval", async () => {
     const t = initConvexTest(schema);
 
@@ -329,10 +320,9 @@ describe.skip("Multiple tool calls with same toolCallId", () => {
       (testAgent as any)._findToolCallInfo(ctx, threadId, "dup-approval"),
     );
 
-    // The code finds the first matching toolCallId in iteration order
-    // Since messages are returned newest-first, it finds WRONG (newer message)
-    // BUG: It should find the tool call in the same message as the approval request
-    expect(toolInfo?.toolInput).toEqual({ value: "WRONG" });
+    // FIXED: Indexed fields are extracted from the SAME message as the approval request
+    // So it finds the CORRECT tool call from the approval message
+    expect(toolInfo?.toolInput).toEqual({ value: "CORRECT" });
   });
 });
 
@@ -591,10 +581,6 @@ describe("approveToolCall saves pending approval (no tool execution)", () => {
     const result = await t.run(async (ctx) =>
       throwingAgent.approveToolCall(ctx as any, {
         threadId,
-        toolCallId: "throwing-call",
-        toolName: "throwingTool",
-        args: {},
-        parentMessageId,
         approvalId: "throwing-approval",
       }),
     );
@@ -631,8 +617,7 @@ describe("Bug: Race condition with concurrent approvals", () => {
   });
 });
 
-// Obsolete - new API doesn't look up tool info
-describe.skip("Bug: Approval for non-existent toolCallId", () => {
+describe("Bug: Approval for non-existent toolCallId", () => {
   test("returns null when toolCallId doesn't match any tool-call", async () => {
     const t = initConvexTest(schema);
 
@@ -666,8 +651,7 @@ describe.skip("Bug: Approval for non-existent toolCallId", () => {
   });
 });
 
-// Obsolete - new API receives tool input directly from frontend
-describe.skip("Bug: Tool input normalization", () => {
+describe("Bug: Tool input normalization", () => {
   test("handles tool call with only 'args' and no 'input'", async () => {
     const t = initConvexTest(schema);
 
@@ -783,10 +767,6 @@ describe("Content merge in addMessages", () => {
     const { messageId: approvalMsgId } = await t.run(async (ctx) =>
       testAgent.approveToolCall(ctx as any, {
         threadId,
-        toolCallId: "merge-call",
-        toolName: "testTool",
-        args: { value: "merge-test" },
-        parentMessageId: assistantMsgId,
         approvalId: "merge-approval",
       }),
     );

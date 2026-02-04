@@ -1521,11 +1521,7 @@ export class Agent<
    *
    * @param ctx The context from a mutation or action.
    * @param args.threadId The thread containing the tool call.
-   * @param args.toolCallId The tool call ID from the tool-call part.
-   * @param args.toolName The name of the tool being called.
-   * @param args.args The arguments/input for the tool call.
-   * @param args.parentMessageId The message ID containing the tool call.
-   * @param args.approvalId The approval ID for idempotency (from tool-approval-request).
+   * @param args.approvalId The approval ID from the tool-approval-request.
    * @param args.reason Optional reason for the approval.
    * @returns The messageId of the saved approval, for use as promptMessageId.
    */
@@ -1533,26 +1529,29 @@ export class Agent<
     ctx: (ActionCtx | MutationCtx) & CustomCtx,
     args: {
       threadId: string;
-      toolCallId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-      parentMessageId: string;
       approvalId: string;
       reason?: string;
     },
   ): Promise<{ messageId: string }> {
-    const { threadId, toolCallId, toolName, args: toolInput, parentMessageId, approvalId, reason } = args;
+    const { threadId, approvalId, reason } = args;
 
-    // Check for duplicate approvals
-    const alreadyHandled = await this._checkAlreadyHandled(ctx, threadId, toolCallId, approvalId);
-    if (alreadyHandled) {
-      if (alreadyHandled.wasApproved) {
+    // Look up tool call info using indexed query (O(1))
+    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+
+    if (!toolInfo) {
+      throw new Error(
+        `Approval request not found: ${approvalId}`,
+      );
+    }
+
+    if (toolInfo.alreadyHandled) {
+      if (toolInfo.wasApproved) {
         throw new Error(
-          `Tool call ${toolCallId} was already approved${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
+          `Tool call was already approved (approval ID: ${approvalId})`,
         );
       }
       throw new Error(
-        `Cannot approve tool call ${toolCallId} that was already denied${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
+        `Cannot approve tool call that was already denied (approval ID: ${approvalId})`,
       );
     }
 
@@ -1561,7 +1560,7 @@ export class Agent<
     // with the caller's runtime tools when streamText/generateText is called.
     const { messageId } = await this.saveMessage(ctx, {
       threadId,
-      promptMessageId: parentMessageId,
+      promptMessageId: toolInfo.parentMessageId,
       message: {
         role: "tool",
         content: [
@@ -1573,9 +1572,9 @@ export class Agent<
             providerOptions: {
               "convex-agent": {
                 pendingToolExecution: true,
-                toolCallId,
-                toolName,
-                toolInput,
+                toolCallId: toolInfo.toolCallId,
+                toolName: toolInfo.toolName,
+                toolInput: toolInfo.toolInput,
               },
             },
           },
@@ -1583,6 +1582,12 @@ export class Agent<
       },
       metadata: { status: "pending" },
       skipEmbeddings: true,
+    });
+
+    // Update the approval status for idempotency
+    await ctx.runMutation(this.component.messages.updateApprovalStatus, {
+      approvalId,
+      status: "approved",
     });
 
     return { messageId };
@@ -1599,10 +1604,7 @@ export class Agent<
    *
    * @param ctx The context from an action.
    * @param args.threadId The thread containing the tool call.
-   * @param args.toolCallId The tool call ID from the tool-call part.
-   * @param args.toolName The name of the tool being called.
-   * @param args.parentMessageId The message ID containing the tool call.
-   * @param args.approvalId The approval ID for idempotency (from tool-approval-request).
+   * @param args.approvalId The approval ID from the tool-approval-request.
    * @param args.reason Optional reason for the denial.
    * @returns The messageId of the saved denial, for use as promptMessageId.
    */
@@ -1610,25 +1612,29 @@ export class Agent<
     ctx: (ActionCtx | MutationCtx) & CustomCtx,
     args: {
       threadId: string;
-      toolCallId: string;
-      toolName: string;
-      parentMessageId: string;
       approvalId: string;
       reason?: string;
     },
   ): Promise<{ messageId: string }> {
-    const { threadId, toolCallId, toolName, parentMessageId, approvalId, reason } = args;
+    const { threadId, approvalId, reason } = args;
 
-    // Check for duplicate denials
-    const alreadyHandled = await this._checkAlreadyHandled(ctx, threadId, toolCallId, approvalId);
-    if (alreadyHandled) {
-      if (!alreadyHandled.wasApproved) {
+    // Look up tool call info using indexed query (O(1))
+    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+
+    if (!toolInfo) {
+      throw new Error(
+        `Approval request not found: ${approvalId}`,
+      );
+    }
+
+    if (toolInfo.alreadyHandled) {
+      if (!toolInfo.wasApproved) {
         throw new Error(
-          `Tool call ${toolCallId} was already denied${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
+          `Tool call was already denied (approval ID: ${approvalId})`,
         );
       }
       throw new Error(
-        `Cannot deny tool call ${toolCallId} that was already approved${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
+        `Cannot deny tool call that was already approved (approval ID: ${approvalId})`,
       );
     }
 
@@ -1637,7 +1643,7 @@ export class Agent<
     // Save approval response (denied) and tool result with execution-denied
     const { messageId } = await this.saveMessage(ctx, {
       threadId,
-      promptMessageId: parentMessageId,
+      promptMessageId: toolInfo.parentMessageId,
       message: {
         role: "tool",
         content: [
@@ -1649,8 +1655,8 @@ export class Agent<
           },
           {
             type: "tool-result",
-            toolCallId,
-            toolName,
+            toolCallId: toolInfo.toolCallId,
+            toolName: toolInfo.toolName,
             output: {
               type: "execution-denied",
               reason: denialReason,
@@ -1661,47 +1667,66 @@ export class Agent<
       skipEmbeddings: true,
     });
 
+    // Update the approval status for idempotency
+    await ctx.runMutation(this.component.messages.updateApprovalStatus, {
+      approvalId,
+      status: "denied",
+    });
+
     return { messageId };
   }
 
   /**
-   * Check if a tool call has already been handled (approved or denied).
+   * Find tool call information by approvalId using O(1) indexed lookup.
+   * Returns null if not found, or tool info with alreadyHandled flag if processed.
    * @internal
    */
-  private async _checkAlreadyHandled(
+  private async _findToolCallInfo(
     ctx: ActionCtx | MutationCtx,
     threadId: string,
-    toolCallId: string,
-    approvalId?: string,
-  ): Promise<{ alreadyHandled: true; wasApproved: boolean } | null> {
-    const messagesResult = await this.listMessages(ctx, {
-      threadId,
-      paginationOpts: { numItems: 50, cursor: null },
-    });
+    approvalId: string,
+  ): Promise<{
+    toolCallId: string;
+    toolName: string;
+    toolInput: Record<string, unknown>;
+    parentMessageId: string;
+    alreadyHandled?: boolean;
+    wasApproved?: boolean;
+  } | null> {
+    // O(1) indexed lookup by approvalId
+    const message = await ctx.runQuery(
+      this.component.messages.getByApprovalId,
+      { approvalId },
+    );
 
-    for (const msg of messagesResult.page) {
-      if (msg.message?.role === "tool" && Array.isArray(msg.message.content)) {
-        for (const part of msg.message.content) {
-          // Check by approvalId if provided
-          if (
-            approvalId &&
-            part.type === "tool-approval-response" &&
-            (part as any).approvalId === approvalId
-          ) {
-            return { alreadyHandled: true, wasApproved: (part as any).approved === true };
-          }
-          // Also check by toolCallId (in case of duplicate calls without approvalId)
-          if (
-            part.type === "tool-result" &&
-            (part as any).toolCallId === toolCallId
-          ) {
-            const output = (part as any).output;
-            const wasApproved = output?.type !== "execution-denied";
-            return { alreadyHandled: true, wasApproved };
-          }
-        }
-      }
+    if (!message) {
+      return null;
     }
-    return null;
+
+    // Verify thread ID for security
+    if (message.threadId !== threadId) {
+      return null;
+    }
+
+    // Check if already handled based on approval status
+    const status = (message as any).approvalStatus;
+    if (status === "approved" || status === "denied") {
+      return {
+        toolCallId: (message as any).approvalToolCallId,
+        toolName: (message as any).approvalToolName,
+        toolInput: (message as any).approvalToolInput ?? {},
+        parentMessageId: message._id,
+        alreadyHandled: true,
+        wasApproved: status === "approved",
+      };
+    }
+
+    // Return the tool context for pending approvals
+    return {
+      toolCallId: (message as any).approvalToolCallId,
+      toolName: (message as any).approvalToolName,
+      toolInput: (message as any).approvalToolInput ?? {},
+      parentMessageId: message._id,
+    };
   }
 }

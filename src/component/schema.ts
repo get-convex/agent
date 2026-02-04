@@ -64,6 +64,19 @@ export const schema = defineSchema({
     parentMessageId: v.optional(v.id("messages")),
     stepId: v.optional(v.string()),
     files: v.optional(v.array(v.any())),
+
+    // Tool approval fields (extracted from message content for O(1) indexed lookup)
+    approvalId: v.optional(v.string()),
+    approvalToolCallId: v.optional(v.string()),
+    approvalToolName: v.optional(v.string()),
+    approvalToolInput: v.optional(v.any()),
+    approvalStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("denied"),
+      ),
+    ),
   })
     // Allows finding successful visible messages in order
     // Also surface pending messages separately to e.g. stream
@@ -81,7 +94,11 @@ export const schema = defineSchema({
       filterFields: ["userId", "threadId"],
     })
     // Allows finding messages by vector embedding id
-    .index("embeddingId_threadId", ["embeddingId", "threadId"]),
+    .index("embeddingId_threadId", ["embeddingId", "threadId"])
+    // Allows O(1) lookup of approval requests by approvalId
+    .index("by_approvalId", ["approvalId"])
+    // Allows querying pending approvals for a thread
+    .index("by_threadId_approvalStatus", ["threadId", "approvalStatus"]),
 
   // Status: if it's done, it's deleted, then deltas are vacuumed
   streamingMessages: defineTable({

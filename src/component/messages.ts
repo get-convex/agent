@@ -46,6 +46,46 @@ function publicMessage(message: Doc<"messages">): MessageDoc {
   return omit(message, ["parentMessageId", "stepId", "files"]);
 }
 
+/**
+ * Extract approval fields from message content for O(1) indexed lookup.
+ * When a message contains a tool-approval-request, extract the tool context
+ * and store it as top-level fields for fast querying.
+ */
+function extractApprovalFields(
+  message: Omit<WithoutSystemFields<Doc<"messages">>, "order" | "stepOrder">,
+) {
+  if (!message.message || !Array.isArray(message.message.content)) {
+    return null;
+  }
+
+  // Find tool-approval-request in content
+  const approvalRequest = message.message.content.find(
+    (p: any) => p.type === "tool-approval-request",
+  ) as any;
+
+  if (!approvalRequest?.approvalId) {
+    return null;
+  }
+
+  // Find corresponding tool-call in the same message
+  const toolCall = message.message.content.find(
+    (p: any) =>
+      p.type === "tool-call" && p.toolCallId === approvalRequest.toolCallId,
+  ) as any;
+
+  if (!toolCall) {
+    return null;
+  }
+
+  return {
+    approvalId: approvalRequest.approvalId,
+    approvalToolCallId: toolCall.toolCallId,
+    approvalToolName: toolCall.toolName,
+    approvalToolInput: toolCall.input ?? toolCall.args ?? {},
+    approvalStatus: "pending" as const,
+  };
+}
+
 export async function deleteMessage(
   ctx: MutationCtx,
   messageDoc: Doc<"messages">,
@@ -358,10 +398,14 @@ async function addMessagesHandler(
       }
       stepOrder++;
     }
+    // Extract approval fields for indexed lookup (if present)
+    const approvalFields = extractApprovalFields(messageDoc);
+
     const messageId = await ctx.db.insert("messages", {
       ...messageDoc,
       order,
       stepOrder,
+      ...(approvalFields || {}),
     });
     if (message.fileIds) {
       await changeRefcount(ctx, [], message.fileIds);
@@ -1039,5 +1083,44 @@ export const getMessageSearchFields = query({
       embedding,
       embeddingModel,
     };
+  },
+});
+
+/**
+ * Get a message by its approvalId field (O(1) indexed lookup).
+ * Used by approval workflow to quickly find approval requests.
+ */
+export const getByApprovalId = query({
+  args: { approvalId: v.string() },
+  returns: v.union(vMessageDoc, v.null()),
+  handler: async (ctx, { approvalId }) => {
+    const message = await ctx.db
+      .query("messages")
+      .withIndex("by_approvalId", (q) => q.eq("approvalId", approvalId))
+      .first();
+    return message ? publicMessage(message) : null;
+  },
+});
+
+/**
+ * Update the approval status of a message (for idempotency tracking).
+ * Called after approveToolCall or denyToolCall to mark the approval as handled.
+ */
+export const updateApprovalStatus = mutation({
+  args: {
+    approvalId: v.string(),
+    status: v.union(v.literal("approved"), v.literal("denied")),
+  },
+  returns: v.null(),
+  handler: async (ctx, { approvalId, status }) => {
+    const message = await ctx.db
+      .query("messages")
+      .withIndex("by_approvalId", (q) => q.eq("approvalId", approvalId))
+      .first();
+
+    if (message) {
+      await ctx.db.patch(message._id, { approvalStatus: status });
+    }
+    return null;
   },
 });
