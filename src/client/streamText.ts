@@ -80,6 +80,9 @@ export async function streamText<
 
   const steps: StepResult<TOOLS>[] = [];
 
+  // Track the final step for atomic save with stream finish (issue #181)
+  let pendingFinalStep: StepResult<TOOLS> | undefined;
+
   const streamer =
     threadId && options.saveStreamDeltas
       ? new DeltaStreamer(
@@ -138,7 +141,14 @@ export async function streamText<
     onStepFinish: async (step) => {
       steps.push(step);
       const createPendingMessage = await willContinue(steps, args.stopWhen);
-      await call.save({ step }, createPendingMessage);
+      if (!createPendingMessage && streamer) {
+        // This is the final step with streaming enabled.
+        // Defer saving until stream consumption completes for atomic finish (issue #181).
+        streamer.markFinishedExternally();
+        pendingFinalStep = step;
+      } else {
+        await call.save({ step }, createPendingMessage);
+      }
       return args.onStepFinish?.(step);
     },
   }) as StreamTextResult<TOOLS, OUTPUT>;
@@ -161,6 +171,12 @@ export async function streamText<
       await streamer.fail(errorToString(error));
     }
     throw error;
+  }
+
+  // If we deferred the final step save, do it now with atomic stream finish
+  if (pendingFinalStep && streamer) {
+    const finishStreamId = await streamer.getOrCreateStreamId();
+    await call.save({ step: pendingFinalStep }, false, finishStreamId);
   }
   const metadata: GenerationOutputMetadata = {
     promptMessageId,
