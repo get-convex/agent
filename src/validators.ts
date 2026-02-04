@@ -683,6 +683,19 @@ export const vMessageDoc = v.object({
   reasoningDetails: v.optional(vReasoningDetails),
   // Deprecated
   id: v.optional(v.string()), // external id, e.g. from Vercel AI SDK
+
+  // Tool approval fields (extracted from message content for O(1) indexed lookup)
+  approvalId: v.optional(v.string()),
+  approvalToolCallId: v.optional(v.string()),
+  approvalToolName: v.optional(v.string()),
+  approvalToolInput: v.optional(v.any()),
+  approvalStatus: v.optional(
+    v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("denied"),
+    ),
+  ),
 });
 export type MessageDoc = Infer<typeof vMessageDoc>; // Public
 

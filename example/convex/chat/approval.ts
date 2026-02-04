@@ -67,10 +67,6 @@ export const generateResponse = internalAction({
 export const submitApproval = mutation({
   args: {
     threadId: v.string(),
-    toolCallId: v.string(),
-    toolName: v.string(),
-    args: v.any(), // Tool arguments
-    parentMessageId: v.string(),
     approvalId: v.string(),
     approved: v.boolean(),
     reason: v.optional(v.string()),
@@ -78,24 +74,21 @@ export const submitApproval = mutation({
   handler: async (ctx, args) => {
     await authorizeThreadAccess(ctx, args.threadId);
 
-    const { approved, ...toolContext } = args;
-
-    if (approved) {
+    if (args.approved) {
       await ctx.scheduler.runAfter(0, internal.chat.approval.handleApproval, {
-        ...toolContext,
+        threadId: args.threadId,
+        approvalId: args.approvalId,
+        reason: args.reason,
       });
     } else {
       await ctx.scheduler.runAfter(0, internal.chat.approval.handleDenial, {
-        threadId: toolContext.threadId,
-        toolCallId: toolContext.toolCallId,
-        toolName: toolContext.toolName,
-        parentMessageId: toolContext.parentMessageId,
-        approvalId: toolContext.approvalId,
-        reason: toolContext.reason,
+        threadId: args.threadId,
+        approvalId: args.approvalId,
+        reason: args.reason,
       });
     }
 
-    return { approved };
+    return { approved: args.approved };
   },
 });
 
@@ -106,10 +99,6 @@ export const submitApproval = mutation({
 export const handleApproval = internalAction({
   args: {
     threadId: v.string(),
-    toolCallId: v.string(),
-    toolName: v.string(),
-    args: v.any(),
-    parentMessageId: v.string(),
     approvalId: v.string(),
     reason: v.optional(v.string()),
   },
@@ -133,9 +122,6 @@ export const handleApproval = internalAction({
 export const handleDenial = internalAction({
   args: {
     threadId: v.string(),
-    toolCallId: v.string(),
-    toolName: v.string(),
-    parentMessageId: v.string(),
     approvalId: v.string(),
     reason: v.optional(v.string()),
   },

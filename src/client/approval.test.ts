@@ -107,8 +107,7 @@ const noApprovalAgent = new Agent(components.agent, {
 });
 
 describe("Tool Approval Workflow", () => {
-  // Obsolete - _findToolCallInfo was replaced with direct parameter API
-  describe.skip("_findToolCallInfo", () => {
+  describe("_findToolCallInfo", () => {
     test("finds tool call info for valid approval ID", async () => {
       const t = initConvexTest(schema);
 
@@ -217,26 +216,11 @@ describe("Tool Approval Workflow", () => {
         }),
       );
 
-      // Save message with approval response (already handled)
+      // Approve via the proper flow (which updates the approval status)
       await t.run(async (ctx) =>
-        approvalAgent.saveMessage(ctx, {
+        approvalAgent.approveToolCall(ctx as any, {
           threadId,
-          message: {
-            role: "tool",
-            content: [
-              {
-                type: "tool-approval-response",
-                approvalId: "approval-xyz",
-                approved: true,
-              },
-              {
-                type: "tool-result",
-                toolCallId: "call-123",
-                toolName: "deleteFile",
-                output: { type: "text", value: "Deleted: test.txt" },
-              },
-            ],
-          },
+          approvalId: "approval-xyz",
         }),
       );
 

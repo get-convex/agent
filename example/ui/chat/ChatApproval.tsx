@@ -80,21 +80,10 @@ function ApprovalChat({
     setPrompt("");
   }
 
-  const handleApproval = async (
-    approvalId: string,
-    toolCallId: string,
-    toolName: string,
-    args: unknown,
-    parentMessageId: string,
-    approved: boolean
-  ) => {
+  const handleApproval = async (approvalId: string, approved: boolean) => {
     try {
       await submitApproval({
         threadId,
-        toolCallId,
-        toolName,
-        args,
-        parentMessageId,
         approvalId,
         approved,
         reason: approved ? "User approved" : "User denied",
@@ -198,14 +187,7 @@ function Message({
   onApproval,
 }: {
   message: UIMessage;
-  onApproval: (
-    approvalId: string,
-    toolCallId: string,
-    toolName: string,
-    args: unknown,
-    parentMessageId: string,
-    approved: boolean
-  ) => void;
+  onApproval: (approvalId: string, approved: boolean) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -251,28 +233,14 @@ function Message({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => onApproval(
-                  approvalId,
-                  tool.toolCallId,
-                  getToolName(tool.type),
-                  tool.input,
-                  message.id,
-                  true
-                )}
+                onClick={() => onApproval(approvalId, true)}
                 className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm font-medium"
               >
                 ✓ Approve
               </button>
               <button
                 type="button"
-                onClick={() => onApproval(
-                  approvalId,
-                  tool.toolCallId,
-                  getToolName(tool.type),
-                  tool.input,
-                  message.id,
-                  false
-                )}
+                onClick={() => onApproval(approvalId, false)}
                 className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm font-medium"
               >
                 ✗ Deny
