@@ -35,7 +35,8 @@ const testAgent = new Agent(components.agent, {
   stopWhen: stepCountIs(3),
 });
 
-describe("Pagination in _findToolCallInfo", () => {
+// These tests are obsolete with the new API that accepts direct parameters
+describe.skip("Pagination in _findToolCallInfo", () => {
   test("finds approval within 20-message window (newest first)", async () => {
     const t = initConvexTest(schema);
 
@@ -139,7 +140,8 @@ describe("Pagination in _findToolCallInfo", () => {
   });
 });
 
-describe("Bug: Tool call and approval request in different messages", () => {
+// Obsolete - new API doesn't look up tool info
+describe.skip("Bug: Tool call and approval request in different messages", () => {
   test("fails when tool-call and tool-approval-request are in separate messages", async () => {
     const t = initConvexTest(schema);
 
@@ -211,7 +213,7 @@ describe("Tool not registered on agent calling approveToolCall", () => {
     );
 
     // Save a tool call from a different agent that has the tool
-    await t.run(async (ctx) =>
+    const { messageId: parentMessageId } = await t.run(async (ctx) =>
       testAgent.saveMessage(ctx, {
         threadId,
         message: {
@@ -239,6 +241,10 @@ describe("Tool not registered on agent calling approveToolCall", () => {
     const result = await t.run(async (ctx) =>
       agentWithoutTool.approveToolCall(ctx as any, {
         threadId,
+        toolCallId: "cross-agent-call",
+        toolName: "testTool",
+        args: { value: "cross" },
+        parentMessageId,
         approvalId: "cross-agent-approval",
       }),
     );
@@ -266,7 +272,8 @@ describe("Tool not registered on agent calling approveToolCall", () => {
   });
 });
 
-describe("Multiple tool calls with same toolCallId", () => {
+// Obsolete - new API doesn't look up by toolCallId
+describe.skip("Multiple tool calls with same toolCallId", () => {
   test("finds first matching toolCallId regardless of which message has approval", async () => {
     const t = initConvexTest(schema);
 
@@ -555,7 +562,7 @@ describe("approveToolCall saves pending approval (no tool execution)", () => {
       createThread(ctx, components.agent, { userId: "user1" }),
     );
 
-    await t.run(async (ctx) =>
+    const { messageId: parentMessageId } = await t.run(async (ctx) =>
       throwingAgent.saveMessage(ctx, {
         threadId,
         message: {
@@ -584,6 +591,10 @@ describe("approveToolCall saves pending approval (no tool execution)", () => {
     const result = await t.run(async (ctx) =>
       throwingAgent.approveToolCall(ctx as any, {
         threadId,
+        toolCallId: "throwing-call",
+        toolName: "throwingTool",
+        args: {},
+        parentMessageId,
         approvalId: "throwing-approval",
       }),
     );
@@ -620,7 +631,8 @@ describe("Bug: Race condition with concurrent approvals", () => {
   });
 });
 
-describe("Bug: Approval for non-existent toolCallId", () => {
+// Obsolete - new API doesn't look up tool info
+describe.skip("Bug: Approval for non-existent toolCallId", () => {
   test("returns null when toolCallId doesn't match any tool-call", async () => {
     const t = initConvexTest(schema);
 
@@ -654,7 +666,8 @@ describe("Bug: Approval for non-existent toolCallId", () => {
   });
 });
 
-describe("Bug: Tool input normalization", () => {
+// Obsolete - new API receives tool input directly from frontend
+describe.skip("Bug: Tool input normalization", () => {
   test("handles tool call with only 'args' and no 'input'", async () => {
     const t = initConvexTest(schema);
 
@@ -770,6 +783,10 @@ describe("Content merge in addMessages", () => {
     const { messageId: approvalMsgId } = await t.run(async (ctx) =>
       testAgent.approveToolCall(ctx as any, {
         threadId,
+        toolCallId: "merge-call",
+        toolName: "testTool",
+        args: { value: "merge-test" },
+        parentMessageId: assistantMsgId,
         approvalId: "merge-approval",
       }),
     );
