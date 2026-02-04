@@ -39,11 +39,51 @@ import {
   vVectorId,
 } from "./vector/tables.js";
 import { changeRefcount } from "./files.js";
-import { getStreamingMessagesWithMetadata } from "./streams.js";
+import { getStreamingMessagesWithMetadata, finishHandler } from "./streams.js";
 import { partial } from "convex-helpers/validators";
 
 function publicMessage(message: Doc<"messages">): MessageDoc {
   return omit(message, ["parentMessageId", "stepId", "files"]);
+}
+
+/**
+ * Extract approval fields from message content for O(1) indexed lookup.
+ * When a message contains a tool-approval-request, extract the tool context
+ * and store it as top-level fields for fast querying.
+ */
+function extractApprovalFields(
+  message: Omit<WithoutSystemFields<Doc<"messages">>, "order" | "stepOrder">,
+) {
+  if (!message.message || !Array.isArray(message.message.content)) {
+    return null;
+  }
+
+  // Find tool-approval-request in content
+  const approvalRequest = message.message.content.find(
+    (p: any) => p.type === "tool-approval-request",
+  ) as any;
+
+  if (!approvalRequest?.approvalId) {
+    return null;
+  }
+
+  // Find corresponding tool-call in the same message
+  const toolCall = message.message.content.find(
+    (p: any) =>
+      p.type === "tool-call" && p.toolCallId === approvalRequest.toolCallId,
+  ) as any;
+
+  if (!toolCall) {
+    return null;
+  }
+
+  return {
+    approvalId: approvalRequest.approvalId,
+    approvalToolCallId: toolCall.toolCallId,
+    approvalToolName: toolCall.toolName,
+    approvalToolInput: toolCall.input ?? toolCall.args ?? {},
+    approvalStatus: "pending" as const,
+  };
 }
 
 export async function deleteMessage(
@@ -141,6 +181,9 @@ const addMessagesArgs = {
   // if set to true, these messages will not show up in text or vector search
   // results for the userId
   hideFromUserIdSearch: v.optional(v.boolean()),
+  // If provided, finish this stream atomically with the message save.
+  // This prevents UI flickering from separate mutations (issue #181).
+  finishStreamId: v.optional(v.id("streamingMessages")),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -167,6 +210,7 @@ async function addMessagesHandler(
     hideFromUserIdSearch,
     ...rest
   } = args;
+
   const promptMessage = promptMessageId && (await ctx.db.get(promptMessageId));
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
@@ -218,6 +262,42 @@ async function addMessagesHandler(
       "embeddings.vectors.length must match messages.length",
     );
   }
+
+  // When the pending message already has content (e.g. approval response from
+  // approveToolCall), we need to merge that content into the first incoming
+  // message rather than discarding it. Handle role mismatches by swapping or
+  // finalizing the pending message.
+  let activePendingMessageId = pendingMessageId;
+  if (activePendingMessageId) {
+    const pm = await ctx.db.get(activePendingMessageId);
+    if (
+      pm?.message &&
+      Array.isArray(pm.message.content) &&
+      pm.message.content.length > 0
+    ) {
+      const matchIdx = messages.findIndex(
+        (m) => m.message.role === pm.message!.role,
+      );
+      if (matchIdx > 0) {
+        // Swap matching message to position 0 for merge
+        [messages[0], messages[matchIdx]] = [messages[matchIdx], messages[0]];
+        if (embeddings) {
+          [embeddings.vectors[0], embeddings.vectors[matchIdx]] = [
+            embeddings.vectors[matchIdx],
+            embeddings.vectors[0],
+          ];
+        }
+      } else if (
+        matchIdx === -1 &&
+        messages[0]?.message.role !== pm.message.role
+      ) {
+        // No matching role in batch — finalize pending as completed
+        await ctx.db.patch(activePendingMessageId, { status: "success" });
+        activePendingMessageId = undefined;
+      }
+    }
+  }
+
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     let embeddingId: VectorTableId | undefined;
@@ -251,17 +331,43 @@ async function addMessagesHandler(
     >;
     // If there is a pending message, we replace that one with the first message
     // and subsequent ones will follow the regular order/subOrder advancement.
-    if (i === 0 && pendingMessageId) {
-      const pendingMessage = await ctx.db.get(pendingMessageId);
-      assert(pendingMessage, `Pending msg ${pendingMessageId} not found`);
+    if (i === 0 && activePendingMessageId) {
+      const pendingMessage = await ctx.db.get(activePendingMessageId);
+      assert(
+        pendingMessage,
+        `Pending msg ${activePendingMessageId} not found`,
+      );
       if (pendingMessage.status === "failed") {
         fail = true;
         error =
-          `Trying to update a message that failed: ${pendingMessageId}, ` +
+          `Trying to update a message that failed: ${activePendingMessageId}, ` +
           `error: ${pendingMessage.error ?? error}`;
         messageDoc.status = "failed";
         messageDoc.error = error;
       }
+
+      // Merge: prepend any existing pending content into the new message.
+      // Both messages have the same role (ensured by the swap/finalize logic
+      // above), so the content arrays are compatible at runtime.
+      const pendingContent = pendingMessage.message?.content;
+      if (
+        Array.isArray(pendingContent) &&
+        pendingContent.length > 0 &&
+        Array.isArray(messageDoc.message?.content)
+      ) {
+        // The pending and incoming content have the same role, but TS can't
+        // prove the union is compatible across the role discriminant, so we
+        // cast the merged content to match the incoming message's content type.
+        (messageDoc.message as any).content = [
+          ...pendingContent,
+          ...messageDoc.message.content,
+        ];
+        messageDoc.tool = isTool(messageDoc.message);
+        messageDoc.text = hideFromUserIdSearch
+          ? undefined
+          : extractText(messageDoc.message);
+      }
+
       if (message.fileIds) {
         await changeRefcount(
           ctx,
@@ -292,16 +398,25 @@ async function addMessagesHandler(
       }
       stepOrder++;
     }
+    // Extract approval fields for indexed lookup (if present)
+    const approvalFields = extractApprovalFields(messageDoc);
+
     const messageId = await ctx.db.insert("messages", {
       ...messageDoc,
       order,
       stepOrder,
+      ...(approvalFields || {}),
     });
     if (message.fileIds) {
       await changeRefcount(ctx, [], message.fileIds);
     }
     // TODO: delete the associated stream data for the order/stepOrder
     toReturn.push((await ctx.db.get(messageId))!);
+  }
+  // Atomically finish the stream if requested, preventing UI flickering
+  // from separate mutations for message save and stream finish (issue #181).
+  if (args.finishStreamId) {
+    await finishHandler(ctx, { streamId: args.finishStreamId });
   }
   return { messages: toReturn.map(publicMessage) };
 }
@@ -968,5 +1083,44 @@ export const getMessageSearchFields = query({
       embedding,
       embeddingModel,
     };
+  },
+});
+
+/**
+ * Get a message by its approvalId field (O(1) indexed lookup).
+ * Used by approval workflow to quickly find approval requests.
+ */
+export const getByApprovalId = query({
+  args: { approvalId: v.string() },
+  returns: v.union(vMessageDoc, v.null()),
+  handler: async (ctx, { approvalId }) => {
+    const message = await ctx.db
+      .query("messages")
+      .withIndex("by_approvalId", (q) => q.eq("approvalId", approvalId))
+      .first();
+    return message ? publicMessage(message) : null;
+  },
+});
+
+/**
+ * Update the approval status of a message (for idempotency tracking).
+ * Called after approveToolCall or denyToolCall to mark the approval as handled.
+ */
+export const updateApprovalStatus = mutation({
+  args: {
+    approvalId: v.string(),
+    status: v.union(v.literal("approved"), v.literal("denied")),
+  },
+  returns: v.null(),
+  handler: async (ctx, { approvalId, status }) => {
+    const message = await ctx.db
+      .query("messages")
+      .withIndex("by_approvalId", (q) => q.eq("approvalId", approvalId))
+      .first();
+
+    if (message) {
+      await ctx.db.patch(message._id, { approvalStatus: status });
+    }
+    return null;
   },
 });

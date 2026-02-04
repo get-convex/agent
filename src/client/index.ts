@@ -19,7 +19,7 @@ import type {
 } from "ai";
 import { generateObject, generateText, stepCountIs, streamObject } from "ai";
 
-const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const MIGRATION_URL = "https://github.com/get-convex/agent/blob/v0.6.0/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
 function warnDeprecation(key: string, message: string) {
   if (!warnedDeprecations.has(key)) {
@@ -1507,5 +1507,226 @@ export class Agent<
         };
       },
     });
+  }
+
+  /**
+   * Approve a pending tool call and save the approval as a pending message.
+   *
+   * This is a helper for the AI SDK v6 tool approval workflow. When a tool
+   * with `needsApproval: true` is called, it returns a `tool-approval-request`.
+   * Call this method to approve the tool call, then call `streamText` (or
+   * `generateText`) with the returned `messageId` as `promptMessageId` to
+   * continue generation. The AI SDK will execute the tool during that call,
+   * so runtime tools and streaming options are available.
+   *
+   * @param ctx The context from a mutation or action.
+   * @param args.threadId The thread containing the tool call.
+   * @param args.approvalId The approval ID from the tool-approval-request.
+   * @param args.reason Optional reason for the approval.
+   * @returns The messageId of the saved approval, for use as promptMessageId.
+   */
+  async approveToolCall(
+    ctx: (ActionCtx | MutationCtx) & CustomCtx,
+    args: {
+      threadId: string;
+      approvalId: string;
+      reason?: string;
+    },
+  ): Promise<{ messageId: string }> {
+    const { threadId, approvalId, reason } = args;
+
+    // Look up tool call info using indexed query (O(1))
+    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+
+    if (!toolInfo) {
+      throw new Error(
+        `Approval request not found: ${approvalId}`,
+      );
+    }
+
+    if (toolInfo.alreadyHandled) {
+      if (toolInfo.wasApproved) {
+        throw new Error(
+          `Tool call was already approved (approval ID: ${approvalId})`,
+        );
+      }
+      throw new Error(
+        `Cannot approve tool call that was already denied (approval ID: ${approvalId})`,
+      );
+    }
+
+    // Save approval response as a pending message. The tool execution info
+    // is stored in providerOptions so startGeneration can execute the tool
+    // with the caller's runtime tools when streamText/generateText is called.
+    const { messageId } = await this.saveMessage(ctx, {
+      threadId,
+      promptMessageId: toolInfo.parentMessageId,
+      message: {
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId,
+            approved: true,
+            reason,
+            providerOptions: {
+              "convex-agent": {
+                pendingToolExecution: true,
+                toolCallId: toolInfo.toolCallId,
+                toolName: toolInfo.toolName,
+                toolInput: toolInfo.toolInput,
+              },
+            },
+          },
+        ],
+      },
+      metadata: { status: "pending" },
+      skipEmbeddings: true,
+    });
+
+    // Update the approval status for idempotency
+    await ctx.runMutation(this.component.messages.updateApprovalStatus, {
+      approvalId,
+      status: "approved",
+    });
+
+    return { messageId };
+  }
+
+  /**
+   * Deny a pending tool call and save the denial.
+   *
+   * This is a helper for the AI SDK v6 tool approval workflow. When a tool
+   * with `needsApproval: true` is called, it returns a `tool-approval-request`.
+   * Call this method to deny the tool, then use the returned `messageId` as
+   * `promptMessageId` in a follow-up `streamText` call to let the LLM respond
+   * to the denial.
+   *
+   * @param ctx The context from an action.
+   * @param args.threadId The thread containing the tool call.
+   * @param args.approvalId The approval ID from the tool-approval-request.
+   * @param args.reason Optional reason for the denial.
+   * @returns The messageId of the saved denial, for use as promptMessageId.
+   */
+  async denyToolCall(
+    ctx: (ActionCtx | MutationCtx) & CustomCtx,
+    args: {
+      threadId: string;
+      approvalId: string;
+      reason?: string;
+    },
+  ): Promise<{ messageId: string }> {
+    const { threadId, approvalId, reason } = args;
+
+    // Look up tool call info using indexed query (O(1))
+    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+
+    if (!toolInfo) {
+      throw new Error(
+        `Approval request not found: ${approvalId}`,
+      );
+    }
+
+    if (toolInfo.alreadyHandled) {
+      if (!toolInfo.wasApproved) {
+        throw new Error(
+          `Tool call was already denied (approval ID: ${approvalId})`,
+        );
+      }
+      throw new Error(
+        `Cannot deny tool call that was already approved (approval ID: ${approvalId})`,
+      );
+    }
+
+    const denialReason = reason ?? "Tool execution was denied by the user";
+
+    // Save approval response (denied) and tool result with execution-denied
+    const { messageId } = await this.saveMessage(ctx, {
+      threadId,
+      promptMessageId: toolInfo.parentMessageId,
+      message: {
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId,
+            approved: false,
+            reason: denialReason,
+          },
+          {
+            type: "tool-result",
+            toolCallId: toolInfo.toolCallId,
+            toolName: toolInfo.toolName,
+            output: {
+              type: "execution-denied",
+              reason: denialReason,
+            },
+          },
+        ],
+      },
+      skipEmbeddings: true,
+    });
+
+    // Update the approval status for idempotency
+    await ctx.runMutation(this.component.messages.updateApprovalStatus, {
+      approvalId,
+      status: "denied",
+    });
+
+    return { messageId };
+  }
+
+  /**
+   * Find tool call information by approvalId using O(1) indexed lookup.
+   * Returns null if not found, or tool info with alreadyHandled flag if processed.
+   * @internal
+   */
+  private async _findToolCallInfo(
+    ctx: ActionCtx | MutationCtx,
+    threadId: string,
+    approvalId: string,
+  ): Promise<{
+    toolCallId: string;
+    toolName: string;
+    toolInput: Record<string, unknown>;
+    parentMessageId: string;
+    alreadyHandled?: boolean;
+    wasApproved?: boolean;
+  } | null> {
+    // O(1) indexed lookup by approvalId
+    const message = await ctx.runQuery(
+      this.component.messages.getByApprovalId,
+      { approvalId },
+    );
+
+    if (!message) {
+      return null;
+    }
+
+    // Verify thread ID for security
+    if (message.threadId !== threadId) {
+      return null;
+    }
+
+    // Check if already handled based on approval status
+    const status = (message as any).approvalStatus;
+    if (status === "approved" || status === "denied") {
+      return {
+        toolCallId: (message as any).approvalToolCallId,
+        toolName: (message as any).approvalToolName,
+        toolInput: (message as any).approvalToolInput ?? {},
+        parentMessageId: message._id,
+        alreadyHandled: true,
+        wasApproved: status === "approved",
+      };
+    }
+
+    // Return the tool context for pending approvals
+    return {
+      toolCallId: (message as any).approvalToolCallId,
+      toolName: (message as any).approvalToolName,
+      toolInput: (message as any).approvalToolInput ?? {},
+      parentMessageId: message._id,
+    };
   }
 }

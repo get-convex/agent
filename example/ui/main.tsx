@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { Toaster } from "./components/ui/toaster";
 import ChatBasic from "./chat/ChatBasic";
 import ChatStreaming from "./chat/ChatStreaming";
+import ChatApproval from "./chat/ChatApproval";
 import FilesImages from "./files/FilesImages";
 import RateLimiting from "./rate_limiting/RateLimiting";
 import { WeatherFashion } from "./workflows/WeatherFashion";
@@ -41,6 +42,7 @@ export function App() {
             <Route path="/" element={<Index />} />
             <Route path="/chat-basic" element={<ChatBasic />} />
             <Route path="/chat-streaming" element={<ChatStreaming />} />
+            <Route path="/chat-approval" element={<ChatApproval />} />
             <Route path="/files-images" element={<FilesImages />} />
             <Route path="/rag-basic" element={<RagBasic />} />
             <Route path="/rate-limiting" element={<RateLimiting />} />
@@ -86,6 +88,20 @@ function Index() {
               A simple streaming chat interface with an AI agent. Shows how to
               stream responses from an LLM in real time (without HTTP
               streaming!).
+            </p>
+          </li>
+          <li className="border rounded p-4 hover:shadow transition">
+            <Link
+              to="/chat-approval"
+              className="text-xl font-semibold text-indigo-700 hover:underline"
+            >
+              Tool Approval
+            </Link>
+            <p className="mt-2 text-gray-700">
+              Demonstrates the AI SDK v6 tool approval workflow. Tools can
+              require user approval before execution, enabling human-in-the-loop
+              patterns for sensitive operations like file deletion or money
+              transfers.
             </p>
           </li>
           <li className="border rounded p-4 hover:shadow transition">
