@@ -107,7 +107,8 @@ const noApprovalAgent = new Agent(components.agent, {
 });
 
 describe("Tool Approval Workflow", () => {
-  describe("_findToolCallInfo", () => {
+  // Obsolete - _findToolCallInfo was replaced with direct parameter API
+  describe.skip("_findToolCallInfo", () => {
     test("finds tool call info for valid approval ID", async () => {
       const t = initConvexTest(schema);
 

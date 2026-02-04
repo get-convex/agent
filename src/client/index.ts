@@ -1521,7 +1521,11 @@ export class Agent<
    *
    * @param ctx The context from a mutation or action.
    * @param args.threadId The thread containing the tool call.
-   * @param args.approvalId The approval ID from the tool-approval-request.
+   * @param args.toolCallId The tool call ID from the tool-call part.
+   * @param args.toolName The name of the tool being called.
+   * @param args.args The arguments/input for the tool call.
+   * @param args.parentMessageId The message ID containing the tool call.
+   * @param args.approvalId The approval ID for idempotency (from tool-approval-request).
    * @param args.reason Optional reason for the approval.
    * @returns The messageId of the saved approval, for use as promptMessageId.
    */
@@ -1529,29 +1533,28 @@ export class Agent<
     ctx: (ActionCtx | MutationCtx) & CustomCtx,
     args: {
       threadId: string;
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      parentMessageId: string;
       approvalId: string;
       reason?: string;
     },
   ): Promise<{ messageId: string }> {
-    const { threadId, approvalId, reason } = args;
-    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+    const { threadId, toolCallId, toolName, args: toolInput, parentMessageId, approvalId, reason } = args;
 
-    if (!toolInfo) {
-      throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
-    }
-
-    if (toolInfo.alreadyHandled) {
-      if (toolInfo.wasApproved) {
+    // Check for duplicate approvals
+    const alreadyHandled = await this._checkAlreadyHandled(ctx, threadId, toolCallId, approvalId);
+    if (alreadyHandled) {
+      if (alreadyHandled.wasApproved) {
         throw new Error(
-          `Tool call was already approved for approval ID: ${approvalId}`,
+          `Tool call ${toolCallId} was already approved${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
         );
       }
       throw new Error(
-        `Cannot approve tool call that was already denied for approval ID: ${approvalId}`,
+        `Cannot approve tool call ${toolCallId} that was already denied${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
       );
     }
-
-    const { toolCallId, toolName, toolInput, parentMessageId } = toolInfo;
 
     // Save approval response as a pending message. The tool execution info
     // is stored in providerOptions so startGeneration can execute the tool
@@ -1596,7 +1599,10 @@ export class Agent<
    *
    * @param ctx The context from an action.
    * @param args.threadId The thread containing the tool call.
-   * @param args.approvalId The approval ID from the tool-approval-request.
+   * @param args.toolCallId The tool call ID from the tool-call part.
+   * @param args.toolName The name of the tool being called.
+   * @param args.parentMessageId The message ID containing the tool call.
+   * @param args.approvalId The approval ID for idempotency (from tool-approval-request).
    * @param args.reason Optional reason for the denial.
    * @returns The messageId of the saved denial, for use as promptMessageId.
    */
@@ -1604,29 +1610,28 @@ export class Agent<
     ctx: (ActionCtx | MutationCtx) & CustomCtx,
     args: {
       threadId: string;
+      toolCallId: string;
+      toolName: string;
+      parentMessageId: string;
       approvalId: string;
       reason?: string;
     },
   ): Promise<{ messageId: string }> {
-    const { threadId, approvalId, reason } = args;
-    const toolInfo = await this._findToolCallInfo(ctx, threadId, approvalId);
+    const { threadId, toolCallId, toolName, parentMessageId, approvalId, reason } = args;
 
-    if (!toolInfo) {
-      throw new Error(`Could not find tool call for approval ID: ${approvalId}`);
-    }
-
-    if (toolInfo.alreadyHandled) {
-      if (!toolInfo.wasApproved) {
+    // Check for duplicate denials
+    const alreadyHandled = await this._checkAlreadyHandled(ctx, threadId, toolCallId, approvalId);
+    if (alreadyHandled) {
+      if (!alreadyHandled.wasApproved) {
         throw new Error(
-          `Tool call was already denied for approval ID: ${approvalId}`,
+          `Tool call ${toolCallId} was already denied${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
         );
       }
       throw new Error(
-        `Cannot deny tool call that was already approved for approval ID: ${approvalId}`,
+        `Cannot deny tool call ${toolCallId} that was already approved${approvalId ? ` (approval ID: ${approvalId})` : ""}`,
       );
     }
 
-    const { toolCallId, toolName, parentMessageId } = toolInfo;
     const denialReason = reason ?? "Tool execution was denied by the user";
 
     // Save approval response (denied) and tool result with execution-denied
@@ -1660,94 +1665,43 @@ export class Agent<
   }
 
   /**
-   * Find tool call information for an approval ID.
-   * Returns either:
-   * - Tool info if approval is pending
-   * - { alreadyHandled: true, wasApproved } if already approved/denied
-   * - null if approval request not found
+   * Check if a tool call has already been handled (approved or denied).
    * @internal
    */
-  private async _findToolCallInfo(
+  private async _checkAlreadyHandled(
     ctx: ActionCtx | MutationCtx,
     threadId: string,
-    approvalId: string,
-  ): Promise<
-    | {
-        toolCallId: string;
-        toolName: string;
-        toolInput: Record<string, unknown>;
-        parentMessageId: string;
-        alreadyHandled?: false;
-      }
-    | { alreadyHandled: true; wasApproved: boolean }
-    | null
-  > {
+    toolCallId: string,
+    approvalId?: string,
+  ): Promise<{ alreadyHandled: true; wasApproved: boolean } | null> {
     const messagesResult = await this.listMessages(ctx, {
       threadId,
-      paginationOpts: { numItems: 20, cursor: null },
+      paginationOpts: { numItems: 50, cursor: null },
     });
 
-    let toolCallId: string | undefined;
-    let parentMessageId: string | undefined;
-    let toolName: string | undefined;
-    let toolInput: Record<string, unknown> | undefined;
-
-    // First, check if this approval has already been handled
     for (const msg of messagesResult.page) {
       if (msg.message?.role === "tool" && Array.isArray(msg.message.content)) {
         for (const part of msg.message.content) {
+          // Check by approvalId if provided
           if (
+            approvalId &&
             part.type === "tool-approval-response" &&
             (part as any).approvalId === approvalId
           ) {
             return { alreadyHandled: true, wasApproved: (part as any).approved === true };
           }
-        }
-      }
-    }
-
-    // Second pass: find the approval request to get toolCallId and parent message
-    for (const msg of messagesResult.page) {
-      if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
-        for (const part of msg.message.content) {
+          // Also check by toolCallId (in case of duplicate calls without approvalId)
           if (
-            part.type === "tool-approval-request" &&
-            (part as any).approvalId === approvalId
-          ) {
-            parentMessageId = msg._id;
-            toolCallId = (part as any).toolCallId;
-            break;
-          }
-        }
-      }
-      if (toolCallId) break;
-    }
-
-    if (!toolCallId || !parentMessageId) {
-      return null;
-    }
-
-    // Third pass: find the tool-call with matching toolCallId to get toolName and input
-    for (const msg of messagesResult.page) {
-      if (msg.message?.role === "assistant" && Array.isArray(msg.message.content)) {
-        for (const part of msg.message.content) {
-          if (
-            part.type === "tool-call" &&
+            part.type === "tool-result" &&
             (part as any).toolCallId === toolCallId
           ) {
-            toolName = (part as any).toolName;
-            toolInput = (part as any).input ?? (part as any).args ?? {};
-            break;
+            const output = (part as any).output;
+            const wasApproved = output?.type !== "execution-denied";
+            return { alreadyHandled: true, wasApproved };
           }
         }
       }
-      if (toolName) break;
     }
-
-    if (!toolName || !toolInput) {
-      return null;
-    }
-
-    return { toolCallId, toolName, toolInput, parentMessageId };
+    return null;
   }
 }

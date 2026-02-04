@@ -67,24 +67,31 @@ export const generateResponse = internalAction({
 export const submitApproval = mutation({
   args: {
     threadId: v.string(),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    args: v.any(), // Tool arguments
+    parentMessageId: v.string(),
     approvalId: v.string(),
     approved: v.boolean(),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, { threadId, approvalId, approved, reason }) => {
-    await authorizeThreadAccess(ctx, threadId);
+  handler: async (ctx, args) => {
+    await authorizeThreadAccess(ctx, args.threadId);
+
+    const { approved, ...toolContext } = args;
 
     if (approved) {
       await ctx.scheduler.runAfter(0, internal.chat.approval.handleApproval, {
-        threadId,
-        approvalId,
-        reason,
+        ...toolContext,
       });
     } else {
       await ctx.scheduler.runAfter(0, internal.chat.approval.handleDenial, {
-        threadId,
-        approvalId,
-        reason,
+        threadId: toolContext.threadId,
+        toolCallId: toolContext.toolCallId,
+        toolName: toolContext.toolName,
+        parentMessageId: toolContext.parentMessageId,
+        approvalId: toolContext.approvalId,
+        reason: toolContext.reason,
       });
     }
 
@@ -99,19 +106,19 @@ export const submitApproval = mutation({
 export const handleApproval = internalAction({
   args: {
     threadId: v.string(),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    args: v.any(),
+    parentMessageId: v.string(),
     approvalId: v.string(),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, { threadId, approvalId, reason }) => {
-    const { messageId } = await approvalAgent.approveToolCall(ctx, {
-      threadId,
-      approvalId,
-      reason,
-    });
+  handler: async (ctx, args) => {
+    const { messageId } = await approvalAgent.approveToolCall(ctx, args);
     // Continue generation with the tool result as the prompt
     const result = await approvalAgent.streamText(
       ctx,
-      { threadId },
+      { threadId: args.threadId },
       { promptMessageId: messageId },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
@@ -126,19 +133,18 @@ export const handleApproval = internalAction({
 export const handleDenial = internalAction({
   args: {
     threadId: v.string(),
+    toolCallId: v.string(),
+    toolName: v.string(),
+    parentMessageId: v.string(),
     approvalId: v.string(),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, { threadId, approvalId, reason }) => {
-    const { messageId } = await approvalAgent.denyToolCall(ctx, {
-      threadId,
-      approvalId,
-      reason,
-    });
+  handler: async (ctx, args) => {
+    const { messageId } = await approvalAgent.denyToolCall(ctx, args);
     // Continue generation so the LLM can respond to the denial
     const result = await approvalAgent.streamText(
       ctx,
-      { threadId },
+      { threadId: args.threadId },
       { promptMessageId: messageId },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
