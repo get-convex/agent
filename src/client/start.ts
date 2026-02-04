@@ -112,6 +112,7 @@ export async function startGeneration<
       | { step: StepResult<TOOLS> }
       | { object: GenerateObjectResult<unknown> },
     createPendingMessage?: boolean,
+    finishStreamId?: string,
   ) => Promise<void>;
   fail: (reason: string) => Promise<void>;
   getSavedMessages: () => MessageDoc[];
@@ -228,6 +229,11 @@ export async function startGeneration<
         | { step: StepResult<TOOLS> }
         | { object: GenerateObjectResult<unknown> },
       createPendingMessage?: boolean,
+      /**
+       * If provided, finish this stream atomically with the message save.
+       * This prevents UI flickering from separate mutations (issue #181).
+       */
+      finishStreamId?: string,
     ) => {
       if (threadId && saveMessages !== "none") {
         const serialized =
@@ -265,6 +271,7 @@ export async function startGeneration<
           messages: serialized.messages,
           embeddings,
           failPendingSteps: false,
+          finishStreamId,
         });
         const lastMessage = saved.messages.at(-1)!;
         if (createPendingMessage) {

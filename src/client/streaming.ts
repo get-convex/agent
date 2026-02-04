@@ -210,6 +210,9 @@ export class DeltaStreamer<T> {
   #ongoingWrite: Promise<void> | undefined;
   #cursor: number = 0;
   public abortController: AbortController;
+  // When true, the stream will be finished externally (e.g., atomically via addMessages)
+  // and consumeStream should skip calling finish().
+  #finishedExternally: boolean = false;
 
   constructor(
     public readonly component: AgentComponent,
@@ -259,17 +262,16 @@ export class DeltaStreamer<T> {
   // Avoid race conditions by only creating once
   #creatingStreamIdPromise: Promise<string> | undefined;
   public async getStreamId() {
-    if (this.streamId) {
-      return this.streamId;
+    if (!this.streamId) {
+      if (!this.#creatingStreamIdPromise) {
+        this.#creatingStreamIdPromise = this.ctx.runMutation(
+          this.component.streams.create,
+          this.metadata,
+        );
+      }
+      this.streamId = await this.#creatingStreamIdPromise;
     }
-    if (this.#creatingStreamIdPromise) {
-      return this.#creatingStreamIdPromise;
-    }
-    this.#creatingStreamIdPromise = this.ctx.runMutation(
-      this.component.streams.create,
-      this.metadata,
-    );
-    this.streamId = await this.#creatingStreamIdPromise;
+    return this.streamId;
   }
 
   public async addParts(parts: T[]) {
@@ -290,7 +292,27 @@ export class DeltaStreamer<T> {
     for await (const chunk of stream) {
       await this.addParts([chunk]);
     }
-    await this.finish();
+    // Skip finish if it will be handled externally (atomically with message save)
+    if (!this.#finishedExternally) {
+      await this.finish();
+    }
+  }
+
+  /**
+   * Mark the stream as being finished externally (e.g., atomically via addMessages).
+   * When called, consumeStream() will skip calling finish() since it will be
+   * handled elsewhere in the same mutation as message saving.
+   */
+  public markFinishedExternally(): void {
+    this.#finishedExternally = true;
+  }
+
+  /**
+   * Get the stream ID, waiting for it to be created if necessary.
+   * Useful for passing to addMessages for atomic finish.
+   */
+  public async getOrCreateStreamId(): Promise<string> {
+    return this.getStreamId();
   }
 
   async #sendDelta() {
