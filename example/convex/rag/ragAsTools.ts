@@ -26,29 +26,29 @@ export const sendMessage = action({
         tools: {
           addContext: createTool({
             description: "Store information to search later via RAG",
-            args: z.object({
+            inputSchema: z.object({
               title: z.string().describe("The title of the context"),
               text: z.string().describe("The text body of the context"),
             }),
-            handler: async (ctx, args) => {
+            execute: async (ctx, input) => {
               await rag.add(ctx, {
                 namespace: userId,
-                title: args.title,
-                text: args.text,
+                title: input.title,
+                text: input.text,
               });
             },
           }),
           searchContext: createTool({
             description: "Search for context related to this user prompt",
-            args: z.object({
+            inputSchema: z.object({
               query: z
                 .string()
                 .describe("Describe the context you're looking for"),
             }),
-            handler: async (ctx, args) => {
+            execute: async (ctx, input) => {
               const context = await rag.search(ctx, {
                 namespace: userId,
-                query: args.query,
+                query: input.query,
                 limit: 5,
               });
               // To show the context in the demo UI, we record the context used
