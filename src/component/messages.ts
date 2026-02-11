@@ -278,7 +278,7 @@ async function addMessagesHandler(
         order: pendingMessage.order,
         stepOrder: pendingMessage.stepOrder,
       });
-      toReturn.push(pendingMessage);
+      toReturn.push((await ctx.db.get(pendingMessage._id))!);
       continue;
     }
     if (message.message.role === "user") {
