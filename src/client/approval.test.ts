@@ -188,10 +188,74 @@ export const testDenyFlow = action({
   },
 });
 
+export const testApproveFlowWithInterveningMessage = action({
+  args: {},
+  handler: async (ctx) => {
+    const { thread } = await approvalAgent.createThread(ctx, { userId: "u3" });
+
+    const result1 = await thread.generateText({
+      prompt: "Delete test.txt",
+    });
+    const approvalId = getApprovalIdFromSavedMessages(result1.savedMessages);
+
+    const approvalRequest = (
+      await approvalAgent.listMessages(ctx, {
+        threadId: thread.threadId,
+        paginationOpts: { cursor: null, numItems: 20 },
+      })
+    ).page.find((m) => {
+      const content = m.message?.content;
+      return (
+        Array.isArray(content) &&
+        content.some(
+          (p) =>
+            p.type === "tool-approval-request" && p.approvalId === approvalId,
+        )
+      );
+    });
+    if (!approvalRequest) {
+      throw new Error("Approval request message not found");
+    }
+
+    const intervening = await approvalAgent.saveMessage(ctx, {
+      threadId: thread.threadId,
+      prompt: "Intervening user message",
+      skipEmbeddings: true,
+    });
+
+    const { messageId } = await approvalAgent.approveToolCall(ctx, {
+      threadId: thread.threadId,
+      approvalId,
+    });
+
+    const result2 = await thread.generateText({
+      promptMessageId: messageId,
+    });
+
+    const allMessages = await approvalAgent.listMessages(ctx, {
+      threadId: thread.threadId,
+      paginationOpts: { cursor: null, numItems: 40 },
+    });
+    const approvalResponse = allMessages.page.find((m) => m._id === messageId);
+    if (!approvalResponse) {
+      throw new Error("Saved approval response message not found");
+    }
+
+    return {
+      secondText: result2.text,
+      approvalResponseOrder: approvalResponse.order,
+      approvalRequestId: approvalRequest._id,
+      approvalRequestOrder: approvalRequest.order,
+      interveningOrder: intervening.message.order,
+    };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testApproveFlow: typeof testApproveFlow;
     testDenyFlow: typeof testDenyFlow;
+    testApproveFlowWithInterveningMessage: typeof testApproveFlowWithInterveningMessage;
   };
 }>["fns"] = anyApi["approval.test"] as any;
 
@@ -250,5 +314,15 @@ describe("Tool Approval Workflow", () => {
     expect(result.usageCallCount).toBeGreaterThanOrEqual(2);
     expect(result.lastUsage!.inputTokenDetails).toBeDefined();
     expect(result.lastUsage!.outputTokenDetails).toBeDefined();
+  });
+
+  test("approve remains valid with an intervening thread message", async () => {
+    usageCalls.length = 0;
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testApproveFlowWithInterveningMessage, {});
+
+    expect(result.secondText).toBe("Done! I deleted test.txt.");
+    expect(result.approvalResponseOrder).toBe(result.approvalRequestOrder);
+    expect(result.interveningOrder).toBeGreaterThan(result.approvalResponseOrder);
   });
 });

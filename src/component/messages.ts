@@ -164,7 +164,7 @@ async function addMessagesHandler(
   const {
     embeddings,
     failPendingSteps,
-    finishStreamId,
+    finishStreamId: _finishStreamId,
     messages,
     promptMessageId,
     pendingMessageId,

@@ -146,12 +146,6 @@ export const testApproveE2E = action({
       paginationOpts: { cursor: null, numItems: 20 },
     });
 
-    // Verify rawUsage records were created (the whole point of this test)
-    const rawUsageDocs = await ctx.runQuery(
-      components.agent.threads.getThread,
-      { threadId: thread.threadId },
-    );
-
     return {
       secondText: await result2.text,
       totalThreadMessages: allMessages.page.length,
