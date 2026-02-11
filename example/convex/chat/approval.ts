@@ -59,8 +59,9 @@ export const generateResponse = internalAction({
 });
 
 /**
- * Submit an approval decision for a tool call.
- * This saves the decision as a message and schedules continuation.
+ * Submit an approval decision for a single tool call.
+ * Saves the decision but does NOT continue generation — the client
+ * calls continueAfterApprovals once all pending approvals are resolved.
  */
 export const submitApproval = mutation({
   args: {
@@ -69,39 +70,52 @@ export const submitApproval = mutation({
     approved: v.boolean(),
     reason: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await authorizeThreadAccess(ctx, args.threadId);
-    await ctx.scheduler.runAfter(
-      0,
-      internal.chat.approval.handleApprovalDecision,
-      args,
-    );
+  returns: v.object({ messageId: v.string() }),
+  handler: async (ctx, { threadId, approvalId, approved, reason }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    const { messageId } = approved
+      ? await approvalAgent.approveToolCall(ctx, { threadId, approvalId, reason })
+      : await approvalAgent.denyToolCall(ctx, { threadId, approvalId, reason });
+    return { messageId };
   },
 });
 
 /**
- * Handle an approval decision: save the response, then continue generation.
- * If approved, the AI SDK executes the tool automatically.
- * If denied, the SDK creates an execution-denied result.
+ * Continue generation after all approvals in a step have been resolved.
+ * The client calls this once every pending tool call has been approved or denied.
  */
-export const handleApprovalDecision = internalAction({
+export const continueAfterApprovals = internalAction({
   args: {
     threadId: v.string(),
-    approvalId: v.string(),
-    approved: v.boolean(),
-    reason: v.optional(v.string()),
+    lastApprovalMessageId: v.string(),
   },
-  handler: async (ctx, { threadId, approvalId, approved, reason }) => {
-    const { messageId } = approved
-      ? await approvalAgent.approveToolCall(ctx, { threadId, approvalId, reason })
-      : await approvalAgent.denyToolCall(ctx, { threadId, approvalId, reason });
+  handler: async (ctx, { threadId, lastApprovalMessageId }) => {
     const result = await approvalAgent.streamText(
       ctx,
       { threadId },
-      { promptMessageId: messageId },
+      { promptMessageId: lastApprovalMessageId },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result.consumeStream();
+  },
+});
+
+/**
+ * Schedule continuation after all approvals are resolved.
+ * Called by the client when hasPendingApprovals becomes false.
+ */
+export const triggerContinuation = mutation({
+  args: {
+    threadId: v.string(),
+    lastApprovalMessageId: v.string(),
+  },
+  handler: async (ctx, { threadId, lastApprovalMessageId }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.chat.approval.continueAfterApprovals,
+      { threadId, lastApprovalMessageId },
+    );
   },
 });
 
