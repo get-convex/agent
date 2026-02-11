@@ -48,6 +48,14 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
 
   const submitApproval = useMutation(api.chat.approval.submitApproval);
 
+  // Disable chat input while approvals are pending to avoid intervening
+  // messages that break tool_use/tool_result adjacency for some providers.
+  const hasPendingApprovals = messages.some((m) =>
+    m.parts.some(
+      (p) => p.type.startsWith("tool-") && (p as ToolUIPart).state === "approval-requested",
+    ),
+  );
+
   const [prompt, setPrompt] = useState("Delete the file important.txt");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -99,13 +107,14 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
-            placeholder="Ask the agent to do something..."
+            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder={hasPendingApprovals ? "Respond to pending approvals first..." : "Ask the agent to do something..."}
+            disabled={hasPendingApprovals}
           />
           <button
             type="submit"
             className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-semibold disabled:opacity-50"
-            disabled={!prompt.trim()}
+            disabled={!prompt.trim() || hasPendingApprovals}
           >
             Send
           </button>
