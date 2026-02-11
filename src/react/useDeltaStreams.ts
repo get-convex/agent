@@ -83,6 +83,12 @@ export function useDeltaStreams<
             ),
           );
 
+  // When no active streams remain, clear the stale state so we stop
+  // returning old streaming UIMessages.
+  if (streamMessages !== undefined && streamMessages.length === 0) {
+    state.deltaStreams = undefined;
+  }
+
   // Get the deltas for all the active streams, if any.
   const cursorQuery = useQuery(
     query,

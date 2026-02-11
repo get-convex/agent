@@ -16,8 +16,15 @@ const DEFAULT_USAGE = {
   outputTokens: 10,
   inputTokens: 3,
   totalTokens: 13,
-  inputTokenDetails: undefined,
-  outputTokenDetails: undefined,
+  inputTokenDetails: {
+    noCacheTokens: 3,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  },
+  outputTokenDetails: {
+    textTokens: 10,
+    reasoningTokens: 0,
+  },
 };
 
 export type MockModelArgs = {

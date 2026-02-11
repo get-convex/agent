@@ -211,6 +211,13 @@ export async function startGeneration<
       };
     }
   }
+  // Track how many response messages we've already saved across steps.
+  // step.response.messages is cumulative — each step appends to it.
+  // We need to know which messages are new in each step to serialize
+  // only the new ones (important for tool approval flows where the SDK
+  // may add extra messages like approval tool-results).
+  let previousResponseMessageCount = 0;
+
   return {
     args: aiArgs,
     order: order ?? 0,
@@ -236,20 +243,28 @@ export async function startGeneration<
       finishStreamId?: string,
     ) => {
       if (threadId && saveMessages !== "none") {
-        const serialized =
-          "object" in toSave
-            ? await serializeObjectResult(
-                ctx,
-                component,
-                toSave.object,
-                activeModel,
-              )
-            : await serializeNewMessagesInStep(
-                ctx,
-                component,
-                toSave.step,
-                activeModel,
-              );
+        let serialized;
+        if ("object" in toSave) {
+          serialized = await serializeObjectResult(
+            ctx,
+            component,
+            toSave.object,
+            activeModel,
+          );
+        } else {
+          const allResponseMessages = toSave.step.response.messages;
+          const newResponseMessages = allResponseMessages.slice(
+            previousResponseMessageCount,
+          );
+          previousResponseMessageCount = allResponseMessages.length;
+          serialized = await serializeNewMessagesInStep(
+            ctx,
+            component,
+            toSave.step,
+            activeModel,
+            newResponseMessages,
+          );
+        }
         const embeddings = await embedMessages(
           ctx,
           { threadId, ...opts, userId },
