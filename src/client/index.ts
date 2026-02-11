@@ -1023,6 +1023,13 @@ export class Agent<
    * with `promptMessageId` set to the returned `messageId` to continue
    * generation — the AI SDK will automatically execute the approved tool.
    *
+   * **Known limitation**: The approval response is appended at the end of the
+   * thread. If the user sends additional messages between the tool call and
+   * the approval, the intervening messages will be included in the
+   * continuation context, which may cause errors with some providers
+   * (e.g., Anthropic requires tool_use/tool_result adjacency). To avoid
+   * this, disable chat input while approvals are pending.
+   *
    * @param ctx A ctx object from a mutation or action.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request part.
@@ -1043,6 +1050,9 @@ export class Agent<
    * with `promptMessageId` set to the returned `messageId` to continue
    * generation — the AI SDK will automatically create an `execution-denied`
    * result and let the model respond accordingly.
+   *
+   * See {@link approveToolCall} for known limitations regarding intervening
+   * messages.
    *
    * @param ctx A ctx object from a mutation or action.
    * @param args.threadId The thread containing the tool call.
