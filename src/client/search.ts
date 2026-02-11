@@ -29,7 +29,11 @@ import type {
   ActionCtx,
 } from "./types.js";
 import { inlineMessagesFiles } from "./files.js";
-import { docsToModelMessages, toModelMessage } from "../mapping.js";
+import {
+  docsToModelMessages,
+  mergeApprovalResponseMessages,
+  toModelMessage,
+} from "../mapping.js";
 
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // 10k characters should be more than enough for most cases, and stays under
@@ -637,13 +641,13 @@ export async function fetchContextWithPrompt(
   const inputPrompt = promptArray.map(toModelMessage);
   const existingResponses = docsToModelMessages(existingResponseDocs);
 
-  const allMessages = [
+  const allMessages = mergeApprovalResponseMessages([
     ...search,
     ...recent,
     ...inputMessages,
     ...inputPrompt,
     ...existingResponses,
-  ];
+  ]);
   let processedMessages = args.contextHandler
     ? await args.contextHandler(ctx, {
         allMessages,

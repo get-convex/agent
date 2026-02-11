@@ -201,16 +201,11 @@ export async function startGeneration<
     tools?: Tools;
     _internal?: { generateId?: IdGenerator };
   } & CallSettings;
-  if (pendingMessageId) {
-    if (!aiArgs._internal?.generateId) {
-      aiArgs._internal = {
-        ...aiArgs._internal,
-        generateId: pendingMessageId
-          ? () => pendingMessageId ?? crypto.randomUUID()
-          : undefined,
-      };
-    }
-  }
+  // NOTE: We intentionally do NOT override _internal.generateId here.
+  // The AI SDK uses generateId() for many internal IDs (approval IDs,
+  // tool execution IDs, message IDs, etc.) and they must be unique.
+  // The pending message is linked via the explicit `pendingMessageId`
+  // parameter passed to addMessages in the save closure.
   // Track how many response messages we've already saved across steps.
   // step.response.messages is cumulative — each step appends to it.
   // We need to know which messages are new in each step to serialize
