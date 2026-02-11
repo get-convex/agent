@@ -211,6 +211,16 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   component: AgentComponent,
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
+  /**
+   * If provided, these are the new response messages for this step
+   * (pre-sliced by the caller). When not provided, falls back to the
+   * existing heuristic of slicing the last 1-2 messages.
+   *
+   * This is needed for tool approval flows where the SDK adds extra
+   * messages (e.g. approval tool-results) at the beginning of
+   * responseMessages that the old slice(-1/-2) logic would miss.
+   */
+  newResponseMessages?: ModelMessage[],
 ): Promise<{ messages: MessageWithMetadata[] }> {
   // If there are tool results, there's another message with the tool results
   // ref: https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/to-response-messages.ts#L120
@@ -228,13 +238,18 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
     sources: hasToolMessage ? undefined : step.sources,
   } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
   const toolFields = { sources: step.sources };
-  const messages: MessageWithMetadata[] = await Promise.all(
-    (hasToolMessage
+
+  // Determine which messages to serialize for this step
+  const messagesToSerialize: ModelMessage[] = newResponseMessages
+    ? newResponseMessages
+    : hasToolMessage
       ? step.response.messages.slice(-2)
       : step.content.length
         ? step.response.messages.slice(-1)
-        : [{ role: "assistant" as const, content: [] }]
-    ).map(async (msg): Promise<MessageWithMetadata> => {
+        : [{ role: "assistant" as const, content: [] }];
+
+  const messages: MessageWithMetadata[] = await Promise.all(
+    messagesToSerialize.map(async (msg): Promise<MessageWithMetadata> => {
       const { message, fileIds } = await serializeMessage(ctx, component, msg);
       return parse(vMessageWithMetadata, {
         message,
