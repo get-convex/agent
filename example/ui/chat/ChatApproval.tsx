@@ -56,7 +56,7 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
     ),
   );
 
-  const [prompt, setPrompt] = useState("Delete the file important.txt");
+  const [prompt, setPrompt] = useState("Delete the file important.txt and transfer $500 to account savings-123");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -123,7 +123,7 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
               className="px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition font-medium"
               onClick={() => {
                 reset();
-                setPrompt("Delete the file important.txt");
+                setPrompt("Delete the file important.txt and transfer $500 to account savings-123");
               }}
               type="button"
             >
