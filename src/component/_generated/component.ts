@@ -154,6 +154,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             vectors: Array<Array<number> | null>;
           };
           failPendingSteps?: boolean;
+          finishStreamId?: string;
           hideFromUserIdSearch?: boolean;
           messages: Array<{
             error?: string;
