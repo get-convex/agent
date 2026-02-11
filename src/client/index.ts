@@ -19,7 +19,7 @@ import type {
 } from "ai";
 import { generateObject, generateText, stepCountIs, streamObject } from "ai";
 
-const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
 function warnDeprecation(key: string, message: string) {
   if (!warnedDeprecations.has(key)) {
