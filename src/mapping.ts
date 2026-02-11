@@ -240,13 +240,16 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   const toolFields = { sources: step.sources };
 
   // Determine which messages to serialize for this step
-  const messagesToSerialize: ModelMessage[] = newResponseMessages
-    ? newResponseMessages
-    : hasToolMessage
-      ? step.response.messages.slice(-2)
-      : step.content.length
-        ? step.response.messages.slice(-1)
-        : [{ role: "assistant" as const, content: [] }];
+  let messagesToSerialize: ModelMessage[];
+  if (newResponseMessages) {
+    messagesToSerialize = newResponseMessages;
+  } else if (hasToolMessage) {
+    messagesToSerialize = step.response.messages.slice(-2);
+  } else if (step.content.length) {
+    messagesToSerialize = step.response.messages.slice(-1);
+  } else {
+    messagesToSerialize = [{ role: "assistant" as const, content: [] }];
+  }
 
   const messages: MessageWithMetadata[] = await Promise.all(
     messagesToSerialize.map(async (msg): Promise<MessageWithMetadata> => {
