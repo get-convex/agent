@@ -164,7 +164,8 @@ async function addMessagesHandler(
   const {
     embeddings,
     failPendingSteps,
-    finishStreamId: _finishStreamId,
+    // Destructured separately to exclude from `...rest` (used in addMessages args, not message fields)
+    finishStreamId,
     messages,
     promptMessageId,
     pendingMessageId,
@@ -309,8 +310,8 @@ async function addMessagesHandler(
   }
   // Atomically finish the stream if requested, preventing UI flickering
   // from separate mutations for message save and stream finish (issue #181).
-  if (args.finishStreamId) {
-    await finishHandler(ctx, { streamId: args.finishStreamId });
+  if (finishStreamId) {
+    await finishHandler(ctx, { streamId: finishStreamId });
   }
   return { messages: toReturn.map(publicMessage) };
 }

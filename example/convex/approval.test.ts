@@ -93,6 +93,42 @@ const testDenialAgent = new Agent(components.agent, {
   rawRequestResponseHandler,
 });
 
+// Agent with two tool calls in a single step — both need approval.
+// This exercises mergeApprovalResponseMessages (the exact scenario that broke).
+const testMultiToolApprovalAgent = new Agent(components.agent, {
+  name: "Multi-Tool Approval Agent",
+  instructions:
+    "You are a helpful assistant that can delete files and transfer money.",
+  tools: {
+    deleteFile: deleteFileTool,
+    transferMoney: transferMoneyTool,
+  },
+  languageModel: mockModel({
+    contentSteps: [
+      // Step 1: model calls two tools at once
+      [
+        {
+          type: "tool-call",
+          toolCallId: "tc-multi-1",
+          toolName: "deleteFile",
+          input: JSON.stringify({ filename: "data.csv" }),
+        },
+        {
+          type: "tool-call",
+          toolCallId: "tc-multi-2",
+          toolName: "transferMoney",
+          input: JSON.stringify({ amount: 500, toAccount: "savings" }),
+        },
+      ],
+      // Step 2: model responds after both tools execute
+      [{ type: "text", text: "Done! Deleted data.csv and transferred $500." }],
+    ],
+  }),
+  stopWhen: stepCountIs(5),
+  usageHandler,
+  rawRequestResponseHandler,
+});
+
 // --- Test actions that mirror example/convex/chat/approval.ts ---
 
 export const testApproveE2E = action({
@@ -206,10 +242,82 @@ export const testDenyE2E = action({
   },
 });
 
+export const testMultiToolApproveE2E = action({
+  args: {},
+  handler: async (ctx) => {
+    const { thread } = await testMultiToolApprovalAgent.createThread(ctx, {
+      userId: "test user",
+    });
+
+    // Step 1: streamText triggers two tool calls that both need approval
+    const result1 = await testMultiToolApprovalAgent.streamText(
+      ctx,
+      { threadId: thread.threadId },
+      { prompt: "Delete data.csv and transfer $500 to savings" },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
+    await result1.consumeStream();
+
+    // Find all approval requests in saved messages
+    const approvalParts: { approvalId: string; toolName: string }[] = [];
+    for (const m of result1.savedMessages ?? []) {
+      if (!Array.isArray(m.message?.content)) continue;
+      for (const part of m.message!.content as any[]) {
+        if (part.type === "tool-approval-request") {
+          approvalParts.push({
+            approvalId: part.approvalId,
+            toolName: part.toolCallId,
+          });
+        }
+      }
+    }
+    if (approvalParts.length < 2) {
+      throw new Error(
+        `Expected 2 approval requests, found ${approvalParts.length}`,
+      );
+    }
+
+    // Approve both tools one at a time (each creates a separate tool message).
+    // This is the scenario that requires mergeApprovalResponseMessages.
+    let lastMessageId: string | undefined;
+    for (const { approvalId } of approvalParts) {
+      const { messageId } = await testMultiToolApprovalAgent.approveToolCall(
+        ctx,
+        {
+          threadId: thread.threadId,
+          approvalId,
+        },
+      );
+      lastMessageId = messageId;
+    }
+
+    // Step 2: Continue — the SDK must see both approval responses merged
+    const result2 = await testMultiToolApprovalAgent.streamText(
+      ctx,
+      { threadId: thread.threadId },
+      { promptMessageId: lastMessageId! },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
+    await result2.consumeStream();
+
+    const allMessages = await testMultiToolApprovalAgent.listMessages(ctx, {
+      threadId: thread.threadId,
+      paginationOpts: { cursor: null, numItems: 30 },
+    });
+
+    return {
+      secondText: await result2.text,
+      totalThreadMessages: allMessages.page.length,
+      approvalCount: approvalParts.length,
+    };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testApproveE2E: typeof testApproveE2E;
     testDenyE2E: typeof testDenyE2E;
+    testMultiToolApproveE2E: typeof testMultiToolApproveE2E;
   };
 }>["fns"] = anyApi["approval.test"] as any;
 
@@ -235,6 +343,17 @@ describe("Example Approval E2E (exercises usageHandler + insertRawUsage)", () =>
       expect(doc.userId).toBe("test user");
       expect(doc.agentName).toBe("Approval Demo Agent");
     }
+  });
+
+  test("multi-tool approval: two tools need approval → both approved → both execute", async () => {
+    const t = initConvexTest();
+    const result = await t.action(testApi.testMultiToolApproveE2E, {});
+
+    expect(result.approvalCount).toBe(2);
+    expect(result.secondText).toBe(
+      "Done! Deleted data.csv and transferred $500.",
+    );
+    expect(result.totalThreadMessages).toBeGreaterThanOrEqual(4);
   });
 
   test("deny flow: streamText → denial → model responds → usageHandler persists", async () => {

@@ -160,8 +160,10 @@ export function mergeApprovalResponseMessages(
       hasApprovalResponse(msg.content) &&
       hasApprovalResponse(prev.content)
     ) {
-      // Merge into the previous tool message
-      (prev.content as any[]).push(...(msg.content as any[]));
+      // Clone before merging to avoid mutating the original message's content array
+      const cloned = { ...prev, content: [...(prev.content as any[])] };
+      result[result.length - 1] = cloned;
+      (cloned.content as any[]).push(...(msg.content as any[]));
     } else {
       result.push(msg);
     }

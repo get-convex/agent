@@ -1098,6 +1098,10 @@ export class Agent<
     ctx: MutationCtx | ActionCtx,
     args: { threadId: string; approvalId: string },
   ): Promise<string> {
+    // NOTE: This pagination returns messages in descending order (newest first).
+    // The "already handled" check (tool-approval-response) relies on seeing
+    // responses before their corresponding requests. If the pagination order
+    // changes, this logic will need to be updated.
     let cursor: string | null = null;
     do {
       const page = await this.listMessages(ctx, {

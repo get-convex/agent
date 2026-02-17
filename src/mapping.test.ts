@@ -294,6 +294,27 @@ describe("mapping", () => {
     expect(toolContent[1].approvalId).toBe("ap2");
   });
 
+  test("mergeApprovalResponseMessages does not mutate original message content arrays", () => {
+    const msg1Content = [
+      { type: "tool-approval-response", approvalId: "ap1", approved: true },
+    ];
+    const msg2Content = [
+      { type: "tool-approval-response", approvalId: "ap2", approved: false, reason: "denied" },
+    ];
+    const messages = [
+      { role: "tool" as const, content: msg1Content },
+      { role: "tool" as const, content: msg2Content },
+    ] as any;
+
+    const merged = mergeApprovalResponseMessages(messages);
+    // Merged result should combine both
+    expect(merged).toHaveLength(1);
+    expect((merged[0].content as any[]).length).toBe(2);
+    // Original arrays must be untouched
+    expect(msg1Content).toHaveLength(1);
+    expect(msg2Content).toHaveLength(1);
+  });
+
   test("mergeApprovalResponseMessages does not merge non-approval tool messages", () => {
     const messages = [
       {
