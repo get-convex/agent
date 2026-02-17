@@ -288,9 +288,10 @@ describe("mapping", () => {
     const merged = mergeApprovalResponseMessages(messages);
     expect(merged).toHaveLength(3); // user, assistant, single tool
     expect(merged[2].role).toBe("tool");
-    expect(merged[2].content).toHaveLength(2);
-    expect(merged[2].content[0].approvalId).toBe("ap1");
-    expect(merged[2].content[1].approvalId).toBe("ap2");
+    const toolContent = merged[2].content as Array<{ type: string; approvalId: string }>;
+    expect(toolContent).toHaveLength(2);
+    expect(toolContent[0].approvalId).toBe("ap1");
+    expect(toolContent[1].approvalId).toBe("ap2");
   });
 
   test("mergeApprovalResponseMessages does not merge non-approval tool messages", () => {
