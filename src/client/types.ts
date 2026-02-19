@@ -22,6 +22,7 @@ import type {
   generateObject,
 } from "ai";
 import type {
+  FunctionReference,
   GenericActionCtx,
   GenericDataModel,
   GenericMutationCtx,
@@ -128,6 +129,12 @@ export type Config = {
    * log the raw request body or response headers to a table, or logs.
    */
   rawRequestResponseHandler?: RawRequestResponseHandler;
+  /**
+   * Called whenever messages are saved to the thread. This includes messages
+   * saved via generateText, streamText, generateObject, streamObject,
+   * saveMessage, and saveMessages.
+   */
+  onSaveMessages?: SaveMessagesHandler;
   /**
    * @deprecated Reach out if you use this. Otherwise will be removed soon.
    * Default provider options to pass for the LLM calls.
@@ -324,6 +331,64 @@ export type RawRequestResponseHandler = (
     response: LanguageModelResponseMetadata;
   },
 ) => void | Promise<void>;
+
+/**
+ * The arguments passed to the onSaveMessages callback mutation.
+ */
+export type SaveMessagesCallbackArgs = {
+  /**
+   * The thread the messages were saved to.
+   */
+  threadId: string;
+  /**
+   * The messages that were saved.
+   */
+  messages: MessageDoc[];
+};
+
+/**
+ * A reference to a mutation function that will be called whenever messages are
+ * saved to a thread. This callback is invoked **within the same transaction**
+ * as the message save, making it transactional.
+ *
+ * This includes messages saved via generateText, streamText, generateObject,
+ * streamObject, saveMessage, and saveMessages.
+ *
+ * Use this to trigger side effects when messages are saved, such as updating
+ * counters, creating notifications, or syncing with external systems.
+ *
+ * @example
+ * ```ts
+ * // In your convex/myModule.ts:
+ * export const onNewMessages = internalMutation({
+ *   args: {
+ *     userId: v.optional(v.string()),
+ *     threadId: v.string(),
+ *     messages: v.array(vMessageDoc),
+ *   },
+ *   handler: async (ctx, args) => {
+ *     // This runs in the same transaction as the message save
+ *     await ctx.db.insert("messageEvents", {
+ *       threadId: args.threadId,
+ *       messageCount: args.messages.length,
+ *       timestamp: Date.now(),
+ *     });
+ *   },
+ * });
+ *
+ * // In your agent configuration:
+ * const agent = new Agent(components.agent, {
+ *   name: "myAgent",
+ *   languageModel: openai.chat("gpt-4o-mini"),
+ *   onSaveMessages: internal.myModule.onNewMessages,
+ * });
+ * ```
+ */
+export type SaveMessagesHandler = FunctionReference<
+  "mutation",
+  "internal" | "public",
+  SaveMessagesCallbackArgs
+>;
 
 export type AgentComponent = ComponentApi;
 
@@ -606,6 +671,11 @@ export type Options = {
    * ordering will not apply. This excludes the system message / instructions.
    */
   contextHandler?: ContextHandler;
+  /**
+   * Called whenever messages are saved to the thread.
+   * Overrides the onSaveMessages handler set in the agent constructor.
+   */
+  onSaveMessages?: SaveMessagesHandler;
 };
 
 export type SyncStreamsReturnValue =

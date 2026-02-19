@@ -14,7 +14,13 @@ import {
   serializeObjectResult,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
-import type { ActionCtx, AgentComponent, Config, Options } from "./types.js";
+import type {
+  ActionCtx,
+  AgentComponent,
+  Config,
+  Options,
+  SaveMessagesHandler,
+} from "./types.js";
 import type { Message, MessageDoc } from "../validators.js";
 import {
   getModelName,
@@ -25,7 +31,11 @@ import { wrapTools, type ToolCtx } from "./createTool.js";
 import type { Agent } from "./index.js";
 import { assert, omit } from "convex-helpers";
 import { saveInputMessages } from "./saveInputMessages.js";
-import type { GenericActionCtx, GenericDataModel } from "convex/server";
+import {
+  createFunctionHandle,
+  type GenericActionCtx,
+  type GenericDataModel,
+} from "convex/server";
 
 export async function startGeneration<
   T,
@@ -93,6 +103,7 @@ export async function startGeneration<
       languageModel?: LanguageModel;
       agentName: string;
       agentForToolCtx?: Agent;
+      onSaveMessages?: SaveMessagesHandler;
     },
 ): Promise<{
   args: T & {
@@ -122,6 +133,11 @@ export async function startGeneration<
       (await ctx.runQuery(component.threads.getThread, { threadId }))
         ?.userId) ??
     undefined;
+
+  // Convert function reference to handle string for passing to component
+  const onSaveMessagesHandle = opts.onSaveMessages
+    ? await createFunctionHandle(opts.onSaveMessages)
+    : undefined;
 
   const context = await fetchContextWithPrompt(ctx, component, {
     ...opts,
@@ -265,6 +281,7 @@ export async function startGeneration<
           messages: serialized.messages,
           embeddings,
           failPendingSteps: false,
+          onSaveMessages: onSaveMessagesHandle,
         });
         const lastMessage = saved.messages.at(-1)!;
         if (createPendingMessage) {
