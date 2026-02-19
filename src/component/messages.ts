@@ -2,6 +2,7 @@ import { assert, omit, pick } from "convex-helpers";
 import { mergedStream, stream } from "convex-helpers/server/stream";
 import {
   paginationOptsValidator,
+  type FunctionReference,
   type WithoutSystemFields,
 } from "convex/server";
 import type { ObjectType } from "convex/values";
@@ -19,6 +20,7 @@ import {
   vMessageWithMetadataInternal,
   vPaginationResult,
   type MessageDoc,
+  type SaveMessagesCallbackArgs,
 } from "../validators.js";
 import { api, internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
@@ -144,6 +146,9 @@ const addMessagesArgs = {
   // If provided, finish this stream atomically with the message save.
   // This prevents UI flickering from separate mutations (issue #181).
   finishStreamId: v.optional(v.id("streamingMessages")),
+  // Optional callback mutation to invoke after messages are saved.
+  // Called within the same transaction as the message save.
+  onSaveMessages: v.optional(v.string()),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -166,6 +171,7 @@ async function addMessagesHandler(
     failPendingSteps,
     // Destructured separately to exclude from `...rest` (used in addMessages args, not message fields)
     finishStreamId,
+    onSaveMessages,
     messages,
     promptMessageId,
     pendingMessageId,
@@ -313,7 +319,24 @@ async function addMessagesHandler(
   if (finishStreamId) {
     await finishHandler(ctx, { streamId: finishStreamId });
   }
-  return { messages: toReturn.map(publicMessage) };
+  const savedMessages = toReturn.map(publicMessage);
+  // Call the onSaveMessages callback if provided, within the same transaction
+  if (args.onSaveMessages && savedMessages.length > 0) {
+    const callbackArgs: SaveMessagesCallbackArgs = {
+      userId,
+      threadId,
+      messages: savedMessages,
+    };
+    await ctx.runMutation(
+      args.onSaveMessages as unknown as FunctionReference<
+        "mutation",
+        "public" | "internal",
+        SaveMessagesCallbackArgs
+      >,
+      callbackArgs,
+    );
+  }
+  return { messages: savedMessages };
 }
 
 // exported for tests

@@ -87,6 +87,8 @@ import type {
   Options,
   RawRequestResponseHandler,
   MutationCtx,
+  SaveMessagesCallbackArgs,
+  SaveMessagesHandler,
   StorageOptions,
   StreamingTextArgs,
   StreamObjectArgs,
@@ -186,6 +188,8 @@ export type {
   ContextOptions,
   ProviderMetadata,
   RawRequestResponseHandler,
+  SaveMessagesCallbackArgs,
+  SaveMessagesHandler,
   StorageOptions,
   StreamArgs,
   SyncStreamsReturnValue,
@@ -793,6 +797,7 @@ export class Agent<
       ...rest,
       agentName: this.options.name,
       embeddings,
+      onSaveMessages: this.options.onSaveMessages,
     });
   }
 
