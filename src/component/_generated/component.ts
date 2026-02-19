@@ -444,6 +444,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | { message: string; type: "other" }
             >;
           }>;
+          onSaveMessages?: string;
           pendingMessageId?: string;
           promptMessageId?: string;
           threadId: string;

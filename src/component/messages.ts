@@ -2,6 +2,7 @@ import { assert, omit, pick } from "convex-helpers";
 import { mergedStream, stream } from "convex-helpers/server/stream";
 import {
   paginationOptsValidator,
+  type FunctionReference,
   type WithoutSystemFields,
 } from "convex/server";
 import type { ObjectType } from "convex/values";
@@ -141,6 +142,9 @@ const addMessagesArgs = {
   // if set to true, these messages will not show up in text or vector search
   // results for the userId
   hideFromUserIdSearch: v.optional(v.boolean()),
+  // Optional callback mutation to invoke after messages are saved.
+  // Called within the same transaction as the message save.
+  onSaveMessages: v.optional(v.string()),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
@@ -303,7 +307,22 @@ async function addMessagesHandler(
     // TODO: delete the associated stream data for the order/stepOrder
     toReturn.push((await ctx.db.get(messageId))!);
   }
-  return { messages: toReturn.map(publicMessage) };
+  const savedMessages = toReturn.map(publicMessage);
+  // Call the onSaveMessages callback if provided, within the same transaction
+  if (args.onSaveMessages && savedMessages.length > 0) {
+    await ctx.runMutation(
+      args.onSaveMessages as unknown as FunctionReference<
+        "mutation",
+        "public" | "internal"
+      >,
+      {
+        userId,
+        threadId,
+        messages: savedMessages,
+      },
+    );
+  }
+  return { messages: savedMessages };
 }
 
 // exported for tests
