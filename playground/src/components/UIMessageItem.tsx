@@ -13,14 +13,14 @@ import {
 import { DynamicToolUIPart, ToolUIPart, UIMessage } from "ai";
 import { SmoothText } from "@convex-dev/agent/react";
 
-interface MessageItemProps {
+interface UIMessageItemProps {
   user: User | undefined;
   message: Omit<Message, "message"> & { message: UIMessage };
   isSelected: boolean;
   onClick: React.MouseEventHandler<HTMLDivElement>;
 }
 
-const MessageItem: React.FC<MessageItemProps> = ({
+const UIMessageItem: React.FC<UIMessageItemProps> = ({
   user,
   message,
   isSelected,
@@ -159,7 +159,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
   );
 };
 
-export default MessageItem;
+export default UIMessageItem;
 
 const ToolCall: React.FC<{
   part: ToolUIPart | DynamicToolUIPart;
