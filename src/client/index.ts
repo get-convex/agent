@@ -1023,14 +1023,18 @@ export class Agent<
    * with `promptMessageId` set to the returned `messageId` to continue
    * generation — the AI SDK will automatically execute the approved tool.
    *
-   * @param ctx A ctx object from a mutation or action.
+   * The approval response is attached to the same generation order as the
+   * original approval request, preserving tool_call/tool_result adjacency in
+   * the continuation context even if newer thread messages exist.
+   *
+   * @param ctx A ctx object from a mutation.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request part.
    * @param args.reason Optional reason for approval.
    * @returns The messageId of the saved approval response message.
    */
   async approveToolCall(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: { threadId: string; approvalId: string; reason?: string },
   ): Promise<{ messageId: string }> {
     return this.respondToToolCallApproval(ctx, { ...args, approved: true });
@@ -1044,21 +1048,21 @@ export class Agent<
    * generation — the AI SDK will automatically create an `execution-denied`
    * result and let the model respond accordingly.
    *
-   * @param ctx A ctx object from a mutation or action.
+   * @param ctx A ctx object from a mutation.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request part.
    * @param args.reason Optional reason for denial.
    * @returns The messageId of the saved denial response message.
    */
   async denyToolCall(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: { threadId: string; approvalId: string; reason?: string },
   ): Promise<{ messageId: string }> {
     return this.respondToToolCallApproval(ctx, { ...args, approved: false });
   }
 
   private async respondToToolCallApproval(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: {
       threadId: string;
       approvalId: string;
@@ -1066,8 +1070,14 @@ export class Agent<
       reason?: string;
     },
   ): Promise<{ messageId: string }> {
+    const promptMessageId = await this.getApprovalRequestMessageId(ctx, {
+      threadId: args.threadId,
+      approvalId: args.approvalId,
+    });
+
     const { messageId } = await this.saveMessage(ctx, {
       threadId: args.threadId,
+      promptMessageId,
       skipEmbeddings: true,
       message: {
         role: "tool",
@@ -1082,6 +1092,47 @@ export class Agent<
       },
     });
     return { messageId };
+  }
+
+  private async getApprovalRequestMessageId(
+    ctx: MutationCtx,
+    args: { threadId: string; approvalId: string },
+  ): Promise<string> {
+    // NOTE: This pagination returns messages in descending order (newest first).
+    // The "already handled" check (tool-approval-response) relies on seeing
+    // responses before their corresponding requests. If the pagination order
+    // changes, this logic will need to be updated.
+    let cursor: string | null = null;
+    do {
+      const page = await this.listMessages(ctx, {
+        threadId: args.threadId,
+        paginationOpts: { cursor, numItems: 100 },
+      });
+      for (const message of page.page) {
+        const content = message.message?.content;
+        if (!Array.isArray(content)) continue;
+        for (const part of content) {
+          const typedPart = part as { type?: unknown; approvalId?: unknown };
+          if (
+            typedPart.type === "tool-approval-response" &&
+            typedPart.approvalId === args.approvalId
+          ) {
+            throw new Error(`Approval ${args.approvalId} was already handled`);
+          }
+          if (
+            typedPart.type === "tool-approval-request" &&
+            typedPart.approvalId === args.approvalId
+          ) {
+            return message._id;
+          }
+        }
+      }
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor !== null);
+
+    throw new Error(
+      `Approval request ${args.approvalId} was not found in thread ${args.threadId}`,
+    );
   }
 
   /**

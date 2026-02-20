@@ -139,6 +139,44 @@ export function docsToModelMessages(messages: MessageDoc[]): ModelMessage[] {
     .map(toModelMessage);
 }
 
+/**
+ * Merge consecutive tool messages that contain `tool-approval-response` parts
+ * into a single tool message. The AI SDK's `collectToolApprovals` only examines
+ * the last tool message, so when multiple approvals are saved as separate
+ * messages (e.g. approve tool A, then deny tool B), they must be combined
+ * for the SDK to process them all.
+ */
+export function mergeApprovalResponseMessages(
+  messages: ModelMessage[],
+): ModelMessage[] {
+  const result: ModelMessage[] = [];
+  for (const msg of messages) {
+    const prev = result.at(-1);
+    if (
+      msg.role === "tool" &&
+      prev?.role === "tool" &&
+      Array.isArray(msg.content) &&
+      Array.isArray(prev.content) &&
+      hasApprovalResponse(msg.content) &&
+      hasApprovalResponse(prev.content)
+    ) {
+      // Clone before merging to avoid mutating the original message's content array
+      const cloned = { ...prev, content: [...(prev.content as any[])] };
+      result[result.length - 1] = cloned;
+      (cloned.content as any[]).push(...(msg.content as any[]));
+    } else {
+      result.push(msg);
+    }
+  }
+  return result;
+}
+
+function hasApprovalResponse(content: any[]): boolean {
+  return content.some(
+    (p: any) => p.type === "tool-approval-response",
+  );
+}
+
 export function serializeUsage(usage: LanguageModelUsage): Usage {
   return {
     promptTokens: usage.inputTokens ?? 0,

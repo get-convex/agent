@@ -7,6 +7,7 @@ import {
   toModelMessage,
   serializeContent,
   toModelMessageContent,
+  mergeApprovalResponseMessages,
 } from "./mapping.js";
 import { api } from "./component/_generated/api.js";
 import type { AgentComponent, ActionCtx } from "./client/types.js";
@@ -256,5 +257,81 @@ describe("mapping", () => {
     );
     expect(content).toHaveLength(1);
     expect((content as unknown[])[0]).toMatchObject(approvalResponse);
+  });
+
+  test("mergeApprovalResponseMessages merges consecutive tool approval messages", () => {
+    const messages = [
+      { role: "user" as const, content: "hello" },
+      {
+        role: "assistant" as const,
+        content: [
+          { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
+          { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
+          { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+          { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+        ],
+      },
+      {
+        role: "tool" as const,
+        content: [
+          { type: "tool-approval-response", approvalId: "ap1", approved: true },
+        ],
+      },
+      {
+        role: "tool" as const,
+        content: [
+          { type: "tool-approval-response", approvalId: "ap2", approved: false, reason: "denied" },
+        ],
+      },
+    ] as any;
+
+    const merged = mergeApprovalResponseMessages(messages);
+    expect(merged).toHaveLength(3); // user, assistant, single tool
+    expect(merged[2].role).toBe("tool");
+    const toolContent = merged[2].content as Array<{ type: string; approvalId: string }>;
+    expect(toolContent).toHaveLength(2);
+    expect(toolContent[0].approvalId).toBe("ap1");
+    expect(toolContent[1].approvalId).toBe("ap2");
+  });
+
+  test("mergeApprovalResponseMessages does not mutate original message content arrays", () => {
+    const msg1Content = [
+      { type: "tool-approval-response", approvalId: "ap1", approved: true },
+    ];
+    const msg2Content = [
+      { type: "tool-approval-response", approvalId: "ap2", approved: false, reason: "denied" },
+    ];
+    const messages = [
+      { role: "tool" as const, content: msg1Content },
+      { role: "tool" as const, content: msg2Content },
+    ] as any;
+
+    const merged = mergeApprovalResponseMessages(messages);
+    // Merged result should combine both
+    expect(merged).toHaveLength(1);
+    expect((merged[0].content as any[]).length).toBe(2);
+    // Original arrays must be untouched
+    expect(msg1Content).toHaveLength(1);
+    expect(msg2Content).toHaveLength(1);
+  });
+
+  test("mergeApprovalResponseMessages does not merge non-approval tool messages", () => {
+    const messages = [
+      {
+        role: "tool" as const,
+        content: [
+          { type: "tool-result", toolCallId: "tc1", toolName: "a", output: { type: "text", value: "ok" } },
+        ],
+      },
+      {
+        role: "tool" as const,
+        content: [
+          { type: "tool-approval-response", approvalId: "ap1", approved: true },
+        ],
+      },
+    ] as any;
+
+    const merged = mergeApprovalResponseMessages(messages);
+    expect(merged).toHaveLength(2); // not merged since first has tool-result
   });
 });

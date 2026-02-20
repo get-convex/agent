@@ -4,8 +4,10 @@ import type {
   DataModelFromSchemaDefinition,
   ApiFromModules,
   ActionBuilder,
+  MutationBuilder,
 } from "convex/server";
-import { anyApi, actionGeneric } from "convex/server";
+import { anyApi, actionGeneric, mutationGeneric } from "convex/server";
+import { v } from "convex/values";
 import { defineSchema } from "convex/server";
 import { stepCountIs, type LanguageModelUsage } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
@@ -16,6 +18,7 @@ import type { UsageHandler } from "./types.js";
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;
 const action = actionGeneric as ActionBuilder<DataModel, "public">;
+const mutation = mutationGeneric as MutationBuilder<DataModel, "public">;
 
 // Tool that always requires approval
 const deleteFileTool = createTool({
@@ -115,10 +118,10 @@ export const testApproveFlow = action({
     const approvalId = getApprovalIdFromSavedMessages(result1.savedMessages);
 
     // Step 2: Approve the tool call
-    const { messageId } = await approvalAgent.approveToolCall(ctx, {
-      threadId: thread.threadId,
-      approvalId,
-    });
+    const { messageId } = await ctx.runMutation(
+      anyApi["approval.test"].submitApprovalForApprovalAgent,
+      { threadId: thread.threadId, approvalId },
+    );
 
     // Step 3: Continue generation — SDK executes tool, model responds
     const result2 = await thread.generateText({
@@ -159,11 +162,14 @@ export const testDenyFlow = action({
     const approvalId = getApprovalIdFromSavedMessages(result1.savedMessages);
 
     // Step 2: Deny the tool call
-    const { messageId } = await denialAgent.denyToolCall(ctx, {
-      threadId: thread.threadId,
-      approvalId,
-      reason: "This file is important",
-    });
+    const { messageId } = await ctx.runMutation(
+      anyApi["approval.test"].submitDenialForDenialAgent,
+      {
+        threadId: thread.threadId,
+        approvalId,
+        reason: "This file is important",
+      },
+    );
 
     // Step 3: Continue generation — SDK creates execution-denied, model responds
     const result2 = await thread.generateText({
@@ -188,10 +194,90 @@ export const testDenyFlow = action({
   },
 });
 
+export const testApproveFlowWithInterveningMessage = action({
+  args: {},
+  handler: async (ctx) => {
+    const { thread } = await approvalAgent.createThread(ctx, { userId: "u3" });
+
+    const result1 = await thread.generateText({
+      prompt: "Delete test.txt",
+    });
+    const approvalId = getApprovalIdFromSavedMessages(result1.savedMessages);
+
+    const approvalRequest = (
+      await approvalAgent.listMessages(ctx, {
+        threadId: thread.threadId,
+        paginationOpts: { cursor: null, numItems: 20 },
+      })
+    ).page.find((m) => {
+      const content = m.message?.content;
+      return (
+        Array.isArray(content) &&
+        content.some(
+          (p) =>
+            p.type === "tool-approval-request" && p.approvalId === approvalId,
+        )
+      );
+    });
+    if (!approvalRequest) {
+      throw new Error("Approval request message not found");
+    }
+
+    const intervening = await approvalAgent.saveMessage(ctx, {
+      threadId: thread.threadId,
+      prompt: "Intervening user message",
+      skipEmbeddings: true,
+    });
+
+    const { messageId } = await ctx.runMutation(
+      anyApi["approval.test"].submitApprovalForApprovalAgent,
+      { threadId: thread.threadId, approvalId },
+    );
+
+    const result2 = await thread.generateText({
+      promptMessageId: messageId,
+    });
+
+    const allMessages = await approvalAgent.listMessages(ctx, {
+      threadId: thread.threadId,
+      paginationOpts: { cursor: null, numItems: 40 },
+    });
+    const approvalResponse = allMessages.page.find((m) => m._id === messageId);
+    if (!approvalResponse) {
+      throw new Error("Saved approval response message not found");
+    }
+
+    return {
+      secondText: result2.text,
+      approvalResponseOrder: approvalResponse.order,
+      approvalRequestId: approvalRequest._id,
+      approvalRequestOrder: approvalRequest.order,
+      interveningOrder: intervening.message.order,
+    };
+  },
+});
+
+export const submitApprovalForApprovalAgent = mutation({
+  args: { threadId: v.string(), approvalId: v.string(), reason: v.optional(v.string()) },
+  handler: async (ctx, { threadId, approvalId, reason }) => {
+    return approvalAgent.approveToolCall(ctx, { threadId, approvalId, reason });
+  },
+});
+
+export const submitDenialForDenialAgent = mutation({
+  args: { threadId: v.string(), approvalId: v.string(), reason: v.optional(v.string()) },
+  handler: async (ctx, { threadId, approvalId, reason }) => {
+    return denialAgent.denyToolCall(ctx, { threadId, approvalId, reason });
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testApproveFlow: typeof testApproveFlow;
     testDenyFlow: typeof testDenyFlow;
+    testApproveFlowWithInterveningMessage: typeof testApproveFlowWithInterveningMessage;
+    submitApprovalForApprovalAgent: typeof submitApprovalForApprovalAgent;
+    submitDenialForDenialAgent: typeof submitDenialForDenialAgent;
   };
 }>["fns"] = anyApi["approval.test"] as any;
 
@@ -250,5 +336,15 @@ describe("Tool Approval Workflow", () => {
     expect(result.usageCallCount).toBeGreaterThanOrEqual(2);
     expect(result.lastUsage!.inputTokenDetails).toBeDefined();
     expect(result.lastUsage!.outputTokenDetails).toBeDefined();
+  });
+
+  test("approve remains valid with an intervening thread message", async () => {
+    usageCalls.length = 0;
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testApproveFlowWithInterveningMessage, {});
+
+    expect(result.secondText).toBe("Done! I deleted test.txt.");
+    expect(result.approvalResponseOrder).toBe(result.approvalRequestOrder);
+    expect(result.interveningOrder).toBeGreaterThan(result.approvalResponseOrder);
   });
 });

@@ -37,6 +37,10 @@ export const insertRawUsage = internalMutation({
       outputTokens: v.optional(v.number()),
       reasoningTokens: v.optional(v.number()),
       cachedInputTokens: v.optional(v.number()),
+      // AI SDK v6 additional fields
+      inputTokenDetails: v.optional(v.any()),
+      outputTokenDetails: v.optional(v.any()),
+      raw: v.optional(v.any()),
     }),
     providerMetadata: v.optional(vProviderMetadata),
   },
