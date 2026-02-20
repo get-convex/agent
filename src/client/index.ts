@@ -6,6 +6,7 @@ import type {
 } from "@ai-sdk/provider-utils";
 import type {
   CallSettings,
+  EmbeddingModel,
   GenerateObjectResult,
   GenerateTextResult,
   LanguageModel,
@@ -17,6 +18,15 @@ import type {
   ToolSet,
 } from "ai";
 import { generateObject, generateText, stepCountIs, streamObject } from "ai";
+
+const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const warnedDeprecations = new Set<string>();
+function warnDeprecation(key: string, message: string) {
+  if (!warnedDeprecations.has(key)) {
+    warnedDeprecations.add(key);
+    console.warn(`[@convex-dev/agent] ${message}\n  See: ${MIGRATION_URL}`);
+  }
+}
 import { assert, omit, pick } from "convex-helpers";
 import {
   internalActionGeneric,
@@ -86,6 +96,7 @@ import type {
   UsageHandler,
   QueryCtx,
   AgentPrompt,
+  Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
 import { errorToString, willContinue } from "./utils.js";
@@ -241,7 +252,22 @@ export class Agent<
         | StopCondition<NoInfer<AgentTools>>
         | Array<StopCondition<NoInfer<AgentTools>>>;
     },
-  ) {}
+  ) {
+    if (this.options.textEmbeddingModel && !this.options.embeddingModel) {
+      warnDeprecation(
+        "textEmbeddingModel",
+        "textEmbeddingModel is deprecated. Use embeddingModel instead.",
+      );
+    }
+  }
+
+  /**
+   * Get the embedding model, prioritizing embeddingModel over textEmbeddingModel.
+   * @private
+   */
+  private getEmbeddingModel(): EmbeddingModel | undefined {
+    return this.options.embeddingModel ?? this.options.textEmbeddingModel;
+  }
 
   /**
    * Start a new thread with the agent. This will have a fresh history, though if
@@ -416,9 +442,7 @@ export class Agent<
         ...args,
         tools: (args.tools ?? this.options.tools) as Tools,
         system: args.system ?? this.options.instructions,
-        stopWhen: (args.stopWhen ?? this.options.stopWhen) as
-          | StopCondition<Tools>
-          | Array<StopCondition<Tools>>,
+        stopWhen: (args.stopWhen ?? this.options.stopWhen) as any,
       },
       {
         ...this.options,
@@ -444,8 +468,7 @@ export class Agent<
    */
   async generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT = never,
-    OUTPUT_PARTIAL = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -454,7 +477,7 @@ export class Agent<
      * {@link generateText} function, along with Agent prompt options.
      */
     generateTextArgs: AgentPrompt &
-      TextArgs<AgentTools, TOOLS, OUTPUT, OUTPUT_PARTIAL>,
+      TextArgs<AgentTools, TOOLS, OUTPUT>,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
@@ -469,7 +492,7 @@ export class Agent<
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
     const steps: StepResult<Tools>[] = [];
     try {
-      const result = (await generateText<Tools, OUTPUT, OUTPUT_PARTIAL>({
+      const result = (await generateText<Tools, OUTPUT>({
         ...args,
         prepareStep: async (options) => {
           const result = await generateTextArgs.prepareStep?.(options);
@@ -504,8 +527,7 @@ export class Agent<
    */
   async streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT = never,
-    PARTIAL_OUTPUT = never,
+    OUTPUT extends Output<any, any, any> = never,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -514,7 +536,7 @@ export class Agent<
      * {@link streamText} function, along with Agent prompt options.
      */
     streamTextArgs: AgentPrompt &
-      StreamingTextArgs<AgentTools, TOOLS, OUTPUT, PARTIAL_OUTPUT>,
+      StreamingTextArgs<AgentTools, TOOLS, OUTPUT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -535,12 +557,12 @@ export class Agent<
   ): Promise<
     StreamTextResult<
       TOOLS extends undefined ? AgentTools : TOOLS,
-      PARTIAL_OUTPUT
+      OUTPUT
     > &
       GenerationOutputMetadata
   > {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    return streamText<Tools, OUTPUT, PARTIAL_OUTPUT>(
+    return streamText<Tools, OUTPUT>(
       ctx,
       this.component,
       {
@@ -548,9 +570,7 @@ export class Agent<
         model: streamTextArgs.model ?? this.options.languageModel,
         tools: (streamTextArgs.tools ?? this.options.tools) as Tools,
         system: streamTextArgs.system ?? this.options.instructions,
-        stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as
-          | StopCondition<Tools>
-          | Array<StopCondition<Tools>>,
+        stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as any,
       },
       {
         ...threadOpts,
@@ -746,7 +766,7 @@ export class Agent<
     const { skipEmbeddings, ...rest } = args;
     if (args.embeddings) {
       embeddings = args.embeddings;
-    } else if (!skipEmbeddings && this.options.textEmbeddingModel) {
+    } else if (!skipEmbeddings && this.getEmbeddingModel()) {
       if (!("runAction" in ctx)) {
         console.warn(
           "You're trying to save messages and generate embeddings, but you're in a mutation. " +
@@ -862,9 +882,10 @@ export class Agent<
       contextOptions,
       getEmbedding: async (text) => {
         assert("runAction" in ctx);
+        const embeddingModel = this.getEmbeddingModel();
         assert(
-          this.options.textEmbeddingModel,
-          "A textEmbeddingModel is required to be set on the Agent that you're doing vector search with",
+          embeddingModel,
+          "An embeddingModel (or textEmbeddingModel) is required to be set on the Agent that you're doing vector search with",
         );
         return {
           embedding: (
@@ -876,7 +897,7 @@ export class Agent<
               values: [text],
             })
           ).embeddings[0],
-          textEmbeddingModel: this.options.textEmbeddingModel,
+          embeddingModel: embeddingModel,
         };
       },
     });
@@ -975,10 +996,10 @@ export class Agent<
             .join(", "),
       );
     }
-    const { textEmbeddingModel } = this.options;
-    if (!textEmbeddingModel) {
+    const embeddingModel = this.getEmbeddingModel();
+    if (!embeddingModel) {
       throw new Error(
-        "No embeddings were generated for the messages. You must pass a textEmbeddingModel to the agent constructor.",
+        "No embeddings were generated for the messages. You must pass an embeddingModel (or textEmbeddingModel) to the agent constructor.",
       );
     }
     await generateAndSaveEmbeddings(
@@ -989,7 +1010,7 @@ export class Agent<
         agentName: this.options.name,
         threadId: messages[0].threadId,
         userId: messages[0].userId,
-        textEmbeddingModel,
+        embeddingModel,
       },
       messages,
     );
@@ -1440,7 +1461,7 @@ export class Agent<
         } as GenerateObjectArgs<FlexibleSchema<T>>;
         const ctx = (
           options?.customCtx
-            ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs) }
+            ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs as any) }
             : ctx_
         ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         const value = await this.generateObject(ctx, targetArgs, llmArgs, {
