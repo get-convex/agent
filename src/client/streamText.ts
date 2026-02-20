@@ -160,8 +160,16 @@ export async function streamText<
       !options.saveStreamDeltas.returnImmediately) ||
     options?.saveStreamDeltas === true
   ) {
-    await stream;
-    await result.consumeStream();
+    try {
+      await stream;
+      await result.consumeStream();
+    } catch (e) {
+      // If the stream errored (e.g. onStepFinish threw), the DeltaStreamer's
+      // finish() was never called, leaving the streaming message stuck in
+      // "streaming" state. Clean it up by marking it as aborted.
+      await streamer?.fail(e instanceof Error ? e.message : String(e));
+      throw e;
+    }
   }
 
   // If we deferred the final step save, do it now with atomic stream finish.
