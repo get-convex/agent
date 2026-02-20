@@ -546,7 +546,7 @@ describe("toUIMessages", () => {
     );
     expect(toolCallParts).toHaveLength(0);
   });
-  it("sets text field correctly when message has many parts with text part as final part", () => {
+  it("sets text field correctly in multi-step tool-call + final-text flow", () => {
     const messages = [
       baseMessageDoc({
         text: "what time is it in paris?",

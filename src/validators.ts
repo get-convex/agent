@@ -386,7 +386,9 @@ export type MessageContentParts =
   | Infer<typeof vRedactedReasoningPart>
   | Infer<typeof vToolCallPart>
   | Infer<typeof vToolResultPart>
-  | Infer<typeof vSourcePart>;
+  | Infer<typeof vSourcePart>
+  | Infer<typeof vToolApprovalRequest>
+  | Infer<typeof vToolApprovalResponse>;
 
 export const vSource = v.union(
   v.object({

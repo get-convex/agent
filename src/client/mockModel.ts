@@ -202,10 +202,6 @@ export class MockLanguageModel implements LanguageModelV3 {
         throw new Error("Unexpected: no content or doGenerate");
       }
     };
-    this._supportedUrls =
-      typeof supportedUrls === "function"
-        ? supportedUrls
-        : async () => supportedUrls;
     this.doStream = async (options) => {
       this.doStreamCalls.push(options);
 
