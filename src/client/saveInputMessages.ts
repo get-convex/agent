@@ -37,6 +37,26 @@ export async function saveInputMessages(
   pendingMessage: MessageDoc;
   savedMessages: MessageDoc[];
 }> {
+  // If the promptMessageId points to an already-pending message (e.g. from
+  // approveToolCall), reuse it directly — don't create a new pending message
+  // and don't fail existing pending steps.
+  if (args.promptMessageId && "runQuery" in ctx) {
+    try {
+      const [msg] = await ctx.runQuery(component.messages.getMessagesByIds, {
+        messageIds: [args.promptMessageId],
+      });
+      if (msg?.status === "pending") {
+        return {
+          promptMessageId: args.promptMessageId,
+          pendingMessage: msg,
+          savedMessages: [],
+        };
+      }
+    } catch {
+      // ID validation may fail in test environments with mock IDs — fall through.
+    }
+  }
+
   const shouldSave = args.storageOptions?.saveMessages ?? "promptAndOutput";
   // If only a promptMessageId is provided, this will be empty.
   const promptArray = getPromptArray(prompt);

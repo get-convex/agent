@@ -112,6 +112,7 @@ export async function startGeneration<
       | { step: StepResult<TOOLS> }
       | { object: GenerateObjectResult<unknown> },
     createPendingMessage?: boolean,
+    finishStreamId?: string,
   ) => Promise<void>;
   fail: (reason: string) => Promise<void>;
   getSavedMessages: () => MessageDoc[];
@@ -184,6 +185,107 @@ export async function startGeneration<
     agent: opts.agentForToolCtx,
   } satisfies ToolCtx;
   const tools = wrapTools(toolCtx, args.tools) as Tools;
+
+  // Handle pending tool approval: execute the approved tool now that runtime
+  // tools are available. The tool info was stored by approveToolCall in the
+  // approval part's providerOptions.
+  if (pendingMessage?.message?.role === "tool" && threadId) {
+    const approvalPart = (
+      Array.isArray(pendingMessage.message.content)
+        ? pendingMessage.message.content
+        : []
+    ).find(
+      (p: any) =>
+        p.type === "tool-approval-response" &&
+        p.approved === true &&
+        p.providerOptions?.["convex-agent"]?.pendingToolExecution,
+    ) as any;
+
+    if (approvalPart) {
+      const meta = approvalPart.providerOptions["convex-agent"];
+      const { toolCallId, toolName, toolInput } = meta;
+      const tool = (tools as Record<string, any>)[toolName];
+
+      let resultValue: string;
+      if (tool?.execute) {
+        try {
+          const output = await tool.execute(toolInput, {
+            toolCallId,
+            messages: context.messages,
+          });
+          resultValue =
+            typeof output === "string" ? output : JSON.stringify(output);
+        } catch (error) {
+          resultValue = `Error: ${error instanceof Error ? error.message : String(error)}`;
+          console.error("Tool execution error:", error);
+        }
+      } else {
+        resultValue = `Error: Tool not found: ${toolName}`;
+        console.error(`Tool not found for approval execution: ${toolName}`);
+      }
+
+      // Save the tool result by replacing the pending message (merging
+      // approval-response + tool-result) and creating a new pending
+      // assistant message for the LLM output.
+      const saved = await ctx.runMutation(component.messages.addMessages, {
+        userId,
+        threadId,
+        agentName: opts.agentName,
+        promptMessageId,
+        pendingMessageId,
+        messages: [
+          {
+            message: {
+              role: "tool" as const,
+              content: [
+                {
+                  type: "tool-result" as const,
+                  toolCallId,
+                  toolName,
+                  output: { type: "text" as const, value: resultValue },
+                },
+              ],
+            },
+          },
+          {
+            message: { role: "assistant" as const, content: [] },
+            status: "pending" as const,
+          },
+        ],
+        embeddings: undefined,
+        failPendingSteps: false,
+      });
+
+      const newPendingMessage = saved.messages.at(-1)!;
+      savedMessages.push(...saved.messages.slice(0, -1));
+      pendingMessageId = newPendingMessage._id;
+
+      // Remove empty tool messages from context (e.g. approval-request
+      // messages whose content was stripped by toModelMessage).
+      context.messages = context.messages.filter(
+        (m) =>
+          !(
+            m.role === "tool" &&
+            Array.isArray(m.content) &&
+            m.content.length === 0
+          ),
+      );
+
+      // Add tool result to context so the LLM sees the completed tool call.
+      context.messages.push({
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId,
+            toolName,
+            output: { type: "text" as const, value: resultValue },
+          },
+        ],
+      });
+    }
+  }
+
   const aiArgs = {
     ...opts.callSettings,
     providerOptions: opts.providerOptions,
@@ -228,6 +330,11 @@ export async function startGeneration<
         | { step: StepResult<TOOLS> }
         | { object: GenerateObjectResult<unknown> },
       createPendingMessage?: boolean,
+      /**
+       * If provided, finish this stream atomically with the message save.
+       * This prevents UI flickering from separate mutations (issue #181).
+       */
+      finishStreamId?: string,
     ) => {
       if (threadId && saveMessages !== "none") {
         const serialized =
@@ -265,6 +372,7 @@ export async function startGeneration<
           messages: serialized.messages,
           embeddings,
           failPendingSteps: false,
+          finishStreamId: finishStreamId as any, // optional stream to finish atomically
         });
         const lastMessage = saved.messages.at(-1)!;
         if (createPendingMessage) {

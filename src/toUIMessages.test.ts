@@ -716,10 +716,10 @@ describe("toUIMessages", () => {
     // Should concatenate text from all messages (only the final response has text)
     expect(uiMessages[0].text).toBe("The result is 42.");
 
-    // Should use first message's fields (msg1 with stepOrder 1)
+    // Should use first message's ID, but last message's stepOrder for deduplication
     expect(uiMessages[0].id).toBe("msg1");
     expect(uiMessages[0].order).toBe(1);
-    expect(uiMessages[0].stepOrder).toBe(1);
+    expect(uiMessages[0].stepOrder).toBe(3);
 
     // Should have both tool call and result parts
     const toolParts = uiMessages[0].parts.filter(

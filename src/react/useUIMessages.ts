@@ -155,17 +155,33 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   );
 
   const merged = useMemo(() => {
-    // Messages may have been split by pagination. Re-combine them here.
-    const combined = combineUIMessages(sorted(paginated.results));
+    // Combine saved messages with streaming messages, then combine by order
+    // This ensures streaming continuations appear in the same bubble as saved content
+    const allMessages = dedupeMessages(paginated.results, streamMessages ?? []);
+    const combined = combineUIMessages(sorted(allMessages));
+
     return {
       ...paginated,
-      results: dedupeMessages(combined, streamMessages ?? []),
+      results: combined,
     };
   }, [paginated, streamMessages]);
 
   return merged as UIMessagesQueryResult<Query>;
 }
 
+/**
+ * Reconciles saved messages (from DB) with streaming messages (real-time deltas).
+ *
+ * This is complex because they're independent data sources that can have overlapping
+ * stepOrders with different content. For example, after tool approval:
+ * - Saved message has tool call + result parts
+ * - Streaming message starts empty and builds up continuation text
+ * - Both may have the same stepOrder
+ *
+ * We merge rather than pick one to preserve both the tool context and streaming content.
+ * A cleaner architecture would have streaming carry forward prior context, eliminating
+ * the need for client-side reconciliation.
+ */
 export function dedupeMessages<
   M extends {
     order: number;
@@ -173,7 +189,36 @@ export function dedupeMessages<
     status: UIStatus;
   },
 >(messages: M[], streamMessages: M[]): M[] {
-  return sorted(messages.concat(streamMessages)).reduce((msgs, msg) => {
+  // Filter out stale streaming messages - those with stepOrder lower than
+  // the max saved message at the same order (they're from a previous generation)
+  const maxStepOrderByOrder = new Map<number, number>();
+  for (const msg of messages) {
+    const current = maxStepOrderByOrder.get(msg.order) ?? -1;
+    if (msg.stepOrder > current) {
+      maxStepOrderByOrder.set(msg.order, msg.stepOrder);
+    }
+  }
+
+  const filteredStreamMessages = streamMessages.filter((s) => {
+    const maxSaved = maxStepOrderByOrder.get(s.order);
+    // Keep streaming message if:
+    // 1. No saved at that order, OR
+    // 2. stepOrder >= max saved stepOrder, OR
+    // 3. There's a saved message at the SAME stepOrder (let dedup logic handle it)
+    const hasSavedAtSameStepOrder = messages.some(
+      (m) => m.order === s.order && m.stepOrder === s.stepOrder,
+    );
+    return (
+      maxSaved === undefined ||
+      s.stepOrder >= maxSaved ||
+      hasSavedAtSameStepOrder
+    );
+  });
+
+  // Merge saved and streaming messages, deduplicating by (order, stepOrder)
+  // When saved (with parts) and streaming (building up) have the same stepOrder,
+  // we need to keep the saved parts while showing streaming status.
+  return sorted(messages.concat(filteredStreamMessages)).reduce((msgs, msg) => {
     const last = msgs.at(-1);
     if (!last) {
       return [msg];
@@ -181,15 +226,76 @@ export function dedupeMessages<
     if (last.order !== msg.order || last.stepOrder !== msg.stepOrder) {
       return [...msgs, msg];
     }
-    if (
-      (last.status === "pending" || last.status === "streaming") &&
-      msg.status !== "pending"
-    ) {
-      // Let's prefer a streaming or finalized message over a pending
-      // one.
+    // Same (order, stepOrder) - merge them rather than choosing one
+    // This preserves saved parts while allowing streaming status to show
+    const lastIsFinalized =
+      last.status === "success" || last.status === "failed";
+    const msgIsFinalized = msg.status === "success" || msg.status === "failed";
+
+    // If either is finalized, use the finalized one
+    if (lastIsFinalized && !msgIsFinalized) {
+      return msgs;
+    }
+    if (msgIsFinalized && !lastIsFinalized) {
       return [...msgs.slice(0, -1), msg];
     }
-    // skip the new one if the previous one (listed) was finalized
-    return msgs;
+    if (lastIsFinalized && msgIsFinalized) {
+      return msgs; // Both finalized, keep first
+    }
+
+    // Neither finalized - merge parts from both, prefer streaming message identity
+    const lastParts = "parts" in last ? ((last as any).parts ?? []) : [];
+    const msgParts = "parts" in msg ? ((msg as any).parts ?? []) : [];
+    const hasParts = lastParts.length > 0 || msgParts.length > 0;
+
+    // If no parts on either, just pick the streaming one (or msg if it's streaming)
+    if (!hasParts) {
+      if (msg.status === "streaming") {
+        return [...msgs.slice(0, -1), msg];
+      }
+      if (last.status === "streaming") {
+        return msgs;
+      }
+      return [...msgs.slice(0, -1), msg];
+    }
+
+    // Combine parts, avoiding duplicates by toolCallId
+    const mergedParts = [...lastParts];
+    for (const part of msgParts) {
+      const toolCallId = (part as any).toolCallId;
+      if (toolCallId) {
+        const existingIdx = mergedParts.findIndex(
+          (p: any) => p.toolCallId === toolCallId,
+        );
+        if (existingIdx >= 0) {
+          // Merge tool part - prefer the one with more complete state
+          const existing = mergedParts[existingIdx] as any;
+          if (
+            part.state === "output-available" ||
+            part.state === "output-error" ||
+            (part.state && !existing.state)
+          ) {
+            mergedParts[existingIdx] = part;
+          }
+          continue;
+        }
+      }
+      // Add non-duplicate parts (skip duplicate step-starts)
+      const isDuplicateStepStart =
+        (part as any).type === "step-start" &&
+        mergedParts.some((p: any) => p.type === "step-start");
+      if (!isDuplicateStepStart) {
+        mergedParts.push(part);
+      }
+    }
+
+    // Use streaming message as base if it's streaming, otherwise use the one with more parts
+    const base = msg.status === "streaming" ? msg : last;
+    const merged = {
+      ...base,
+      status: msg.status === "streaming" ? "streaming" : last.status,
+      parts: mergedParts,
+    } as M;
+    return [...msgs.slice(0, -1), merged];
   }, [] as M[]);
 }

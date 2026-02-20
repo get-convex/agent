@@ -292,7 +292,9 @@ describe("search.ts", () => {
       expect(result[1]._id).toBe("2");
     });
 
-    it("should filter out tool calls with approval request but NO approval response", () => {
+    it("should keep tool calls with approval request even without approval response", () => {
+      // Tool calls with an approval-request should be kept because the
+      // approval flow may be in progress (response saved as pending).
       const messages: MessageDoc[] = [
         {
           _id: "1",
@@ -321,19 +323,18 @@ describe("search.ts", () => {
 
       const result = filterOutOrphanedToolMessages(messages);
       expect(result).toHaveLength(1);
-      // The assistant message should have the tool-call filtered out
       const assistantContent = result[0].message?.content;
       expect(Array.isArray(assistantContent)).toBe(true);
       if (Array.isArray(assistantContent)) {
-        // Text and approval-request should remain, but tool-call should be filtered
-        expect(assistantContent).toHaveLength(2);
+        // All parts should remain: text, tool-call, and approval-request
+        expect(assistantContent).toHaveLength(3);
         expect(assistantContent.find((p) => p.type === "text")).toBeDefined();
+        expect(
+          assistantContent.find((p) => p.type === "tool-call"),
+        ).toBeDefined();
         expect(
           assistantContent.find((p) => p.type === "tool-approval-request"),
         ).toBeDefined();
-        expect(
-          assistantContent.find((p) => p.type === "tool-call"),
-        ).toBeUndefined();
       }
     });
 
