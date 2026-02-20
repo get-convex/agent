@@ -165,8 +165,6 @@ export async function streamText<
   }
 
   // If we deferred the final step save, do it now with atomic stream finish.
-  // Stream creation is lazy (on first addParts), so getOrCreateStreamId
-  // ensures one exists even if no deltas were sent yet.
   if (pendingFinalStep && streamer) {
     const finishStreamId = await streamer.getOrCreateStreamId();
     await call.save({ step: pendingFinalStep }, false, finishStreamId);
