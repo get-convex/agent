@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0-alpha.1
+
+- Tool approval support: `needsApproval` in `createTool`, `agent.approveToolCall()`, `agent.denyToolCall()`
+
 ## 0.6.0-alpha.0
 
 ## 0.6.0
