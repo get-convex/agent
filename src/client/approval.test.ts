@@ -139,6 +139,11 @@ export const testApproveFlow = action({
       secondSavedCount: result2.savedMessages?.length ?? 0,
       totalThreadMessages: allMessages.page.length,
       threadMessageRoles: allMessages.page.map((m) => m.message?.role),
+      threadMessageContentTypes: allMessages.page.map((m) =>
+        Array.isArray(m.message?.content)
+          ? (m.message!.content as Array<{ type: string }>).map((p) => p.type)
+          : typeof m.message?.content,
+      ),
       usageCallCount: usageCalls.length,
       // Verify usage data includes detail fields (AI SDK v6)
       lastUsage: usageCalls.at(-1),
@@ -182,6 +187,11 @@ export const testDenyFlow = action({
       secondText: result2.text,
       totalThreadMessages: allMessages.page.length,
       threadMessageRoles: allMessages.page.map((m) => m.message?.role),
+      threadMessageContentTypes: allMessages.page.map((m) =>
+        Array.isArray(m.message?.content)
+          ? (m.message!.content as Array<{ type: string }>).map((p) => p.type)
+          : typeof m.message?.content,
+      ),
       usageCallCount: usageCalls.length,
       lastUsage: usageCalls.at(-1),
     };
@@ -201,6 +211,8 @@ describe("Tool Approval Workflow", () => {
     const t = initConvexTest(schema);
     const result = await t.action(testApi.testApproveFlow, {});
 
+    console.log("APPROVE roles:", JSON.stringify(result.threadMessageRoles));
+    console.log("APPROVE content:", JSON.stringify(result.threadMessageContentTypes));
     expect(result.approvalId).toBeDefined();
     // First call produces no text (just a tool call)
     expect(result.firstText).toBe("");
@@ -226,6 +238,8 @@ describe("Tool Approval Workflow", () => {
     const t = initConvexTest(schema);
     const result = await t.action(testApi.testDenyFlow, {});
 
+    console.log("DENY roles:", JSON.stringify(result.threadMessageRoles));
+    console.log("DENY content:", JSON.stringify(result.threadMessageContentTypes));
     expect(result.approvalId).toBeDefined();
     expect(result.firstText).toBe("");
     expect(result.secondText).toBe("OK, I won't delete that file.");
