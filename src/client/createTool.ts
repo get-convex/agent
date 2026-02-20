@@ -307,16 +307,28 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
     outputSchema: def.outputSchema,
   });
   if (def.onInputStart) {
-    t.onInputStart = def.onInputStart.bind(t, getCtx(t));
+    const origOnInputStart = def.onInputStart;
+    t.onInputStart = function (this: Tool<INPUT, OUTPUT>, options) {
+      return origOnInputStart.call(this, getCtx(this), options);
+    };
   }
   if (def.onInputDelta) {
-    t.onInputDelta = def.onInputDelta.bind(t, getCtx(t));
+    const origOnInputDelta = def.onInputDelta;
+    t.onInputDelta = function (this: Tool<INPUT, OUTPUT>, options) {
+      return origOnInputDelta.call(this, getCtx(this), options);
+    };
   }
   if (def.onInputAvailable) {
-    t.onInputAvailable = def.onInputAvailable.bind(t, getCtx(t));
+    const origOnInputAvailable = def.onInputAvailable;
+    t.onInputAvailable = function (this: Tool<INPUT, OUTPUT>, options) {
+      return origOnInputAvailable.call(this, getCtx(this), options);
+    };
   }
   if (def.toModelOutput) {
-    t.toModelOutput = def.toModelOutput.bind(t, getCtx(t));
+    const origToModelOutput = def.toModelOutput;
+    t.toModelOutput = function (this: Tool<INPUT, OUTPUT>, options) {
+      return origToModelOutput.call(this, getCtx(this), options);
+    };
   }
   return t;
 }
