@@ -1027,14 +1027,14 @@ export class Agent<
    * original approval request, preserving tool_call/tool_result adjacency in
    * the continuation context even if newer thread messages exist.
    *
-   * @param ctx A ctx object from a mutation or action.
+   * @param ctx A ctx object from a mutation.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request part.
    * @param args.reason Optional reason for approval.
    * @returns The messageId of the saved approval response message.
    */
   async approveToolCall(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: { threadId: string; approvalId: string; reason?: string },
   ): Promise<{ messageId: string }> {
     return this.respondToToolCallApproval(ctx, { ...args, approved: true });
@@ -1048,21 +1048,21 @@ export class Agent<
    * generation — the AI SDK will automatically create an `execution-denied`
    * result and let the model respond accordingly.
    *
-   * @param ctx A ctx object from a mutation or action.
+   * @param ctx A ctx object from a mutation.
    * @param args.threadId The thread containing the tool call.
    * @param args.approvalId The approval ID from the tool-approval-request part.
    * @param args.reason Optional reason for denial.
    * @returns The messageId of the saved denial response message.
    */
   async denyToolCall(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: { threadId: string; approvalId: string; reason?: string },
   ): Promise<{ messageId: string }> {
     return this.respondToToolCallApproval(ctx, { ...args, approved: false });
   }
 
   private async respondToToolCallApproval(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: {
       threadId: string;
       approvalId: string;
@@ -1095,7 +1095,7 @@ export class Agent<
   }
 
   private async getApprovalRequestMessageId(
-    ctx: MutationCtx | ActionCtx,
+    ctx: MutationCtx,
     args: { threadId: string; approvalId: string },
   ): Promise<string> {
     // NOTE: This pagination returns messages in descending order (newest first).

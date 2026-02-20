@@ -1,8 +1,9 @@
 /// <reference types="vite/client" />
 import { describe, expect, test } from "vitest";
 import { Agent, createTool, stepCountIs, mockModel } from "@convex-dev/agent";
-import { anyApi, actionGeneric } from "convex/server";
-import type { ApiFromModules, ActionBuilder } from "convex/server";
+import { anyApi, actionGeneric, mutationGeneric } from "convex/server";
+import type { ApiFromModules, ActionBuilder, MutationBuilder } from "convex/server";
+import { v } from "convex/values";
 import { components } from "./_generated/api.js";
 import { initConvexTest } from "./setup.test.js";
 import { z } from "zod/v4";
@@ -11,6 +12,7 @@ import { rawRequestResponseHandler } from "./debugging/rawRequestResponseHandler
 import type { DataModel } from "./_generated/dataModel.js";
 
 const action = actionGeneric as ActionBuilder<DataModel, "public">;
+const mutation = mutationGeneric as MutationBuilder<DataModel, "public">;
 
 // Same tools as the example approval agent
 const deleteFileTool = createTool({
@@ -162,10 +164,10 @@ export const testApproveE2E = action({
     );
 
     // Step 2: Approve (same as handleApproval in the example)
-    const { messageId } = await testApprovalAgent.approveToolCall(ctx, {
-      threadId: thread.threadId,
-      approvalId: approvalPart.approvalId,
-    });
+    const { messageId } = await ctx.runMutation(
+      anyApi["approval.test"].submitApprovalForTestApprovalAgent,
+      { threadId: thread.threadId, approvalId: approvalPart.approvalId },
+    );
 
     // Step 3: Continue with streamText (same as handleApproval continuation)
     const result2 = await testApprovalAgent.streamText(
@@ -216,11 +218,14 @@ export const testDenyE2E = action({
       (p: any) => p.type === "tool-approval-request",
     );
 
-    const { messageId } = await testDenialAgent.denyToolCall(ctx, {
-      threadId: thread.threadId,
-      approvalId: approvalPart.approvalId,
-      reason: "This file is important",
-    });
+    const { messageId } = await ctx.runMutation(
+      anyApi["approval.test"].submitDenialForTestDenialAgent,
+      {
+        threadId: thread.threadId,
+        approvalId: approvalPart.approvalId,
+        reason: "This file is important",
+      },
+    );
 
     const result2 = await testDenialAgent.streamText(
       ctx,
@@ -281,12 +286,9 @@ export const testMultiToolApproveE2E = action({
     // This is the scenario that requires mergeApprovalResponseMessages.
     let lastMessageId: string | undefined;
     for (const { approvalId } of approvalParts) {
-      const { messageId } = await testMultiToolApprovalAgent.approveToolCall(
-        ctx,
-        {
-          threadId: thread.threadId,
-          approvalId,
-        },
+      const { messageId } = await ctx.runMutation(
+        anyApi["approval.test"].submitApprovalForTestMultiToolAgent,
+        { threadId: thread.threadId, approvalId },
       );
       lastMessageId = messageId;
     }
@@ -313,11 +315,51 @@ export const testMultiToolApproveE2E = action({
   },
 });
 
+export const submitApprovalForTestApprovalAgent = mutation({
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { threadId, approvalId, reason }) => {
+    return testApprovalAgent.approveToolCall(ctx, { threadId, approvalId, reason });
+  },
+});
+
+export const submitDenialForTestDenialAgent = mutation({
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { threadId, approvalId, reason }) => {
+    return testDenialAgent.denyToolCall(ctx, { threadId, approvalId, reason });
+  },
+});
+
+export const submitApprovalForTestMultiToolAgent = mutation({
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { threadId, approvalId, reason }) => {
+    return testMultiToolApprovalAgent.approveToolCall(ctx, {
+      threadId,
+      approvalId,
+      reason,
+    });
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testApproveE2E: typeof testApproveE2E;
     testDenyE2E: typeof testDenyE2E;
     testMultiToolApproveE2E: typeof testMultiToolApproveE2E;
+    submitApprovalForTestApprovalAgent: typeof submitApprovalForTestApprovalAgent;
+    submitDenialForTestDenialAgent: typeof submitDenialForTestDenialAgent;
+    submitApprovalForTestMultiToolAgent: typeof submitApprovalForTestMultiToolAgent;
   };
 }>["fns"] = anyApi["approval.test"] as any;
 
