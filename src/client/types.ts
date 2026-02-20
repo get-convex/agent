@@ -40,6 +40,7 @@ import type {
 import type {
   MessageDoc,
   ProviderMetadata,
+  SaveMessagesCallbackArgs,
   StreamDelta,
   StreamMessage,
   ThreadDoc,
@@ -355,19 +356,7 @@ export type RawRequestResponseHandler = (
   },
 ) => void | Promise<void>;
 
-/**
- * The arguments passed to the onSaveMessages callback mutation.
- */
-export type SaveMessagesCallbackArgs = {
-  /**
-   * The thread the messages were saved to.
-   */
-  threadId: string;
-  /**
-   * The messages that were saved.
-   */
-  messages: MessageDoc[];
-};
+export type { SaveMessagesCallbackArgs } from "../validators.js";
 
 /**
  * A reference to a mutation function that will be called whenever messages are
@@ -383,12 +372,10 @@ export type SaveMessagesCallbackArgs = {
  * @example
  * ```ts
  * // In your convex/myModule.ts:
+ * import { vSaveMessagesArgs } from "@convex-dev/agent";
+ *
  * export const onNewMessages = internalMutation({
- *   args: {
- *     userId: v.optional(v.string()),
- *     threadId: v.string(),
- *     messages: v.array(vMessageDoc),
- *   },
+ *   args: vSaveMessagesArgs,
  *   handler: async (ctx, args) => {
  *     // This runs in the same transaction as the message save
  *     await ctx.db.insert("messageEvents", {

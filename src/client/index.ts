@@ -125,6 +125,7 @@ export {
   vMessageDoc,
   vPaginationResult,
   vProviderMetadata,
+  vSaveMessagesArgs,
   vSource,
   vStorageOptions,
   vStreamArgs,
