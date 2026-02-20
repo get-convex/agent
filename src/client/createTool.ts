@@ -11,7 +11,7 @@ import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import type { ProviderOptions } from "../validators.js";
 import type { Agent } from "./index.js";
 
-const MIGRATION_URL = "https://github.com/get-convex/agent/blob/main/MIGRATION.md";
+const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
 function warnDeprecation(key: string, message: string) {
   if (!warnedDeprecations.has(key)) {
@@ -72,60 +72,57 @@ type NeverOptional<N, T> = 0 extends 1 & N
     ? Partial<Record<keyof T, undefined>>
     : T;
 
+/**
+ * Error message type for deprecated 'handler' property.
+ * Using a string literal type causes TypeScript to show this message in errors.
+ */
+type HANDLER_REMOVED_ERROR =
+  "⚠️ 'handler' was removed in @convex-dev/agent v0.6.0. Rename to 'execute'. See: node_modules/@convex-dev/agent/MIGRATION.md";
+
 export type ToolOutputPropertiesCtx<
   INPUT,
   OUTPUT,
   Ctx extends ToolCtx = ToolCtx,
 > = NeverOptional<
   OUTPUT,
-  | {
-      /**
-       * An async function that is called with the arguments from the tool call and produces a result.
-       * If `execute` (or `handler`) is not provided, the tool will not be executed automatically.
-       *
-       * @param input - The input of the tool call.
-       * @param options.abortSignal - A signal that can be used to abort the tool call.
-       */
-      execute: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
-      outputSchema?: FlexibleSchema<OUTPUT>;
-      handler?: never;
-    }
-  | {
-      /** @deprecated Use execute instead. */
-      handler: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
-      outputSchema?: FlexibleSchema<OUTPUT>;
-      execute?: never;
-    }
-  | {
-      outputSchema: FlexibleSchema<OUTPUT>;
-      execute?: never;
-      handler?: never;
-    }
+  {
+    /**
+     * An async function that is called with the arguments from the tool call and produces a result.
+     * If `execute` is not provided, the tool will not be executed automatically.
+     *
+     * @param input - The input of the tool call.
+     * @param options.abortSignal - A signal that can be used to abort the tool call.
+     */
+    execute?: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
+    outputSchema?: FlexibleSchema<OUTPUT>;
+    /**
+     * @deprecated Removed in v0.6.0. Use `execute` instead.
+     */
+    handler?: HANDLER_REMOVED_ERROR;
+  }
 >;
 
-export type ToolInputProperties<INPUT> =
-  | {
-      /**
-       * The schema of the input that the tool expects.
-       * The language model will use this to generate the input.
-       * It is also used to validate the output of the language model.
-       *
-       * You can use descriptions on the schema properties to make the input understandable for the language model.
-       */
-      inputSchema: FlexibleSchema<INPUT>;
-      args?: never;
-    }
-  | {
-      /**
-       * The schema of the input that the tool expects. The language model will use this to generate the input.
-       * It is also used to validate the output of the language model.
-       * Use descriptions to make the input understandable for the language model.
-       *
-       * @deprecated Use inputSchema instead.
-       */
-      args: FlexibleSchema<INPUT>;
-      inputSchema?: never;
-    };
+/**
+ * Error message type for deprecated 'args' property.
+ * Using a string literal type causes TypeScript to show this message in errors.
+ */
+type ARGS_REMOVED_ERROR =
+  "⚠️ 'args' was removed in @convex-dev/agent v0.6.0. Rename to 'inputSchema'. See: node_modules/@convex-dev/agent/MIGRATION.md";
+
+export type ToolInputProperties<INPUT> = {
+  /**
+   * The schema of the input that the tool expects.
+   * The language model will use this to generate the input.
+   * It is also used to validate the output of the language model.
+   *
+   * You can use descriptions on the schema properties to make the input understandable for the language model.
+   */
+  inputSchema: FlexibleSchema<INPUT>;
+  /**
+   * @deprecated Removed in v0.6.0. Use `inputSchema` instead.
+   */
+  args?: ARGS_REMOVED_ERROR;
+};
 
 /**
  * This is a wrapper around the ai.tool function that adds extra context to the
@@ -238,24 +235,25 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
       ) => ToolResultOutput | PromiseLike<ToolResultOutput>;
     },
 ): Tool<INPUT, OUTPUT> {
-  const inputSchema = def.inputSchema ?? def.args;
+  // Runtime backwards compat - types will show errors but runtime still works
+  const inputSchema = def.inputSchema ?? (def as any).args;
   if (!inputSchema)
-    throw new Error("To use a Convex tool, you must provide an `inputSchema` (or `args`)");
+    throw new Error("To use a Convex tool, you must provide an `inputSchema`");
 
-  if (def.args && !def.inputSchema) {
+  if ((def as any).args && !def.inputSchema) {
     warnDeprecation(
       "createTool.args",
       "createTool: 'args' is deprecated. Use 'inputSchema' instead.",
     );
   }
-  if (def.handler && !def.execute) {
+  if ((def as any).handler && !def.execute) {
     warnDeprecation(
       "createTool.handler",
       "createTool: 'handler' is deprecated. Use 'execute' instead.",
     );
   }
 
-  const executeHandler = def.execute ?? def.handler;
+  const executeHandler = def.execute ?? (def as any).handler;
   if (!executeHandler && !def.outputSchema)
     throw new Error(
       "To use a Convex tool, you must either provide an execute" +

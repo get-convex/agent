@@ -41,7 +41,8 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "MIGRATION.md"
   ],
   "exports": {
     "./package.json": "./package.json",
