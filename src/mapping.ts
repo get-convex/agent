@@ -46,8 +46,6 @@ import {
   convertUint8ArrayToBase64,
   type ProviderOptions,
   type ReasoningPart,
-  type ToolApprovalRequest,
-  type ToolApprovalResponse,
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
 import {
@@ -590,7 +588,7 @@ export function toModelMessageContent(
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
             ...metadata,
-          } satisfies ToolApprovalRequest;
+          } satisfies Infer<typeof vToolApprovalRequest>;
         case "tool-approval-response":
           return {
             type: part.type,
@@ -599,7 +597,7 @@ export function toModelMessageContent(
             reason: part.reason,
             providerExecuted: part.providerExecuted,
             ...metadata,
-          } satisfies ToolApprovalResponse;
+          } satisfies Infer<typeof vToolApprovalResponse>;
         default:
           return null;
       }

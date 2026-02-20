@@ -537,10 +537,7 @@ function createAssistantUIMessage<
               call.output = output;
             }
           } else {
-            console.warn(
-              "Tool result without preceding tool call.. adding anyways",
-              contentPart,
-            );
+            // Tool call is on a previous page - create standalone tool part
             if (hasError) {
               allParts.push({
                 type: `tool-${contentPart.toolName}`,
