@@ -85,6 +85,7 @@
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "^3.0.13",
+    "@ai-sdk/google": "^3.0.30",
     "@ai-sdk/groq": "^3.0.8",
     "@ai-sdk/openai": "^3.0.10",
     "@ai-sdk/provider": "^3.0.3",
