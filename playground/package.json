@@ -81,7 +81,7 @@
     "dotenv": "^16.5.0",
     "embla-carousel-react": "^8.3.0",
     "input-otp": "^1.2.4",
-    "lucide-react": "^0.548.0",
+    "lucide-react": "^0.574.0",
     "postcss": "^8.4.47",
     "react": "^19.2.3",
     "react-day-picker": "^9.8.0",
@@ -105,18 +105,18 @@
   },
   "devDependencies": {
     "@convex-dev/agent": "file:..",
-    "@eslint/js": "9.38.0",
-    "@types/node": "20.19.24",
-    "@types/react": "19.2.2",
-    "@types/react-dom": "19.2.2",
+    "@eslint/js": "9.39.2",
+    "@types/node": "20.19.33",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
     "convex": "file:../node_modules/convex",
-    "eslint": "9.38.0",
-    "eslint-plugin-react-hooks": "^6",
-    "eslint-plugin-react-refresh": "0.4.24",
-    "globals": "16.4.0",
+    "eslint": "9.39.2",
+    "eslint-plugin-react-hooks": "6.1.1",
+    "eslint-plugin-react-refresh": "0.5.0",
+    "globals": "16.5.0",
     "react": "file:../node_modules/react",
     "react-dom": "file:../node_modules/react-dom",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.46.2"
+    "typescript-eslint": "8.56.0"
   }
 }
