@@ -43,7 +43,24 @@ export function useSmoothText(
     lastUpdateLength: text.length,
     charsPerMs: charsPerSec / 1000,
     initial: true,
+    hasStreamed: startStreaming,
   });
+
+  // Track if streaming has ever been activated
+  if (startStreaming) {
+    smoothState.current.hasStreamed = true;
+  }
+
+  // If streaming was never activated, snap to the full text immediately.
+  // This prevents non-streaming messages (e.g. HTTP-streamed results that
+  // arrive all at once in the DB) from being animated.
+  if (!smoothState.current.hasStreamed && smoothState.current.cursor < text.length) {
+    smoothState.current.cursor = text.length;
+    smoothState.current.lastUpdateLength = text.length;
+    if (visibleText !== text) {
+      setVisibleText(text);
+    }
+  }
 
   const isStreaming = smoothState.current.cursor < text.length;
 

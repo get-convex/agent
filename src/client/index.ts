@@ -17,7 +17,7 @@ import type {
   ToolChoice,
   ToolSet,
 } from "ai";
-import { generateObject, generateText, stepCountIs, streamObject } from "ai";
+import { generateObject, stepCountIs, streamObject } from "ai";
 
 const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
@@ -98,10 +98,16 @@ import type {
   AgentPrompt,
   Output,
 } from "./types.js";
+import { generateText as standaloneGenerateText } from "./generateText.js";
 import { streamText } from "./streamText.js";
-import { errorToString, willContinue } from "./utils.js";
+import { errorToString } from "./utils.js";
 
 export { stepCountIs } from "ai";
+export {
+  httpStreamText,
+  httpStreamUIMessages,
+  type HttpStreamOptions,
+} from "./http.js";
 export {
   docsToModelMessages,
   toModelMessage,
@@ -161,7 +167,9 @@ export {
   embedMessages,
   embedMany,
 } from "./search.js";
+export { generateText } from "./generateText.js";
 export { startGeneration } from "./start.js";
+export { streamText } from "./streamText.js";
 export {
   DEFAULT_STREAMING_OPTIONS,
   DeltaStreamer,
@@ -483,39 +491,25 @@ export class Agent<
     GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
       GenerationOutputMetadata
   > {
-    const { args, promptMessageId, order, ...call } = await this.start(
-      ctx,
-      generateTextArgs,
-      { ...threadOpts, ...options },
-    );
-
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    const steps: StepResult<Tools>[] = [];
-    try {
-      const result = (await generateText<Tools, OUTPUT>({
-        ...args,
-        prepareStep: async (options) => {
-          const result = await generateTextArgs.prepareStep?.(options);
-          call.updateModel(result?.model ?? options.model);
-          return result;
-        },
-        onStepFinish: async (step) => {
-          steps.push(step);
-          await call.save({ step }, await willContinue(steps, args.stopWhen));
-          return generateTextArgs.onStepFinish?.(step);
-        },
-      })) as GenerateTextResult<Tools, OUTPUT>;
-      const metadata: GenerationOutputMetadata = {
-        promptMessageId,
-        order,
-        savedMessages: call.getSavedMessages(),
-        messageId: promptMessageId,
-      };
-      return Object.assign(result, metadata);
-    } catch (error) {
-      await call.fail(errorToString(error));
-      throw error;
-    }
+    return standaloneGenerateText<Tools, OUTPUT>(
+      ctx,
+      this.component,
+      {
+        ...generateTextArgs,
+        model: generateTextArgs.model ?? this.options.languageModel,
+        tools: (generateTextArgs.tools ?? this.options.tools) as Tools,
+        system: generateTextArgs.system ?? this.options.instructions,
+        stopWhen: (generateTextArgs.stopWhen ?? this.options.stopWhen) as any,
+      },
+      {
+        ...threadOpts,
+        ...this.options,
+        agentName: this.options.name,
+        agentForToolCtx: this,
+        ...options,
+      },
+    );
   }
 
   /**
@@ -1598,6 +1592,137 @@ export class Agent<
         };
       },
     });
+  }
+
+  /**
+   * Create a handler function for an HTTP streaming endpoint.
+   * Returns a plain function `(ctx, request) => Promise<Response>` that
+   * you wrap in your app's `httpAction()`.
+   *
+   * The handler parses the JSON body for `{ threadId?, prompt?, messages? }`,
+   * creates a thread if needed, streams the response, and returns it with
+   * `X-Message-Id` and `X-Stream-Id` headers.
+   *
+   * @example
+   * ```ts
+   * import { httpAction } from "./_generated/server";
+   *
+   * // In convex/http.ts:
+   * http.route({
+   *   path: "/chat",
+   *   method: "POST",
+   *   handler: httpAction(myAgent.asHttpAction()),
+   * });
+   * ```
+   */
+  asHttpAction<DataModel extends GenericDataModel>(
+    spec?: MaybeCustomCtx<CustomCtx, DataModel, AgentTools> & {
+      /**
+       * Whether to save incremental data (deltas) from streaming responses
+       * to the database alongside the HTTP stream. Defaults to false.
+       */
+      saveStreamDeltas?: boolean | StreamingOptions;
+      /**
+       * When to stop generating text.
+       * Defaults to the {@link Agent["options"].stopWhen} option.
+       */
+      stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
+      /**
+       * The response format:
+       * - `"text"` (default) — plain text stream via `toTextStreamResponse()`
+       * - `"ui-messages"` — rich stream via `toUIMessageStreamResponse()`
+       */
+      format?: "text" | "ui-messages";
+      /**
+       * Extra headers to add to the response (e.g. CORS headers).
+       */
+      corsHeaders?: Record<string, string>;
+      /**
+       * Optional authorization callback. Receives the raw request and
+       * returns `{ userId?, threadId? }` to override the body values.
+       * Throw to reject the request.
+       */
+      authorize?: (
+        ctx: GenericActionCtx<DataModel>,
+        request: Request,
+      ) => Promise<{ userId?: string; threadId?: string } | void>;
+    } & Options,
+  ): (
+    ctx: GenericActionCtx<DataModel>,
+    request: Request,
+  ) => Promise<Response> {
+    return async (ctx_: GenericActionCtx<DataModel>, request: Request) => {
+      const body = (await request.json()) as {
+        threadId?: string;
+        prompt?: string;
+        promptMessageId?: string;
+        messages?: any[];
+        [key: string]: unknown;
+      };
+
+      let userId: string | undefined;
+      let threadId: string | undefined = body.threadId;
+
+      if (spec?.authorize) {
+        const authResult = await spec.authorize(ctx_, request);
+        if (authResult?.userId) userId = authResult.userId;
+        if (authResult?.threadId) threadId = authResult.threadId;
+      }
+
+      const ctx = (
+        spec?.customCtx
+          ? {
+              ...ctx_,
+              ...spec.customCtx(
+                ctx_,
+                { userId, threadId },
+                { prompt: body.prompt } as any,
+              ),
+            }
+          : ctx_
+      ) as GenericActionCtx<GenericDataModel> & CustomCtx;
+
+      if (!threadId) {
+        threadId = await createThread(ctx, this.component, {
+          userId: userId ?? null,
+        });
+      }
+
+      const result = await this.streamText(
+        ctx as ActionCtx & CustomCtx,
+        { threadId, userId },
+        {
+          prompt: body.prompt,
+          promptMessageId: body.promptMessageId,
+          messages: body.messages?.map(toModelMessage),
+          stopWhen: spec?.stopWhen,
+        },
+        {
+          contextOptions: spec?.contextOptions,
+          storageOptions: spec?.storageOptions,
+          saveStreamDeltas: spec?.saveStreamDeltas,
+        },
+      );
+
+      const response =
+        spec?.format === "ui-messages"
+          ? result.toUIMessageStreamResponse()
+          : result.toTextStreamResponse();
+
+      if (result.promptMessageId) {
+        response.headers.set("X-Message-Id", result.promptMessageId);
+      }
+      if (result.streamId) {
+        response.headers.set("X-Stream-Id", result.streamId);
+      }
+      if (spec?.corsHeaders) {
+        for (const [key, value] of Object.entries(spec.corsHeaders)) {
+          response.headers.set(key, value);
+        }
+      }
+
+      return response;
+    };
   }
 
   /**

@@ -339,7 +339,7 @@ export class DeltaStreamer<T> {
         e instanceof Error ? e.message : "unknown error",
       );
       this.abortController.abort();
-      throw e;
+      return;
     }
     // Now that we've sent the delta, check if we need to send another one.
     if (
@@ -374,7 +374,11 @@ export class DeltaStreamer<T> {
     if (!this.streamId) {
       return;
     }
-    await this.#ongoingWrite;
+    // Drain the entire self-chaining write queue. Each #sendDelta may
+    // spawn a follow-up by reassigning #ongoingWrite, so loop until idle.
+    while (this.#ongoingWrite) {
+      await this.#ongoingWrite;
+    }
     await this.#sendDelta();
     await this.ctx.runMutation(this.component.streams.finish, {
       streamId: this.streamId,
@@ -389,7 +393,9 @@ export class DeltaStreamer<T> {
     if (!this.streamId) {
       return;
     }
-    await this.#ongoingWrite;
+    while (this.#ongoingWrite) {
+      await this.#ongoingWrite;
+    }
     await this.ctx.runMutation(this.component.streams.abort, {
       streamId: this.streamId,
       reason,
