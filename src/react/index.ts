@@ -12,9 +12,15 @@ export {
 } from "./useThreadMessages.js";
 export { type UIMessagesQuery, useUIMessages } from "./useUIMessages.js";
 export { useStreamingUIMessages } from "./useStreamingUIMessages.js";
+export { useHttpStream } from "./useHttpStream.js";
+export { consumeTextStream, supportsStreaming } from "./httpStreamUtils.js";
 
 /**
- * @deprecated use useThreadMessages or useStreamingThreadMessages instead
+ * @deprecated Use {@link useHttpStream} instead for HTTP streaming with
+ * deduplication support (`streamId`, `messageId`, `abort()`), or use
+ * `useUIMessages` / `useThreadMessages` with `stream: true` for
+ * WebSocket delta streaming.
+ *
  * Use this hook to stream text from a server action, using the
  * toTextStreamResponse or equivalent HTTP streaming endpoint returning text.
  * @param url The URL of the server action to stream text from.

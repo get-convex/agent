@@ -181,6 +181,7 @@ export async function streamText<
     promptMessageId,
     order,
     savedMessages: call.getSavedMessages(),
+    streamId: streamer?.streamId,
     messageId: promptMessageId,
   };
   return Object.assign(result, metadata);

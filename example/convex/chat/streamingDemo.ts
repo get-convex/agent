@@ -12,7 +12,6 @@
  */
 import { paginationOptsValidator } from "convex/server";
 import {
-  createThread,
   listUIMessages,
   syncStreams,
   abortStream,
@@ -78,22 +77,17 @@ export const streamResponse = internalAction({
 // Streams text directly over an HTTP response. Useful for single-client
 // consumption (e.g., curl, fetch, or SSE-like patterns).
 //
+// Uses `agent.asHttpAction()` — a factory method that returns a handler
+// for httpAction(). It parses the JSON body, creates a thread if needed,
+// streams the response, and sets X-Message-Id / X-Stream-Id headers.
+//
 // Note: deltas are NOT saved by default here. To save deltas AND stream over
 // HTTP simultaneously, add `saveStreamDeltas: true` to the options.
 // ============================================================================
 
-export const streamOverHttp = httpAction(async (ctx, request) => {
-  const body = (await request.json()) as {
-    threadId?: string;
-    prompt: string;
-  };
-  const threadId =
-    body.threadId ?? (await createThread(ctx, components.agent));
-  const result = await agent.streamText(ctx, { threadId }, body);
-  const response = result.toTextStreamResponse();
-  response.headers.set("X-Message-Id", result.promptMessageId!);
-  return response;
-});
+export const streamOverHttp = httpAction(
+  agent.asHttpAction(),
+);
 
 // ============================================================================
 // Pattern 3: One-Shot Streaming

@@ -15,6 +15,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
   optimisticallySendMessage,
+  useHttpStream,
   useSmoothText,
   useUIMessages,
   type UIMessage,
@@ -136,6 +137,11 @@ function ChatPanel({
   mode: StreamMode;
   reset: () => void;
 }) {
+  const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+  const httpUrl = convexUrl.replace(/\.cloud$/, ".site");
+
+  const httpStream = useHttpStream({ url: `${httpUrl}/streamTextDemo` });
+
   const {
     results: messages,
     status,
@@ -143,7 +149,11 @@ function ChatPanel({
   } = useUIMessages(
     api.chat.streamingDemo.listThreadMessages,
     { threadId },
-    { initialNumItems: 20, stream: true },
+    {
+      initialNumItems: 20,
+      stream: true,
+      skipStreamIds: httpStream.streamId ? [httpStream.streamId] : [],
+    },
   );
 
   const sendDelta = useMutation(
@@ -157,9 +167,10 @@ function ChatPanel({
   );
 
   const [prompt, setPrompt] = useState("Hello! Tell me a joke.");
-  const [httpText, setHttpText] = useState("");
-  const [httpStreaming, setHttpStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const httpText = httpStream.text;
+  const httpStreaming = httpStream.isStreaming;
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -168,15 +179,6 @@ function ChatPanel({
   useEffect(() => {
     scrollToBottom();
   }, [messages, httpText, scrollToBottom]);
-
-  // Clear the HTTP stream text once streaming ends. The final message is
-  // saved to the DB during streaming (via onStepFinish), so by the time
-  // the HTTP stream closes, the stored message is already in useUIMessages.
-  useEffect(() => {
-    if (httpText && !httpStreaming) {
-      setHttpText("");
-    }
-  }, [httpText, httpStreaming]);
 
   const isStreaming = messages.some((m) => m.status === "streaming");
 
@@ -194,7 +196,7 @@ function ChatPanel({
         console.error("oneshot error:", e),
       );
     } else if (mode === "http") {
-      await streamOverHttp(threadId, text, setHttpText, setHttpStreaming);
+      await httpStream.send({ threadId, prompt: text });
     }
   }
 
@@ -216,12 +218,12 @@ function ChatPanel({
                 (m) =>
                   // While HTTP streaming, hide the pending assistant message —
                   // its content is shown in the HTTP stream bubble instead.
-                  !(httpText && m.role === "assistant" && m.status === "pending"),
+                  !(httpStreaming && httpText && m.role === "assistant" && m.status === "pending"),
               )
               .map((m) => (
                 <MessageBubble key={m.key} message={m} />
               ))}
-            {httpText && (() => {
+            {httpStreaming && httpText && (() => {
               // Grab tool parts from the pending assistant message
               const pending = messages.find(
                 (m) => m.role === "assistant" && m.status === "pending",
@@ -294,6 +296,9 @@ function ChatPanel({
               type="button"
               className="px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition font-medium"
               onClick={() => {
+                if (httpStreaming) {
+                  httpStream.abort();
+                }
                 const streaming = messages.find(
                   (m) => m.status === "streaming",
                 );
@@ -317,7 +322,7 @@ function ChatPanel({
             type="button"
             className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition text-sm"
             onClick={() => {
-              setHttpText("");
+              httpStream.abort();
               reset();
             }}
           >
@@ -337,52 +342,6 @@ function ChatPanel({
       </div>
     </>
   );
-}
-
-// ============================================================================
-// HTTP Streaming Helper
-// ============================================================================
-
-async function streamOverHttp(
-  threadId: string,
-  prompt: string,
-  onText: (text: string) => void,
-  onStreaming: (streaming: boolean) => void,
-) {
-  const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
-  // Derive the HTTP actions URL from the Convex deployment URL
-  const httpUrl = convexUrl.replace(/\.cloud$/, ".site");
-  onStreaming(true);
-  onText("");
-
-  try {
-    const res = await fetch(`${httpUrl}/streamText`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threadId, prompt }),
-    });
-
-    if (!res.ok || !res.body) {
-      onText(`Error: ${res.status} ${res.statusText}`);
-      onStreaming(false);
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let accumulated = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      accumulated += decoder.decode(value, { stream: true });
-      onText(accumulated);
-    }
-  } catch (err) {
-    onText(`Stream error: ${err}`);
-  } finally {
-    onStreaming(false);
-  }
 }
 
 // ============================================================================

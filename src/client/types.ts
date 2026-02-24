@@ -269,6 +269,14 @@ export type GenerationOutputMetadata = {
    */
   savedMessages?: MessageDoc[];
   /**
+   * The ID of the delta stream, if `saveStreamDeltas` was enabled.
+   * Useful for HTTP streaming deduplication: pass this as a `skipStreamIds`
+   * entry to `useUIMessages` / `useThreadMessages` to avoid showing the
+   * same content twice (once from the HTTP stream and once from the
+   * persisted delta stream).
+   */
+  streamId?: string;
+  /**
    * @deprecated Use promptMessageId instead.
    * The ID of the prompt message for the generation.
    */
