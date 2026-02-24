@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "hive": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Applications/Hive.app/Contents/Resources/app.asar/dist/main/mcp-server.js"
+      ],
+      "env": {
+        "MCP_SOCKET_PATH": "/Users/magicseth/Library/Application Support/Hive/mcp.sock"
+      }
+    }
+  }
+}
