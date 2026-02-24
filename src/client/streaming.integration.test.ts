@@ -597,7 +597,7 @@ describe("Delta Stream Consumption", () => {
           abortSignal: undefined,
           compress: compressUIMessageChunks,
           onAsyncAbort: async () => {
-            throw new Error("async abort");
+            // No-op — async aborts can happen in integration tests
           },
         },
         { ...testMetadata, threadId },

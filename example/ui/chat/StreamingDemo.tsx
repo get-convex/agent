@@ -140,6 +140,9 @@ function ChatPanel({
   reset: () => void;
 }) {
   const convexUrl = import.meta.env.VITE_CONVEX_URL as string;
+  if (!convexUrl.endsWith(".cloud")) {
+    console.warn("Unexpected Convex URL format; HTTP streaming may not work:", convexUrl);
+  }
   const httpUrl = convexUrl.replace(/\.cloud$/, ".site");
 
   const httpStream = useHttpStream({ url: `${httpUrl}/streamTextDemo` });
