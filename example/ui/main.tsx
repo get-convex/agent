@@ -12,6 +12,7 @@ import RagBasic from "./rag/RagBasic";
 import { StrictMode } from "react";
 import StreamArray from "./objects/StreamArray";
 import ChatApproval from "./chat/ChatApproval";
+import StreamingDemo from "./chat/StreamingDemo";
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
@@ -48,6 +49,7 @@ export function App() {
             <Route path="/weather-fashion" element={<WeatherFashion />} />
             <Route path="/stream-array" element={<StreamArray />} />
             <Route path="/chat-approval" element={<ChatApproval />} />
+            <Route path="/streaming-demo" element={<StreamingDemo />} />
           </Routes>
         </main>
         <Toaster />
@@ -150,6 +152,20 @@ function Index() {
               Demonstrates human-in-the-loop approval for tool calls. Tools can
               require approval before execution, and users can approve or deny
               with an optional reason.
+            </p>
+          </li>
+          <li className="border rounded p-4 hover:shadow transition border-indigo-200 bg-indigo-50">
+            <Link
+              to="/streaming-demo"
+              className="text-xl font-semibold text-indigo-700 hover:underline"
+            >
+              Full Streaming Demo
+            </Link>
+            <p className="mt-2 text-gray-700">
+              Comprehensive demo of all streaming patterns: async delta
+              streaming, HTTP streaming, one-shot streaming, stream abort,
+              lifecycle visualization, and fallback behavior. Includes a
+              stream inspector panel.
             </p>
           </li>
         </ul>
