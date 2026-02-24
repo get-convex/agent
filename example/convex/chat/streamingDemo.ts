@@ -28,7 +28,7 @@ import {
 } from "../_generated/server";
 import { v } from "convex/values";
 import { authorizeThreadAccess } from "../threads";
-import { agent } from "../agents/simple";
+import { streamingDemoAgent } from "../agents/streamingDemo";
 
 // ============================================================================
 // Pattern 1: Async Delta Streaming (RECOMMENDED)
@@ -45,7 +45,7 @@ export const sendMessage = mutation({
   args: { prompt: v.string(), threadId: v.string() },
   handler: async (ctx, { prompt, threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
-    const { messageId } = await agent.saveMessage(ctx, {
+    const { messageId } = await streamingDemoAgent.saveMessage(ctx, {
       threadId,
       prompt,
       skipEmbeddings: true,
@@ -61,7 +61,7 @@ export const sendMessage = mutation({
 export const streamResponse = internalAction({
   args: { promptMessageId: v.string(), threadId: v.string() },
   handler: async (ctx, { promptMessageId, threadId }) => {
-    const result = await agent.streamText(
+    const result = await streamingDemoAgent.streamText(
       ctx,
       { threadId },
       { promptMessageId },
@@ -86,7 +86,7 @@ export const streamResponse = internalAction({
 // ============================================================================
 
 export const streamOverHttp = httpAction(
-  agent.asHttpAction(),
+  streamingDemoAgent.asHttpAction(),
 );
 
 // ============================================================================
@@ -100,12 +100,80 @@ export const streamOneShot = action({
   args: { prompt: v.string(), threadId: v.string() },
   handler: async (ctx, { prompt, threadId }) => {
     await authorizeThreadAccess(ctx, threadId);
-    await agent.streamText(
+    await streamingDemoAgent.streamText(
       ctx,
       { threadId },
       { prompt },
       { saveStreamDeltas: true },
     );
+  },
+});
+
+// ============================================================================
+// Tool Approval
+//
+// When the model calls a tool with `needsApproval`, generation pauses.
+// The client shows Approve/Deny buttons. After all pending approvals are
+// resolved, the client triggers continuation via delta streaming.
+//
+// In HTTP mode, the HTTP stream ends when approval is requested. The
+// continuation runs via delta streaming, which the UI already subscribes to.
+// ============================================================================
+
+/**
+ * Submit an approval decision for a single tool call.
+ */
+export const submitApproval = mutation({
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+    approved: v.boolean(),
+    reason: v.optional(v.string()),
+  },
+  returns: v.object({ messageId: v.string() }),
+  handler: async (ctx, { threadId, approvalId, approved, reason }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    const { messageId } = approved
+      ? await streamingDemoAgent.approveToolCall(ctx, { threadId, approvalId, reason })
+      : await streamingDemoAgent.denyToolCall(ctx, { threadId, approvalId, reason });
+    return { messageId };
+  },
+});
+
+/**
+ * Schedule continuation after all approvals are resolved.
+ */
+export const triggerContinuation = mutation({
+  args: {
+    threadId: v.string(),
+    lastApprovalMessageId: v.string(),
+  },
+  handler: async (ctx, { threadId, lastApprovalMessageId }) => {
+    await authorizeThreadAccess(ctx, threadId);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.chat.streamingDemo.continueAfterApprovals,
+      { threadId, lastApprovalMessageId },
+    );
+  },
+});
+
+/**
+ * Continue generation after all approvals in a step have been resolved.
+ */
+export const continueAfterApprovals = internalAction({
+  args: {
+    threadId: v.string(),
+    lastApprovalMessageId: v.string(),
+  },
+  handler: async (ctx, { threadId, lastApprovalMessageId }) => {
+    const result = await streamingDemoAgent.streamText(
+      ctx,
+      { threadId },
+      { promptMessageId: lastApprovalMessageId },
+      { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
+    );
+    await result.consumeStream();
   },
 });
 

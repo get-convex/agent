@@ -1655,6 +1655,7 @@ export class Agent<
       const body = (await request.json()) as {
         threadId?: string;
         prompt?: string;
+        promptMessageId?: string;
         messages?: any[];
         [key: string]: unknown;
       };
@@ -1692,6 +1693,7 @@ export class Agent<
         { threadId, userId },
         {
           prompt: body.prompt,
+          promptMessageId: body.promptMessageId,
           messages: body.messages?.map(toModelMessage),
           stopWhen: spec?.stopWhen,
         },

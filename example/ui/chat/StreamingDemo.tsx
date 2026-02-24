@@ -10,6 +10,7 @@
  * - Stream inspector panel showing active/finished/aborted streams
  * - Smooth text animation via useSmoothText
  * - Optimistic message sending
+ * - Tool approval flow (approve/deny buttons, auto-continuation)
  */
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -23,6 +24,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useDemoThread } from "@/hooks/use-demo-thread";
+import type { ToolUIPart } from "ai";
 
 type StreamMode = "delta" | "http" | "oneshot";
 
@@ -166,7 +168,60 @@ function ChatPanel({
     api.chat.streamingDemo.abortStreamByOrder,
   );
 
-  const [prompt, setPrompt] = useState("Hello! Tell me a joke.");
+  // Tool approval mutations
+  const submitApproval = useMutation(api.chat.streamingDemo.submitApproval);
+  const triggerContinuation = useMutation(api.chat.streamingDemo.triggerContinuation);
+
+  // Track the last approval messageId so we can use it for continuation.
+  const lastApprovalMessageIdRef = useRef<string | null>(null);
+  // Track whether we've already triggered continuation for this batch.
+  const continuationTriggeredRef = useRef(false);
+  // Track the mode used when the request was sent, so continuation uses the same mode.
+  const requestModeRef = useRef<StreamMode>(mode);
+
+  const hasPendingApprovals = messages.some((m) =>
+    m.parts.some(
+      (p) => p.type.startsWith("tool-") && (p as ToolUIPart).state === "approval-requested",
+    ),
+  );
+
+  // When all approvals are resolved (hasPendingApprovals goes false)
+  // and we have a saved messageId, trigger continuation.
+  // In HTTP mode, continuation also goes over HTTP. Otherwise, delta streaming.
+  useEffect(() => {
+    if (
+      !hasPendingApprovals &&
+      lastApprovalMessageIdRef.current &&
+      !continuationTriggeredRef.current
+    ) {
+      continuationTriggeredRef.current = true;
+      const messageId = lastApprovalMessageIdRef.current;
+      lastApprovalMessageIdRef.current = null;
+      if (requestModeRef.current === "http") {
+        void httpStream.send({ threadId, promptMessageId: messageId });
+      } else {
+        void triggerContinuation({
+          threadId,
+          lastApprovalMessageId: messageId,
+        });
+      }
+    }
+    if (hasPendingApprovals) {
+      continuationTriggeredRef.current = false;
+    }
+  }, [hasPendingApprovals, threadId, triggerContinuation, httpStream]);
+
+  async function handleApproval(args: {
+    threadId: string;
+    approvalId: string;
+    approved: boolean;
+    reason?: string;
+  }) {
+    const { messageId } = await submitApproval(args);
+    lastApprovalMessageIdRef.current = messageId;
+  }
+
+  const [prompt, setPrompt] = useState("Delete the file important.txt");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const httpText = httpStream.text;
@@ -186,6 +241,7 @@ function ChatPanel({
     const text = prompt.trim();
     if (!text) return;
     setPrompt("");
+    requestModeRef.current = mode;
 
     if (mode === "delta") {
       await sendDelta({ threadId, prompt: text });
@@ -221,7 +277,12 @@ function ChatPanel({
                   !(httpStreaming && httpText && m.role === "assistant" && m.status === "pending"),
               )
               .map((m) => (
-                <MessageBubble key={m.key} message={m} />
+                <MessageBubble
+                  key={m.key}
+                  message={m}
+                  threadId={threadId}
+                  onApproval={handleApproval}
+                />
               ))}
             {httpStreaming && httpText && (() => {
               // Grab tool parts from the pending assistant message
@@ -288,8 +349,9 @@ function ChatPanel({
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50"
-            placeholder="Type a message..."
+            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            placeholder={hasPendingApprovals ? "Respond to pending approvals first..." : "Type a message..."}
+            disabled={hasPendingApprovals}
           />
           {isStreaming || httpStreaming ? (
             <button
@@ -313,7 +375,7 @@ function ChatPanel({
             <button
               type="submit"
               className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-semibold disabled:opacity-50"
-              disabled={!prompt.trim()}
+              disabled={!prompt.trim() || hasPendingApprovals}
             >
               Send
             </button>
@@ -323,6 +385,8 @@ function ChatPanel({
             className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition text-sm"
             onClick={() => {
               httpStream.abort();
+              lastApprovalMessageIdRef.current = null;
+              continuationTriggeredRef.current = false;
               reset();
             }}
           >
@@ -348,7 +412,20 @@ function ChatPanel({
 // Message Bubble
 // ============================================================================
 
-function MessageBubble({ message }: { message: UIMessage }) {
+function MessageBubble({
+  message,
+  threadId,
+  onApproval,
+}: {
+  message: UIMessage;
+  threadId: string;
+  onApproval: (args: {
+    threadId: string;
+    approvalId: string;
+    approved: boolean;
+    reason?: string;
+  }) => Promise<unknown>;
+}) {
   const isUser = message.role === "user";
   const [visibleText] = useSmoothText(message.text, {
     startStreaming: message.status === "streaming",
@@ -361,7 +438,9 @@ function MessageBubble({ message }: { message: UIMessage }) {
     { startStreaming: message.status === "streaming" },
   );
 
-  const toolParts = message.parts.filter((p) => p.type.startsWith("tool-"));
+  const toolParts = message.parts.filter(
+    (p): p is ToolUIPart => p.type.startsWith("tool-"),
+  );
 
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -396,24 +475,14 @@ function MessageBubble({ message }: { message: UIMessage }) {
           </div>
         )}
 
-        {/* Tool calls */}
-        {toolParts.map((p: any) => (
-          <div
-            key={p.toolCallId}
-            className="text-xs bg-gray-100 rounded p-1.5 my-1 font-mono"
-          >
-            <span className="text-indigo-600">{p.type}</span>
-            {p.state && (
-              <span className="text-gray-400 ml-1">({p.state})</span>
-            )}
-            {p.output && (
-              <div className="text-gray-600 mt-0.5 truncate">
-                {typeof p.output === "string"
-                  ? p.output
-                  : JSON.stringify(p.output)}
-              </div>
-            )}
-          </div>
+        {/* Tool calls with approval UI */}
+        {toolParts.map((tool) => (
+          <ToolCallDisplay
+            key={tool.toolCallId}
+            tool={tool}
+            threadId={threadId}
+            onApproval={onApproval}
+          />
         ))}
 
         {/* Main text */}
@@ -421,6 +490,144 @@ function MessageBubble({ message }: { message: UIMessage }) {
       </div>
     </div>
   );
+}
+
+// ============================================================================
+// Tool Call Display with Approval UI
+// ============================================================================
+
+function ToolCallDisplay({
+  tool,
+  threadId,
+  onApproval,
+}: {
+  tool: ToolUIPart;
+  threadId: string;
+  onApproval: (args: {
+    threadId: string;
+    approvalId: string;
+    approved: boolean;
+    reason?: string;
+  }) => Promise<unknown>;
+}) {
+  const [denialReason, setDenialReason] = useState("");
+  const [showReasonInput, setShowReasonInput] = useState(false);
+  const toolName = tool.type.replace("tool-", "");
+  const approvalId = getToolApprovalId(tool);
+  const approvalReason = getToolApprovalReason(tool);
+
+  return (
+    <div className="mb-2 p-2 rounded bg-white/50 border border-gray-300 text-sm">
+      <div className="font-mono text-xs text-gray-500 mb-1">
+        {toolName}({JSON.stringify(tool.input)})
+      </div>
+
+      {tool.state === "approval-requested" && approvalId && (
+        <div className="mt-2">
+          <div className="text-amber-700 font-medium mb-2">
+            Approval required
+          </div>
+          {showReasonInput ? (
+            <div className="flex gap-2 items-center mb-2">
+              <input
+                type="text"
+                value={denialReason}
+                onChange={(e) => setDenialReason(e.target.value)}
+                placeholder="Reason for denial..."
+                className="flex-1 px-2 py-1 text-sm rounded border border-gray-300"
+              />
+              <button
+                className="px-3 py-1 rounded bg-red-500 text-white text-sm hover:bg-red-600"
+                onClick={() => {
+                  void onApproval({
+                    threadId,
+                    approvalId,
+                    approved: false,
+                    reason: denialReason || undefined,
+                  });
+                }}
+              >
+                Deny
+              </button>
+              <button
+                className="text-xs text-gray-500 hover:underline"
+                onClick={() => setShowReasonInput(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                className="px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                onClick={() => {
+                  void onApproval({
+                    threadId,
+                    approvalId,
+                    approved: true,
+                  });
+                }}
+              >
+                Approve
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-red-500 text-white text-sm hover:bg-red-600"
+                onClick={() => setShowReasonInput(true)}
+              >
+                Deny
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tool.state === "approval-responded" && (
+        <div className="text-green-700 text-xs">Approved - executing...</div>
+      )}
+
+      {tool.state === "output-denied" && (
+        <div className="text-red-600 text-xs">
+          Denied
+          {approvalReason && `: ${approvalReason}`}
+        </div>
+      )}
+
+      {tool.state === "output-available" && (
+        <div className="text-green-700 text-xs mt-1">
+          Result: {JSON.stringify("output" in tool ? tool.output : undefined)}
+        </div>
+      )}
+
+      {tool.state === "output-error" && (
+        <div className="text-red-600 text-xs mt-1">
+          Error: {"errorText" in tool ? tool.errorText : "Unknown error"}
+        </div>
+      )}
+
+      {(tool.state === "input-available" || tool.state === "input-streaming") && (
+        <div className="text-gray-500 text-xs">Processing...</div>
+      )}
+    </div>
+  );
+}
+
+function getToolApprovalId(tool: ToolUIPart): string | undefined {
+  if (tool.state !== "approval-requested" || !("approval" in tool)) {
+    return undefined;
+  }
+  const approval = tool.approval as { id?: unknown } | undefined;
+  return typeof approval?.id === "string" ? approval.id : undefined;
+}
+
+function getToolApprovalReason(tool: ToolUIPart): string | undefined {
+  if (
+    (tool.state !== "output-denied" && tool.state !== "approval-requested") ||
+    !("approval" in tool)
+  ) {
+    return undefined;
+  }
+  const approval = tool.approval as { reason?: unknown } | undefined;
+  return typeof approval?.reason === "string" ? approval.reason : undefined;
 }
 
 // ============================================================================

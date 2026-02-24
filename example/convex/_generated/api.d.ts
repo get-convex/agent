@@ -13,6 +13,7 @@ import type * as agents_config from "../agents/config.js";
 import type * as agents_fashion from "../agents/fashion.js";
 import type * as agents_simple from "../agents/simple.js";
 import type * as agents_story from "../agents/story.js";
+import type * as agents_streamingDemo from "../agents/streamingDemo.js";
 import type * as agents_weather from "../agents/weather.js";
 import type * as chat_approval from "../chat/approval.js";
 import type * as chat_basic from "../chat/basic.js";
@@ -63,6 +64,7 @@ declare const fullApi: ApiFromModules<{
   "agents/fashion": typeof agents_fashion;
   "agents/simple": typeof agents_simple;
   "agents/story": typeof agents_story;
+  "agents/streamingDemo": typeof agents_streamingDemo;
   "agents/weather": typeof agents_weather;
   "chat/approval": typeof chat_approval;
   "chat/basic": typeof chat_basic;

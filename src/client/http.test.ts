@@ -241,6 +241,33 @@ export const testAsHttpActionUIMessages = action({
   },
 });
 
+export const testAsHttpActionWithPromptMessageId = action({
+  args: {},
+  handler: async (ctx) => {
+    const threadId = await createThread(ctx, components.agent, {});
+    // First, save a user message to get a promptMessageId
+    const { messageId } = await agent.saveMessage(ctx, {
+      threadId,
+      prompt: "Hello",
+      skipEmbeddings: true,
+    });
+    // Then use the HTTP action with promptMessageId (continuation pattern)
+    const handler = agent.asHttpAction();
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, promptMessageId: messageId }),
+    });
+    const response = await handler(ctx as any, request);
+    const text = await response.text();
+    return {
+      status: response.status,
+      hasText: text.length > 0,
+      hasMessageId: response.headers.has("X-Message-Id"),
+    };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testStreamTextStandalone: typeof testStreamTextStandalone;
@@ -252,6 +279,7 @@ const testApi: ApiFromModules<{
     testAsHttpActionWithCorsHeaders: typeof testAsHttpActionWithCorsHeaders;
     testAsHttpActionWithSaveDeltas: typeof testAsHttpActionWithSaveDeltas;
     testAsHttpActionUIMessages: typeof testAsHttpActionUIMessages;
+    testAsHttpActionWithPromptMessageId: typeof testAsHttpActionWithPromptMessageId;
   };
 }>["fns"] = anyApi["http.test"] as any;
 
@@ -351,5 +379,16 @@ describe("agent.asHttpAction()", () => {
     expect(result.hasText).toBe(true);
     expect(result.hasMessageId).toBe(true);
     expect(result.textDiffers).toBe(true);
+  });
+
+  test("accepts promptMessageId for continuations", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(
+      testApi.testAsHttpActionWithPromptMessageId,
+      {},
+    );
+    expect(result.status).toBe(200);
+    expect(result.hasText).toBe(true);
+    expect(result.hasMessageId).toBe(true);
   });
 });
