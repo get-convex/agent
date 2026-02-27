@@ -114,7 +114,9 @@ export const submitApproval = mutation({
   },
 });
 
-// 4. Continue generation after all approvals resolved
+// 4. Continue generation after all approvals resolved.
+//    Pass the last approval message ID as promptMessageId so the agent
+//    resumes generation from where the approval was issued.
 export const continueAfterApprovals = internalAction({
   args: { threadId: v.string(), lastApprovalMessageId: v.string() },
   handler: async (ctx, { threadId, lastApprovalMessageId }) => {
@@ -146,10 +148,14 @@ Approve/Deny buttons. Tool parts with `state === "approval-requested"` are
 waiting for a decision.
 
 ```tsx
+import { useEffect, useRef } from "react";
+import { useMutation } from "convex/react";
 import { useUIMessages, type UIMessage } from "@convex-dev/agent/react";
 import type { ToolUIPart } from "ai";
 
 function Chat({ threadId }: { threadId: string }) {
+  const lastApprovalMessageIdRef = useRef<string | null>(null);
+
   const { results: messages } = useUIMessages(
     api.chat.approval.listThreadMessages,
     { threadId },
