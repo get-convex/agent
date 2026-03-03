@@ -337,6 +337,10 @@ export type RawRequestResponseHandler = (
  */
 export type SaveMessagesCallbackArgs = {
   /**
+   * The user associated with the thread, if any.
+   */
+  userId?: string;
+  /**
    * The thread the messages were saved to.
    */
   threadId: string;
