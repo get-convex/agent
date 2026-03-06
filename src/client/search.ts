@@ -30,6 +30,7 @@ import type {
 } from "./types.js";
 import { inlineMessagesFiles } from "./files.js";
 import {
+  autoDenyUnresolvedApprovals,
   docsToModelMessages,
   mergeApprovalResponseMessages,
   toModelMessage,
@@ -289,6 +290,12 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
     return approvalId !== undefined && approvalResponseIds.has(approvalId);
   };
 
+  // Helper: check if tool call has a pending approval request
+  // (auto-deny handles these downstream, so they must survive the filter)
+  const hasApprovalRequest = (toolCallId: string) => {
+    return approvalRequestsByToolCallId.has(toolCallId);
+  };
+
   for (const doc of docs) {
     if (
       doc.message?.role === "assistant" &&
@@ -298,7 +305,8 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
         (p) =>
           p.type !== "tool-call" ||
           toolResultIds.has(p.toolCallId) ||
-          hasApprovalResponse(p.toolCallId),
+          hasApprovalResponse(p.toolCallId) ||
+          hasApprovalRequest(p.toolCallId),
       );
       if (content.length) {
         result.push({
@@ -641,13 +649,15 @@ export async function fetchContextWithPrompt(
   const inputPrompt = promptArray.map(toModelMessage);
   const existingResponses = docsToModelMessages(existingResponseDocs);
 
-  const allMessages = mergeApprovalResponseMessages([
-    ...search,
-    ...recent,
-    ...inputMessages,
-    ...inputPrompt,
-    ...existingResponses,
-  ]);
+  const allMessages = autoDenyUnresolvedApprovals(
+    mergeApprovalResponseMessages([
+      ...search,
+      ...recent,
+      ...inputMessages,
+      ...inputPrompt,
+      ...existingResponses,
+    ]),
+  );
   let processedMessages = args.contextHandler
     ? await args.contextHandler(ctx, {
         allMessages,
