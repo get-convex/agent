@@ -627,7 +627,7 @@ describe("Delta Stream Consumption", () => {
       // With compression and throttleMs=1000, text deltas should be merged
       expect(textDeltas.length).toBeLessThanOrEqual(1);
       if (textDeltas.length === 1) {
-        expect(textDeltas[0].delta).toBe("A B C");
+        expect((textDeltas[0] as { delta: string }).delta).toBe("A B C");
       }
 
       // Reasoning deltas should also be merged
@@ -675,7 +675,7 @@ describe("Delta Stream Consumption", () => {
     // Start from cursor=3 to skip first delta
     const { parts, cursor } = getParts(deltas, 3);
     expect(parts).toHaveLength(1);
-    expect(parts[0].type).toBe("new");
+    expect((parts[0] as { type: string }).type).toBe("new");
     expect(cursor).toBe(6);
   });
 
@@ -1191,7 +1191,7 @@ describe("Compression", () => {
     ];
     const compressed = compressUIMessageChunks(parts);
     expect(compressed).toHaveLength(1);
-    expect(compressed[0].delta).toBe("Thinking");
+    expect((compressed[0] as { delta: string }).delta).toBe("Thinking");
   });
 
   test("compressUIMessageChunks preserves non-delta parts", () => {

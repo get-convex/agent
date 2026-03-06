@@ -339,7 +339,7 @@ export class DeltaStreamer<T> {
         e instanceof Error ? e.message : "unknown error",
       );
       this.abortController.abort();
-      throw e;
+      return;
     }
     // Now that we've sent the delta, check if we need to send another one.
     if (
