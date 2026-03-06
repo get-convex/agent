@@ -32,7 +32,6 @@ import { inlineMessagesFiles } from "./files.js";
 import {
   autoDenyUnresolvedApprovals,
   docsToModelMessages,
-  mergeApprovalResponseMessages,
   toModelMessage,
 } from "../mapping.js";
 
@@ -649,15 +648,13 @@ export async function fetchContextWithPrompt(
   const inputPrompt = promptArray.map(toModelMessage);
   const existingResponses = docsToModelMessages(existingResponseDocs);
 
-  const allMessages = autoDenyUnresolvedApprovals(
-    mergeApprovalResponseMessages([
-      ...search,
-      ...recent,
-      ...inputMessages,
-      ...inputPrompt,
-      ...existingResponses,
-    ]),
-  );
+  const allMessages = [
+    ...search,
+    ...recent,
+    ...inputMessages,
+    ...inputPrompt,
+    ...existingResponses,
+  ];
   let processedMessages = args.contextHandler
     ? await args.contextHandler(ctx, {
         allMessages,
@@ -670,6 +667,11 @@ export async function fetchContextWithPrompt(
         threadId,
       })
     : allMessages;
+
+  // Post-process: auto-deny unresolved approvals so the AI SDK sees a
+  // complete history. Applied after contextHandler so custom handlers
+  // don't need to handle this.
+  processedMessages = autoDenyUnresolvedApprovals(processedMessages);
 
   // Process messages to inline localhost files (if not, file urls pointing to localhost will be sent to LLM providers)
   if (process.env.CONVEX_CLOUD_URL?.startsWith("http://127.0.0.1")) {

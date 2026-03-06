@@ -293,7 +293,8 @@ export class DeltaStreamer<T> {
       await this.addParts([chunk]);
     }
     // Skip finish if it will be handled externally (atomically with message save)
-    if (!this.#finishedExternally) {
+    // or if the stream was aborted (e.g., due to a failed delta write)
+    if (!this.#finishedExternally && !this.abortController.signal.aborted) {
       await this.finish();
     }
   }

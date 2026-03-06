@@ -1070,10 +1070,35 @@ export class Agent<
       reason?: string;
     },
   ): Promise<{ messageId: string }> {
-    const promptMessageId = await this.getApprovalRequestMessageId(ctx, {
-      threadId: args.threadId,
+    const { promptMessageId, existingResponseMessage } =
+      await this.findApprovalContext(ctx, {
+        threadId: args.threadId,
+        approvalId: args.approvalId,
+      });
+
+    const newPart = {
+      type: "tool-approval-response" as const,
       approvalId: args.approvalId,
-    });
+      approved: args.approved,
+      reason: args.reason,
+    };
+
+    // Merge into an existing approval-response message for this step
+    // so the AI SDK sees a single tool message per step.
+    if (existingResponseMessage) {
+      const existingContent = existingResponseMessage.message?.content;
+      const mergedContent = Array.isArray(existingContent)
+        ? [...(existingContent as any[]), newPart]
+        : [newPart];
+      await this.updateMessage(ctx, {
+        messageId: existingResponseMessage._id,
+        patch: {
+          message: { role: "tool", content: mergedContent },
+          status: "success",
+        },
+      });
+      return { messageId: existingResponseMessage._id };
+    }
 
     const { messageId } = await this.saveMessage(ctx, {
       threadId: args.threadId,
@@ -1081,28 +1106,25 @@ export class Agent<
       skipEmbeddings: true,
       message: {
         role: "tool",
-        content: [
-          {
-            type: "tool-approval-response",
-            approvalId: args.approvalId,
-            approved: args.approved,
-            reason: args.reason,
-          },
-        ],
+        content: [newPart],
       },
     });
     return { messageId };
   }
 
-  private async getApprovalRequestMessageId(
+  private async findApprovalContext(
     ctx: MutationCtx,
     args: { threadId: string; approvalId: string },
-  ): Promise<string> {
+  ): Promise<{
+    promptMessageId: string;
+    existingResponseMessage: MessageDoc | undefined;
+  }> {
     // NOTE: This pagination returns messages in descending order (newest first).
     // The "already handled" check (tool-approval-response) relies on seeing
     // responses before their corresponding requests. If the pagination order
     // changes, this logic will need to be updated.
     let cursor: string | null = null;
+    let existingResponseMessage: MessageDoc | undefined;
     do {
       const page = await this.listMessages(ctx, {
         threadId: args.threadId,
@@ -1119,11 +1141,18 @@ export class Agent<
           ) {
             throw new Error(`Approval ${args.approvalId} was already handled`);
           }
+          // Track the most recent tool-approval-response message for merging
+          if (
+            typedPart.type === "tool-approval-response" &&
+            !existingResponseMessage
+          ) {
+            existingResponseMessage = message;
+          }
           if (
             typedPart.type === "tool-approval-request" &&
             typedPart.approvalId === args.approvalId
           ) {
-            return message._id;
+            return { promptMessageId: message._id, existingResponseMessage };
           }
         }
       }

@@ -59,6 +59,7 @@ The typical approval flow involves four server functions:
    generation pauses and the `tool-approval-request` is persisted in the
    thread.
 3. **Submit an approval or denial** for each pending tool call.
+   `approveToolCall` and `denyToolCall` work from both mutations and actions.
 4. **Continue generation** once all pending approvals have been resolved.
 
 ```ts
@@ -93,7 +94,7 @@ export const generateResponse = internalAction({
   },
 });
 
-// 3. Submit an approval decision
+// 3. Submit an approval decision (can be a mutation or action)
 export const submitApproval = mutation({
   args: {
     threadId: v.string(),
