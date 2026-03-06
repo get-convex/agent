@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { createThread } from "./index.js";
 import type { GenericSchema, SchemaDefinition } from "convex/server";
 import { streamText } from "ai";
@@ -8,7 +8,6 @@ import {
   compressUIMessageChunks,
   DeltaStreamer,
   mergeTransforms,
-  DEFAULT_STREAMING_OPTIONS,
 } from "./streaming.js";
 import {
   getParts,
