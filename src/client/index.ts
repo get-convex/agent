@@ -1133,6 +1133,19 @@ export class Agent<
       for (const message of page.page) {
         const content = message.message?.content;
         if (!Array.isArray(content)) continue;
+        // Check if this assistant message starts a different approval step.
+        // If so, any response message we've seen so far belongs to a newer
+        // step — reset it so we don't merge across step boundaries.
+        if (
+          message.message?.role === "assistant" &&
+          content.some(
+            (p: any) =>
+              p.type === "tool-approval-request" &&
+              p.approvalId !== args.approvalId,
+          )
+        ) {
+          existingResponseMessage = undefined;
+        }
         for (const part of content) {
           const typedPart = part as { type?: unknown; approvalId?: unknown };
           if (

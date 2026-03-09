@@ -376,7 +376,13 @@ export class DeltaStreamer<T> {
       return;
     }
     await this.#ongoingWrite;
+    if (this.abortController.signal.aborted) {
+      return;
+    }
     await this.#sendDelta();
+    if (this.abortController.signal.aborted) {
+      return;
+    }
     await this.ctx.runMutation(this.component.streams.finish, {
       streamId: this.streamId,
     });
