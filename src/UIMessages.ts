@@ -396,6 +396,54 @@ function createAssistantUIMessage<
     ? ("streaming" as const)
     : lastMessage.status;
 
+<<<<<<< Updated upstream
+=======
+  // Extract approval parts from raw message content for UI rendering
+  type ApprovalPart =
+    | { type: "tool-approval-request"; approvalId: string; toolCallId: string }
+    | {
+        type: "tool-approval-response";
+        approvalId: string;
+        approved: boolean;
+        reason?: string;
+      };
+  const approvalParts: ApprovalPart[] = [];
+
+  // Extract execution-denied tool results from raw content for UI rendering
+  // (these are converted to text format for provider compatibility in start.ts)
+  type ExecutionDeniedInfo = {
+    toolCallId: string;
+    reason?: string;
+  };
+  const executionDeniedResults: ExecutionDeniedInfo[] = [];
+
+  for (const message of group) {
+    const rawContent = message.message?.content;
+    if (Array.isArray(rawContent)) {
+      for (const part of rawContent) {
+        if (
+          part.type === "tool-approval-request" ||
+          part.type === "tool-approval-response"
+        ) {
+          approvalParts.push(part as ApprovalPart);
+        }
+        // Check for execution-denied in tool-result outputs
+        if (
+          part.type === "tool-result" &&
+          typeof part.output === "object" &&
+          part.output !== null &&
+          (part.output as { type?: string }).type === "execution-denied"
+        ) {
+          executionDeniedResults.push({
+            toolCallId: part.toolCallId as string,
+            reason: (part.output as { reason?: string }).reason,
+          });
+        }
+      }
+    }
+  }
+
+>>>>>>> Stashed changes
   // Collect all parts from all messages
   const allParts: UIMessage<METADATA, DATA_PARTS, TOOLS>["parts"] = [];
 
@@ -477,6 +525,12 @@ function createAssistantUIMessage<
           break;
         }
         case "tool-result": {
+<<<<<<< Updated upstream
+=======
+          // Note: execution-denied outputs are handled separately via pre-extraction
+          // from raw content (converted to text format for providers in start.ts).
+          // See executionDeniedResults processing at the end of this function.
+>>>>>>> Stashed changes
           const typedPart = contentPart as unknown as ToolResultPart & {
             output: { type: string; value?: unknown; reason?: string };
           };
@@ -642,6 +696,87 @@ function createAssistantUIMessage<
     }
   }
 
+<<<<<<< Updated upstream
+=======
+  // Final output states that should not be overwritten by approval processing
+  const finalStates = new Set([
+    "output-available",
+    "output-error",
+    "output-denied",
+  ]);
+
+  // Process approval parts to update tool call states
+  for (const approvalPart of approvalParts) {
+    if (approvalPart.type === "tool-approval-request") {
+      const toolCallPart = allParts.find(
+        (part) =>
+          "toolCallId" in part && part.toolCallId === approvalPart.toolCallId,
+      ) as ToolUIPart | undefined;
+
+      if (toolCallPart) {
+        // Always set approval info (needed for response matching), but only
+        // update state if not in a final state
+        (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+          id: approvalPart.approvalId,
+        };
+        if (!finalStates.has(toolCallPart.state)) {
+          toolCallPart.state = "approval-requested";
+        }
+      }
+    } else if (approvalPart.type === "tool-approval-response") {
+      const toolCallPart = allParts.find(
+        (part) =>
+          "approval" in part &&
+          (part as ToolUIPart & { approval?: { id: string } }).approval?.id ===
+            approvalPart.approvalId,
+      ) as ToolUIPart | undefined;
+
+      if (toolCallPart) {
+        // Always update approval info, but only update state if not in a final state
+        (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+          id: approvalPart.approvalId,
+          approved: approvalPart.approved,
+          reason: approvalPart.reason,
+        };
+        if (!finalStates.has(toolCallPart.state)) {
+          if (approvalPart.approved) {
+            toolCallPart.state = "approval-responded";
+          } else {
+            toolCallPart.state = "output-denied";
+          }
+        }
+      }
+    }
+  }
+
+  // Process execution-denied results to update tool call states
+  for (const denied of executionDeniedResults) {
+    const toolCallPart = allParts.find(
+      (part) =>
+        "toolCallId" in part && part.toolCallId === denied.toolCallId,
+    ) as ToolUIPart | undefined;
+
+    if (toolCallPart) {
+      toolCallPart.state = "output-denied";
+      if (!("approval" in toolCallPart) || !toolCallPart.approval) {
+        (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+          id: "",
+          approved: false,
+          reason: denied.reason,
+        };
+      } else {
+        const approval = (
+          toolCallPart as ToolUIPart & {
+            approval: { approved?: boolean; reason?: string };
+          }
+        ).approval;
+        approval.approved = false;
+        approval.reason = denied.reason;
+      }
+    }
+  }
+
+>>>>>>> Stashed changes
   return {
     ...common,
     role: "assistant",
