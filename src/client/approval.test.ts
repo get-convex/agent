@@ -57,6 +57,17 @@ function getApprovalIdFromSavedMessages(
   return approvalRequest.approvalId;
 }
 
+// Second tool that also requires approval
+const renameFileTool = createTool({
+  description: "Rename a file",
+  inputSchema: z.object({
+    oldName: z.string(),
+    newName: z.string(),
+  }),
+  needsApproval: () => true,
+  execute: async (_ctx, input) => `Renamed: ${input.oldName} → ${input.newName}`,
+});
+
 // --- Agents (separate mock model instances to avoid shared callIndex) ---
 
 const approvalAgent = new Agent(components.agent, {
@@ -257,6 +268,106 @@ export const testApproveFlowWithInterveningMessage = action({
   },
 });
 
+// Agent that calls two tools in one step, both needing approval
+const multiToolAgent = new Agent(components.agent, {
+  name: "multi-tool-test",
+  instructions: "You manage files.",
+  tools: { deleteFile: deleteFileTool, renameFile: renameFileTool },
+  languageModel: mockModel({
+    contentSteps: [
+      // Step 1: model calls two tools at once
+      [
+        {
+          type: "tool-call",
+          toolCallId: "tc-multi-1",
+          toolName: "deleteFile",
+          input: JSON.stringify({ filename: "old.txt" }),
+        },
+        {
+          type: "tool-call",
+          toolCallId: "tc-multi-2",
+          toolName: "renameFile",
+          input: JSON.stringify({ oldName: "a.txt", newName: "b.txt" }),
+        },
+      ],
+      // Step 2: after both tools execute, model responds
+      [{ type: "text", text: "Done! Deleted old.txt and renamed a.txt to b.txt." }],
+    ],
+  }),
+  stopWhen: stepCountIs(5),
+  usageHandler: testUsageHandler,
+});
+
+export const testMultiToolApproveFlow = action({
+  args: {},
+  handler: async (ctx) => {
+    const { thread } = await multiToolAgent.createThread(ctx, {
+      userId: "u-multi",
+    });
+
+    // Step 1: Generate — model calls two tools, both need approval
+    const result1 = await thread.generateText({
+      prompt: "Delete old.txt and rename a.txt to b.txt",
+    });
+
+    // Extract both approval IDs
+    const approvalParts = result1.savedMessages
+      ?.flatMap((m) =>
+        Array.isArray(m.message?.content) ? m.message.content : [],
+      )
+      .filter(
+        (p) => (p as { type: string }).type === "tool-approval-request",
+      ) as Array<{ approvalId: string; toolCallId: string }>;
+
+    if (!approvalParts || approvalParts.length !== 2) {
+      throw new Error(
+        `Expected 2 approval requests, got ${approvalParts?.length ?? 0}`,
+      );
+    }
+
+    // Approve both tool calls
+    const { messageId: msgId1 } = await ctx.runMutation(
+      anyApi["approval.test"].submitApprovalForMultiToolAgent,
+      { threadId: thread.threadId, approvalId: approvalParts[0].approvalId },
+    );
+    const { messageId: msgId2 } = await ctx.runMutation(
+      anyApi["approval.test"].submitApprovalForMultiToolAgent,
+      { threadId: thread.threadId, approvalId: approvalParts[1].approvalId },
+    );
+
+    // Continue generation with the last approval message
+    const result2 = await thread.generateText({
+      promptMessageId: msgId2,
+    });
+
+    const allMessages = await multiToolAgent.listMessages(ctx, {
+      threadId: thread.threadId,
+      paginationOpts: { cursor: null, numItems: 40 },
+    });
+
+    return {
+      approvalCount: approvalParts.length,
+      firstText: result1.text,
+      secondText: result2.text,
+      threadMessageRoles: allMessages.page.map((m) => m.message?.role),
+      // Check that both approvals were merged into one tool message
+      toolMessageCount: allMessages.page.filter(
+        (m) => m.message?.role === "tool",
+      ).length,
+    };
+  },
+});
+
+export const submitApprovalForMultiToolAgent = mutation({
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+  },
+  handler: async (ctx, { threadId, approvalId }) => {
+    return multiToolAgent.approveToolCall(ctx, { threadId, approvalId });
+  },
+});
+
 export const submitApprovalForApprovalAgent = mutation({
   args: { threadId: v.string(), approvalId: v.string(), reason: v.optional(v.string()) },
   handler: async (ctx, { threadId, approvalId, reason }) => {
@@ -276,7 +387,9 @@ const testApi: ApiFromModules<{
     testApproveFlow: typeof testApproveFlow;
     testDenyFlow: typeof testDenyFlow;
     testApproveFlowWithInterveningMessage: typeof testApproveFlowWithInterveningMessage;
+    testMultiToolApproveFlow: typeof testMultiToolApproveFlow;
     submitApprovalForApprovalAgent: typeof submitApprovalForApprovalAgent;
+    submitApprovalForMultiToolAgent: typeof submitApprovalForMultiToolAgent;
     submitDenialForDenialAgent: typeof submitDenialForDenialAgent;
   };
 }>["fns"] = anyApi["approval.test"] as any;
@@ -336,6 +449,29 @@ describe("Tool Approval Workflow", () => {
     expect(result.usageCallCount).toBeGreaterThanOrEqual(2);
     expect(result.lastUsage!.inputTokenDetails).toBeDefined();
     expect(result.lastUsage!.outputTokenDetails).toBeDefined();
+  });
+
+  test("multi-tool: approve two tool calls from the same step", async () => {
+    usageCalls.length = 0;
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testMultiToolApproveFlow, {});
+
+    expect(result.approvalCount).toBe(2);
+    expect(result.firstText).toBe("");
+    expect(result.secondText).toBe(
+      "Done! Deleted old.txt and renamed a.txt to b.txt.",
+    );
+    // Both approval responses should be merged into one tool message
+    // (write-time merge in respondToToolCallApproval via findApprovalContext)
+    // Thread: user, assistant(2 tool-calls + 2 approvals),
+    //         tool(2 approval-responses merged), tool(2 tool-results), assistant(text)
+    expect(result.threadMessageRoles).toEqual([
+      "assistant", // final text
+      "tool", // tool-results
+      "tool", // approval-responses (merged)
+      "assistant", // tool-calls + approval-requests
+      "user", // prompt
+    ]);
   });
 
   test("approve remains valid with an intervening thread message", async () => {
