@@ -1125,12 +1125,22 @@ export class Agent<
     // changes, this logic will need to be updated.
     let cursor: string | null = null;
     let existingResponseMessage: MessageDoc | undefined;
+    // Limit the search to the most recent messages. Approvals should always
+    // be near the end of the thread — scanning further is wasteful.
+    const MAX_MESSAGES_TO_SCAN = 200;
+    let scanned = 0;
     do {
       const page = await this.listMessages(ctx, {
         threadId: args.threadId,
         paginationOpts: { cursor, numItems: 100 },
       });
       for (const message of page.page) {
+        scanned++;
+        if (scanned > MAX_MESSAGES_TO_SCAN) {
+          throw new Error(
+            `Approval ${args.approvalId} not found in the last ${MAX_MESSAGES_TO_SCAN} messages`,
+          );
+        }
         const content = message.message?.content;
         if (!Array.isArray(content)) continue;
         // Check if this assistant message starts a different approval step.
