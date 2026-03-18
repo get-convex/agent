@@ -334,7 +334,7 @@ export const testMultiToolApproveFlow = action({
     }
 
     // Approve both tool calls
-    const { messageId: msgId1 } = await ctx.runMutation(
+    const { messageId: _msgId1 } = await ctx.runMutation(
       anyApi["approval.test"].submitApprovalForMultiToolAgent,
       { threadId: thread.threadId, approvalId: approvalParts[0].approvalId },
     );
