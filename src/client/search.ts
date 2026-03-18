@@ -35,28 +35,6 @@ import {
   toModelMessage,
 } from "../mapping.js";
 
-/**
- * Filter out approval parts from messages before sending to AI providers.
- * Providers like Anthropic don't understand tool-approval-request and
- * tool-approval-response parts and will error if they are included.
- */
-function filterApprovalPartsForProvider(messages: ModelMessage[]): ModelMessage[] {
-  return messages.map((message) => {
-    if (!Array.isArray(message.content)) {
-      return message;
-    }
-    const filteredContent = message.content.filter(
-      (part) =>
-        (part as { type: string }).type !== "tool-approval-request" &&
-        (part as { type: string }).type !== "tool-approval-response",
-    );
-    return {
-      ...message,
-      content: filteredContent,
-    } as typeof message;
-  });
-}
-
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // 10k characters should be more than enough for most cases, and stays under
 // the 8k token limit for some models.
@@ -699,9 +677,6 @@ export async function fetchContextWithPrompt(
   if (process.env.CONVEX_CLOUD_URL?.startsWith("http://127.0.0.1")) {
     processedMessages = await inlineMessagesFiles(processedMessages);
   }
-
-  // Filter out approval parts before sending to AI providers
-  processedMessages = filterApprovalPartsForProvider(processedMessages);
 
   return {
     messages: processedMessages,
