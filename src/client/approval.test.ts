@@ -297,12 +297,11 @@ describe("Tool Approval Workflow", () => {
     // Second call: tool-result + assistant text
     expect(result.secondSavedCount).toBeGreaterThanOrEqual(1);
     // Thread should have (ascending): user, assistant(tool-call+approval),
-    // tool(approval-response), tool(tool-result), assistant(text)
+    // tool(approval-response + tool-result merged at write time), assistant(text)
     // listMessages returns descending order:
     expect(result.threadMessageRoles).toEqual([
       "assistant", // final text
-      "tool", // tool-result
-      "tool", // approval-response
+      "tool", // approval-response + tool-result (merged)
       "assistant", // tool-call + approval-request
       "user", // prompt
     ]);
@@ -323,11 +322,10 @@ describe("Tool Approval Workflow", () => {
     expect(result.firstText).toBe("");
     expect(result.secondText).toBe("OK, I won't delete that file.");
     // Same message ordering as approve flow:
-    // user, assistant(tool-call+approval), tool(denial-response),
-    // tool(execution-denied result), assistant(text)
+    // user, assistant(tool-call+approval), tool(denial-response +
+    // execution-denied result merged at write time), assistant(text)
     expect(result.threadMessageRoles).toEqual([
       "assistant",
-      "tool",
       "tool",
       "assistant",
       "user",

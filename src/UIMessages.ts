@@ -396,8 +396,6 @@ function createAssistantUIMessage<
     ? ("streaming" as const)
     : lastMessage.status;
 
-<<<<<<< Updated upstream
-=======
   // Extract approval parts from raw message content for UI rendering
   type ApprovalPart =
     | { type: "tool-approval-request"; approvalId: string; toolCallId: string }
@@ -443,7 +441,6 @@ function createAssistantUIMessage<
     }
   }
 
->>>>>>> Stashed changes
   // Collect all parts from all messages
   const allParts: UIMessage<METADATA, DATA_PARTS, TOOLS>["parts"] = [];
 
@@ -525,12 +522,9 @@ function createAssistantUIMessage<
           break;
         }
         case "tool-result": {
-<<<<<<< Updated upstream
-=======
           // Note: execution-denied outputs are handled separately via pre-extraction
           // from raw content (converted to text format for providers in start.ts).
           // See executionDeniedResults processing at the end of this function.
->>>>>>> Stashed changes
           const typedPart = contentPart as unknown as ToolResultPart & {
             output: { type: string; value?: unknown; reason?: string };
           };
@@ -696,8 +690,6 @@ function createAssistantUIMessage<
     }
   }
 
-<<<<<<< Updated upstream
-=======
   // Final output states that should not be overwritten by approval processing
   const finalStates = new Set([
     "output-available",
@@ -776,7 +768,6 @@ function createAssistantUIMessage<
     }
   }
 
->>>>>>> Stashed changes
   return {
     ...common,
     role: "assistant",

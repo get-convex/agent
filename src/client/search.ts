@@ -256,11 +256,7 @@ export async function fetchRecentAndSearchMessages(
     searchMessages = filterOutOrphanedToolMessages(
       sorted(searchResults.filter((m) => !included?.has(m._id))),
     );
-    searchMessages = filterApprovalPartsForProvider(searchMessages);
   }
-
-  // filter out approval parts before returning
-  searchMessages = filterApprovalPartsForProvider(searchMessages);
   // Ensure we don't include tool messages without a corresponding tool call
   return { recentMessages, searchMessages };
 }
