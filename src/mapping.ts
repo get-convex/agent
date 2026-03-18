@@ -297,21 +297,49 @@ export function toModelMessageWarnings(
   }) as any;
 }
 
+/**
+ * Serialize explicitly provided response messages for a step.
+ * Used by the streaming/generation loop where the caller tracks which
+ * messages are new via slicing.
+ */
+export async function serializeResponseMessages<TOOLS extends ToolSet>(
+  ctx: ActionCtx,
+  component: AgentComponent,
+  step: StepResult<TOOLS>,
+  model: ModelOrMetadata | undefined,
+  responseMessages: ModelMessage[],
+): Promise<{ messages: MessageWithMetadata[] }> {
+  return serializeStepMessages(ctx, component, step, model, responseMessages);
+}
+
+/**
+ * Serialize the new messages from a step using a heuristic to determine
+ * which response messages are new (last 1-2 messages).
+ */
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   ctx: ActionCtx,
   component: AgentComponent,
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
-  /**
-   * If provided, these are the new response messages for this step
-   * (pre-sliced by the caller). When not provided, falls back to the
-   * existing heuristic of slicing the last 1-2 messages.
-   *
-   * This is needed for tool approval flows where the SDK adds extra
-   * messages (e.g. approval tool-results) at the beginning of
-   * responseMessages that the old slice(-1/-2) logic would miss.
-   */
-  newResponseMessages?: ModelMessage[],
+): Promise<{ messages: MessageWithMetadata[] }> {
+  const hasToolMessage = step.response.messages.at(-1)?.role === "tool";
+  let messagesToSerialize: ModelMessage[];
+  if (hasToolMessage) {
+    messagesToSerialize = step.response.messages.slice(-2);
+  } else if (step.content.length) {
+    messagesToSerialize = step.response.messages.slice(-1);
+  } else {
+    messagesToSerialize = [{ role: "assistant" as const, content: [] }];
+  }
+  return serializeStepMessages(ctx, component, step, model, messagesToSerialize);
+}
+
+async function serializeStepMessages<TOOLS extends ToolSet>(
+  ctx: ActionCtx,
+  component: AgentComponent,
+  step: StepResult<TOOLS>,
+  model: ModelOrMetadata | undefined,
+  messagesToSerialize: ModelMessage[],
 ): Promise<{ messages: MessageWithMetadata[] }> {
   // If there are tool results, there's another message with the tool results
   // ref: https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/to-response-messages.ts#L120
@@ -329,18 +357,6 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
     sources: hasToolMessage ? undefined : step.sources,
   } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
   const toolFields = { sources: step.sources };
-
-  // Determine which messages to serialize for this step
-  let messagesToSerialize: ModelMessage[];
-  if (newResponseMessages) {
-    messagesToSerialize = newResponseMessages;
-  } else if (hasToolMessage) {
-    messagesToSerialize = step.response.messages.slice(-2);
-  } else if (step.content.length) {
-    messagesToSerialize = step.response.messages.slice(-1);
-  } else {
-    messagesToSerialize = [{ role: "assistant" as const, content: [] }];
-  }
 
   const messages: MessageWithMetadata[] = await Promise.all(
     messagesToSerialize.map(async (msg): Promise<MessageWithMetadata> => {

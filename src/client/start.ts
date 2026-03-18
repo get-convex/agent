@@ -10,7 +10,7 @@ import {
   type ToolSet,
 } from "ai";
 import {
-  serializeNewMessagesInStep,
+  serializeResponseMessages,
   serializeObjectResult,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
@@ -252,7 +252,7 @@ export async function startGeneration<
             previousResponseMessageCount,
           );
           previousResponseMessageCount = allResponseMessages.length;
-          serialized = await serializeNewMessagesInStep(
+          serialized = await serializeResponseMessages(
             ctx,
             component,
             toSave.step,
