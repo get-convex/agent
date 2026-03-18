@@ -1146,12 +1146,20 @@ export class Agent<
         // Check if this assistant message starts a different approval step.
         // If so, any response message we've seen so far belongs to a newer
         // step — reset it so we don't merge across step boundaries.
+        // Only reset if the target approval is NOT in this message (i.e.,
+        // this is a genuinely different step, not the same step with
+        // multiple tool calls).
         if (
           message.message?.role === "assistant" &&
           content.some(
             (p: any) =>
               p.type === "tool-approval-request" &&
               p.approvalId !== args.approvalId,
+          ) &&
+          !content.some(
+            (p: any) =>
+              p.type === "tool-approval-request" &&
+              p.approvalId === args.approvalId,
           )
         ) {
           existingResponseMessage = undefined;
