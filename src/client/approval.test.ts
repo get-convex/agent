@@ -313,11 +313,19 @@ export const testMultiToolApproveFlow = action({
     // Extract both approval IDs
     const approvalParts = result1.savedMessages
       ?.flatMap((m) =>
-        Array.isArray(m.message?.content) ? m.message.content : [],
+        Array.isArray(m.message?.content)
+          ? (m.message.content as unknown[])
+          : [],
       )
       .filter(
-        (p) => (p as { type: string }).type === "tool-approval-request",
-      ) as Array<{ approvalId: string; toolCallId: string }>;
+        (
+          p,
+        ): p is {
+          type: "tool-approval-request";
+          approvalId: string;
+          toolCallId: string;
+        } => (p as { type?: string }).type === "tool-approval-request",
+      );
 
     if (!approvalParts || approvalParts.length !== 2) {
       throw new Error(
