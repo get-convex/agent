@@ -247,8 +247,12 @@ export class DeltaStreamer<T> {
         if (this.abortController.signal.aborted) {
           return;
         }
+        this.abortController.abort();
+        // Wait for in-flight stream creation before trying to abort it
+        if (this.#creatingStreamIdPromise) {
+          await this.#creatingStreamIdPromise;
+        }
         if (this.streamId) {
-          this.abortController.abort();
           await this.#ongoingWrite;
           await this.ctx.runMutation(this.component.streams.abort, {
             streamId: this.streamId,
@@ -439,16 +443,15 @@ export function compressTextStreamParts(
       } else {
         compressed.push(part);
       }
+    } else if (part.type === "file") {
+      compressed.push({
+        type: "file",
+        file: {
+          ...part.file,
+          uint8Array: undefined as unknown as Uint8Array,
+        },
+      });
     } else {
-      if (part.type === "file") {
-        compressed.push({
-          type: "file",
-          file: {
-            ...part.file,
-            uint8Array: undefined as unknown as Uint8Array,
-          },
-        });
-      }
       compressed.push(part);
     }
   }

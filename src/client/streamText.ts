@@ -168,6 +168,11 @@ export async function streamText<
       // finish() was never called, leaving the streaming message stuck in
       // "streaming" state. Clean it up by marking it as aborted.
       await streamer?.fail(e instanceof Error ? e.message : String(e));
+      // Save the deferred final step if it was already generated but not yet persisted
+      if (pendingFinalStep) {
+        await call.save({ step: pendingFinalStep }, false);
+        pendingFinalStep = undefined;
+      }
       throw e;
     }
   }
