@@ -170,7 +170,11 @@ export async function streamText<
       await streamer?.fail(e instanceof Error ? e.message : String(e));
       // Save the deferred final step if it was already generated but not yet persisted
       if (pendingFinalStep) {
-        await call.save({ step: pendingFinalStep }, false);
+        try {
+          await call.save({ step: pendingFinalStep }, false);
+        } catch (saveError) {
+          console.error("Failed to save deferred final step:", saveError);
+        }
         pendingFinalStep = undefined;
       }
       throw e;

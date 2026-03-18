@@ -244,20 +244,24 @@ export class DeltaStreamer<T> {
     this.abortController = new AbortController();
     if (config.abortSignal) {
       config.abortSignal.addEventListener("abort", async () => {
-        if (this.abortController.signal.aborted) {
-          return;
-        }
-        this.abortController.abort();
-        // Wait for in-flight stream creation before trying to abort it
-        if (this.#creatingStreamIdPromise) {
-          await this.#creatingStreamIdPromise;
-        }
-        if (this.streamId) {
-          await this.#ongoingWrite;
-          await this.ctx.runMutation(this.component.streams.abort, {
-            streamId: this.streamId,
-            reason: "abortSignal",
-          });
+        try {
+          if (this.abortController.signal.aborted) {
+            return;
+          }
+          this.abortController.abort();
+          // Wait for in-flight stream creation before trying to abort it
+          if (this.#creatingStreamIdPromise) {
+            await this.#creatingStreamIdPromise;
+          }
+          if (this.streamId) {
+            await this.#ongoingWrite;
+            await this.ctx.runMutation(this.component.streams.abort, {
+              streamId: this.streamId,
+              reason: "abortSignal",
+            });
+          }
+        } catch (e) {
+          console.error("Error during stream abort cleanup:", e);
         }
       });
     }
