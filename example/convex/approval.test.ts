@@ -96,7 +96,7 @@ const testDenialAgent = new Agent(components.agent, {
 });
 
 // Agent with two tool calls in a single step — both need approval.
-// This exercises mergeApprovalResponseMessages (the exact scenario that broke).
+// This exercises write-time merging of approval responses into a single message.
 const testMultiToolApprovalAgent = new Agent(components.agent, {
   name: "Multi-Tool Approval Agent",
   instructions:
@@ -282,8 +282,9 @@ export const testMultiToolApproveE2E = action({
       );
     }
 
-    // Approve both tools one at a time (each creates a separate tool message).
-    // This is the scenario that requires mergeApprovalResponseMessages.
+    // Approve both tools one at a time. The second approval merges into the
+    // same message as the first (write-time merging), so both return the same
+    // messageId and the SDK sees a single tool message for the step.
     let lastMessageId: string | undefined;
     for (const { approvalId } of approvalParts) {
       const { messageId } = await ctx.runMutation(

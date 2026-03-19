@@ -1,12 +1,10 @@
 # Changelog
 
-## 0.6.0-alpha.1
+## 0.6.0
 
 - Tool approval support: `needsApproval` in `createTool`, `agent.approveToolCall()`, `agent.denyToolCall()`
-
-## 0.6.0-alpha.0
-
-## 0.6.0
+- Auto-deny unresolved tool approvals when a new generation starts
+- Fix unhandled rejection in DeltaStreamer on transaction teardown
 
 **Note on versioning:** This release jumps from 0.3.2 to 0.6.0, skipping versions 0.4.0 and 0.5.0. This is intentional and aligns the `@convex-dev/agent` package version with the AI SDK v6 major version for clearer compatibility signaling. Going forward, the minor version of this package will track the AI SDK major version to make it easier for developers to identify which version of the AI SDK is supported.
 

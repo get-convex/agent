@@ -13,6 +13,7 @@ import { StrictMode } from "react";
 import StreamArray from "./objects/StreamArray";
 import ChatApproval from "./chat/ChatApproval";
 
+
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
 createRoot(document.getElementById("root")!).render(
@@ -48,6 +49,7 @@ export function App() {
             <Route path="/weather-fashion" element={<WeatherFashion />} />
             <Route path="/stream-array" element={<StreamArray />} />
             <Route path="/chat-approval" element={<ChatApproval />} />
+
           </Routes>
         </main>
         <Toaster />

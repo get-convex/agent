@@ -1,4 +1,4 @@
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import {
   guessMimeType,
   serializeDataOrUrl,
@@ -7,7 +7,7 @@ import {
   toModelMessage,
   serializeContent,
   toModelMessageContent,
-  mergeApprovalResponseMessages,
+  autoDenyUnresolvedApprovals,
 } from "./mapping.js";
 import { api } from "./component/_generated/api.js";
 import type { AgentComponent, ActionCtx } from "./client/types.js";
@@ -259,79 +259,144 @@ describe("mapping", () => {
     expect((content as unknown[])[0]).toMatchObject(approvalResponse);
   });
 
-  test("mergeApprovalResponseMessages merges consecutive tool approval messages", () => {
-    const messages = [
-      { role: "user" as const, content: "hello" },
-      {
-        role: "assistant" as const,
-        content: [
-          { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
-          { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
-          { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
-          { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
-        ],
-      },
-      {
-        role: "tool" as const,
-        content: [
-          { type: "tool-approval-response", approvalId: "ap1", approved: true },
-        ],
-      },
-      {
-        role: "tool" as const,
-        content: [
-          { type: "tool-approval-response", approvalId: "ap2", approved: false, reason: "denied" },
-        ],
-      },
-    ] as any;
+  describe("autoDenyUnresolvedApprovals", () => {
+    test("returns messages unchanged when no unresolved approvals", () => {
+      const messages = [
+        { role: "user" as const, content: "hello" },
+        {
+          role: "assistant" as const,
+          content: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
+            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+          ],
+        },
+        {
+          role: "tool" as const,
+          content: [
+            { type: "tool-approval-response", approvalId: "ap1", approved: true },
+          ],
+        },
+      ] as any;
 
-    const merged = mergeApprovalResponseMessages(messages);
-    expect(merged).toHaveLength(3); // user, assistant, single tool
-    expect(merged[2].role).toBe("tool");
-    const toolContent = merged[2].content as Array<{ type: string; approvalId: string }>;
-    expect(toolContent).toHaveLength(2);
-    expect(toolContent[0].approvalId).toBe("ap1");
-    expect(toolContent[1].approvalId).toBe("ap2");
-  });
+      const result = autoDenyUnresolvedApprovals(messages);
+      expect(result).toBe(messages); // same reference, no changes
+    });
 
-  test("mergeApprovalResponseMessages does not mutate original message content arrays", () => {
-    const msg1Content = [
-      { type: "tool-approval-response", approvalId: "ap1", approved: true },
-    ];
-    const msg2Content = [
-      { type: "tool-approval-response", approvalId: "ap2", approved: false, reason: "denied" },
-    ];
-    const messages = [
-      { role: "tool" as const, content: msg1Content },
-      { role: "tool" as const, content: msg2Content },
-    ] as any;
+    test("injects synthetic denial for a single unresolved approval", () => {
+      const messages = [
+        { role: "user" as const, content: "hello" },
+        {
+          role: "assistant" as const,
+          content: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
+            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+          ],
+        },
+        { role: "user" as const, content: "new message" },
+      ] as any;
 
-    const merged = mergeApprovalResponseMessages(messages);
-    // Merged result should combine both
-    expect(merged).toHaveLength(1);
-    expect((merged[0].content as any[]).length).toBe(2);
-    // Original arrays must be untouched
-    expect(msg1Content).toHaveLength(1);
-    expect(msg2Content).toHaveLength(1);
-  });
+      const result = autoDenyUnresolvedApprovals(messages);
+      expect(result).toHaveLength(4); // original 3 + 1 synthetic tool message
+      // Synthetic denial should be inserted right after the assistant message (index 1)
+      expect(result[2].role).toBe("tool");
+      const denialContent = result[2].content as any[];
+      expect(denialContent).toHaveLength(1);
+      expect(denialContent[0].type).toBe("tool-approval-response");
+      expect(denialContent[0].approvalId).toBe("ap1");
+      expect(denialContent[0].approved).toBe(false);
+      expect(denialContent[0].reason).toBe("auto-denied: new generation started");
+      // The new user message should follow
+      expect(result[3].role).toBe("user");
+      expect(result[3].content).toBe("new message");
+    });
 
-  test("mergeApprovalResponseMessages does not merge non-approval tool messages", () => {
-    const messages = [
-      {
-        role: "tool" as const,
-        content: [
-          { type: "tool-result", toolCallId: "tc1", toolName: "a", output: { type: "text", value: "ok" } },
-        ],
-      },
-      {
-        role: "tool" as const,
-        content: [
-          { type: "tool-approval-response", approvalId: "ap1", approved: true },
-        ],
-      },
-    ] as any;
+    test("groups multiple unresolved approvals from the same step into a single synthetic message", () => {
+      const messages = [
+        {
+          role: "assistant" as const,
+          content: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
+            { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
+            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+            { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+          ],
+        },
+      ] as any;
 
-    const merged = mergeApprovalResponseMessages(messages);
-    expect(merged).toHaveLength(2); // not merged since first has tool-result
+      const result = autoDenyUnresolvedApprovals(messages);
+      expect(result).toHaveLength(2); // assistant + 1 synthetic tool message
+      expect(result[1].role).toBe("tool");
+      const denialContent = result[1].content as any[];
+      expect(denialContent).toHaveLength(2);
+      expect(denialContent[0].approvalId).toBe("ap1");
+      expect(denialContent[0].approved).toBe(false);
+      expect(denialContent[1].approvalId).toBe("ap2");
+      expect(denialContent[1].approved).toBe(false);
+    });
+
+    test("only auto-denies unresolved approvals, leaves resolved ones alone", () => {
+      const messages = [
+        {
+          role: "assistant" as const,
+          content: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
+            { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
+            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+            { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+          ],
+        },
+        {
+          role: "tool" as const,
+          content: [
+            { type: "tool-approval-response", approvalId: "ap1", approved: true },
+          ],
+        },
+        { role: "user" as const, content: "next question" },
+      ] as any;
+
+      const result = autoDenyUnresolvedApprovals(messages);
+      // Should inject a denial for ap2 (unresolved) after the assistant message
+      expect(result).toHaveLength(4); // assistant + existing tool + synthetic denial + user
+      // The synthetic denial is inserted after the assistant (index 0)
+      expect(result[0].role).toBe("assistant");
+      expect(result[1].role).toBe("tool"); // synthetic denial for ap2
+      const denialContent = result[1].content as any[];
+      expect(denialContent).toHaveLength(1);
+      expect(denialContent[0].approvalId).toBe("ap2");
+      expect(denialContent[0].approved).toBe(false);
+      // Original tool message (ap1 response) follows
+      expect(result[2].role).toBe("tool");
+      const originalToolContent = result[2].content as any[];
+      expect(originalToolContent[0].approvalId).toBe("ap1");
+      expect(originalToolContent[0].approved).toBe(true);
+      // User message last
+      expect(result[3].role).toBe("user");
+    });
+
+    test("emits console.warn for each auto-denied approval", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const messages = [
+        {
+          role: "assistant" as const,
+          content: [
+            { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
+            { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
+            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+            { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+          ],
+        },
+      ] as any;
+
+      autoDenyUnresolvedApprovals(messages);
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("ap1"),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("ap2"),
+      );
+      warnSpy.mockRestore();
+    });
   });
 });

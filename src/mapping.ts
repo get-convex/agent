@@ -140,41 +140,94 @@ export function docsToModelMessages(messages: MessageDoc[]): ModelMessage[] {
 }
 
 /**
- * Merge consecutive tool messages that contain `tool-approval-response` parts
- * into a single tool message. The AI SDK's `collectToolApprovals` only examines
- * the last tool message, so when multiple approvals are saved as separate
- * messages (e.g. approve tool A, then deny tool B), they must be combined
- * for the SDK to process them all.
+ * Scan messages for unresolved `tool-approval-request` parts and inject
+ * synthetic `tool-approval-response` denials so that the AI SDK receives
+ * a complete history (every tool-call has a corresponding result or denial).
+ *
+ * This handles the case where a user sends a new message instead of
+ * resolving pending approvals — the old approvals are auto-denied rather
+ * than silently dropped.
  */
-export function mergeApprovalResponseMessages(
+export function autoDenyUnresolvedApprovals(
   messages: ModelMessage[],
 ): ModelMessage[] {
-  const result: ModelMessage[] = [];
-  for (const msg of messages) {
-    const prev = result.at(-1);
-    if (
-      msg.role === "tool" &&
-      prev?.role === "tool" &&
-      Array.isArray(msg.content) &&
-      Array.isArray(prev.content) &&
-      hasApprovalResponse(msg.content) &&
-      hasApprovalResponse(prev.content)
-    ) {
-      // Clone before merging to avoid mutating the original message's content array
-      const cloned = { ...prev, content: [...(prev.content as any[])] };
-      result[result.length - 1] = cloned;
-      (cloned.content as any[]).push(...(msg.content as any[]));
-    } else {
-      result.push(msg);
+  // Collect all approval requests: approvalId → { toolCallId, messageIndex }
+  const requests = new Map<
+    string,
+    { toolCallId: string; messageIndex: number }
+  >();
+  // Collect all resolved approval IDs
+  const resolvedIds = new Set<string>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!Array.isArray(msg.content)) continue;
+    for (const part of msg.content as any[]) {
+      if (part.type === "tool-approval-request") {
+        requests.set(part.approvalId, {
+          toolCallId: part.toolCallId,
+          messageIndex: i,
+        });
+      } else if (part.type === "tool-approval-response") {
+        resolvedIds.add(part.approvalId);
+      }
     }
   }
-  return result;
-}
 
-function hasApprovalResponse(content: any[]): boolean {
-  return content.some(
-    (p: any) => p.type === "tool-approval-response",
-  );
+  // Find unresolved approvals
+  const unresolved: Array<{
+    approvalId: string;
+    toolCallId: string;
+    messageIndex: number;
+  }> = [];
+  for (const [approvalId, info] of requests) {
+    if (!resolvedIds.has(approvalId)) {
+      unresolved.push({ approvalId, ...info });
+    }
+  }
+
+  if (unresolved.length === 0) {
+    return messages;
+  }
+
+  // Group unresolved approvals by the assistant message index they came from
+  const byMessageIndex = new Map<
+    number,
+    Array<{ approvalId: string; toolCallId: string }>
+  >();
+  for (const entry of unresolved) {
+    console.warn(
+      `Auto-denying unresolved tool approval ${entry.approvalId} ` +
+        `(toolCallId: ${entry.toolCallId}): new generation started`,
+    );
+    let group = byMessageIndex.get(entry.messageIndex);
+    if (!group) {
+      group = [];
+      byMessageIndex.set(entry.messageIndex, group);
+    }
+    group.push(entry);
+  }
+
+  // Build result by inserting synthetic denial messages after each relevant
+  // assistant message
+  const result: ModelMessage[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    result.push(messages[i]);
+    const group = byMessageIndex.get(i);
+    if (group) {
+      result.push({
+        role: "tool",
+        content: group.map((entry) => ({
+          type: "tool-approval-response" as const,
+          approvalId: entry.approvalId,
+          approved: false,
+          reason: "auto-denied: new generation started",
+        })),
+      });
+    }
+  }
+
+  return result;
 }
 
 export function serializeUsage(usage: LanguageModelUsage): Usage {
@@ -244,21 +297,49 @@ export function toModelMessageWarnings(
   }) as any;
 }
 
+/**
+ * Serialize explicitly provided response messages for a step.
+ * Used by the streaming/generation loop where the caller tracks which
+ * messages are new via slicing.
+ */
+export async function serializeResponseMessages<TOOLS extends ToolSet>(
+  ctx: ActionCtx,
+  component: AgentComponent,
+  step: StepResult<TOOLS>,
+  model: ModelOrMetadata | undefined,
+  responseMessages: ModelMessage[],
+): Promise<{ messages: MessageWithMetadata[] }> {
+  return serializeStepMessages(ctx, component, step, model, responseMessages);
+}
+
+/**
+ * Serialize the new messages from a step using a heuristic to determine
+ * which response messages are new (last 1-2 messages).
+ */
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   ctx: ActionCtx,
   component: AgentComponent,
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
-  /**
-   * If provided, these are the new response messages for this step
-   * (pre-sliced by the caller). When not provided, falls back to the
-   * existing heuristic of slicing the last 1-2 messages.
-   *
-   * This is needed for tool approval flows where the SDK adds extra
-   * messages (e.g. approval tool-results) at the beginning of
-   * responseMessages that the old slice(-1/-2) logic would miss.
-   */
-  newResponseMessages?: ModelMessage[],
+): Promise<{ messages: MessageWithMetadata[] }> {
+  const hasToolMessage = step.response.messages.at(-1)?.role === "tool";
+  let messagesToSerialize: ModelMessage[];
+  if (hasToolMessage) {
+    messagesToSerialize = step.response.messages.slice(-2);
+  } else if (step.content.length) {
+    messagesToSerialize = step.response.messages.slice(-1);
+  } else {
+    messagesToSerialize = [{ role: "assistant" as const, content: [] }];
+  }
+  return serializeStepMessages(ctx, component, step, model, messagesToSerialize);
+}
+
+async function serializeStepMessages<TOOLS extends ToolSet>(
+  ctx: ActionCtx,
+  component: AgentComponent,
+  step: StepResult<TOOLS>,
+  model: ModelOrMetadata | undefined,
+  messagesToSerialize: ModelMessage[],
 ): Promise<{ messages: MessageWithMetadata[] }> {
   // If there are tool results, there's another message with the tool results
   // ref: https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/to-response-messages.ts#L120
@@ -276,18 +357,6 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
     sources: hasToolMessage ? undefined : step.sources,
   } satisfies Omit<MessageWithMetadata, "message" | "text" | "fileIds">;
   const toolFields = { sources: step.sources };
-
-  // Determine which messages to serialize for this step
-  let messagesToSerialize: ModelMessage[];
-  if (newResponseMessages) {
-    messagesToSerialize = newResponseMessages;
-  } else if (hasToolMessage) {
-    messagesToSerialize = step.response.messages.slice(-2);
-  } else if (step.content.length) {
-    messagesToSerialize = step.response.messages.slice(-1);
-  } else {
-    messagesToSerialize = [{ role: "assistant" as const, content: [] }];
-  }
 
   const messages: MessageWithMetadata[] = await Promise.all(
     messagesToSerialize.map(async (msg): Promise<MessageWithMetadata> => {

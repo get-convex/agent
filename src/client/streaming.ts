@@ -244,16 +244,24 @@ export class DeltaStreamer<T> {
     this.abortController = new AbortController();
     if (config.abortSignal) {
       config.abortSignal.addEventListener("abort", async () => {
-        if (this.abortController.signal.aborted) {
-          return;
-        }
-        if (this.streamId) {
+        try {
+          if (this.abortController.signal.aborted) {
+            return;
+          }
           this.abortController.abort();
-          await this.#ongoingWrite;
-          await this.ctx.runMutation(this.component.streams.abort, {
-            streamId: this.streamId,
-            reason: "abortSignal",
-          });
+          // Wait for in-flight stream creation before trying to abort it
+          if (this.#creatingStreamIdPromise) {
+            await this.#creatingStreamIdPromise;
+          }
+          if (this.streamId) {
+            await this.#ongoingWrite;
+            await this.ctx.runMutation(this.component.streams.abort, {
+              streamId: this.streamId,
+              reason: "abortSignal",
+            });
+          }
+        } catch (e) {
+          console.error("Error during stream abort cleanup:", e);
         }
       });
     }
@@ -293,7 +301,8 @@ export class DeltaStreamer<T> {
       await this.addParts([chunk]);
     }
     // Skip finish if it will be handled externally (atomically with message save)
-    if (!this.#finishedExternally) {
+    // or if the stream was aborted (e.g., due to a failed delta write)
+    if (!this.#finishedExternally && !this.abortController.signal.aborted) {
       await this.finish();
     }
   }
@@ -339,7 +348,7 @@ export class DeltaStreamer<T> {
         e instanceof Error ? e.message : "unknown error",
       );
       this.abortController.abort();
-      throw e;
+      return;
     }
     // Now that we've sent the delta, check if we need to send another one.
     if (
@@ -375,7 +384,13 @@ export class DeltaStreamer<T> {
       return;
     }
     await this.#ongoingWrite;
+    if (this.abortController.signal.aborted) {
+      return;
+    }
     await this.#sendDelta();
+    if (this.abortController.signal.aborted) {
+      return;
+    }
     await this.ctx.runMutation(this.component.streams.finish, {
       streamId: this.streamId,
     });
@@ -432,16 +447,15 @@ export function compressTextStreamParts(
       } else {
         compressed.push(part);
       }
+    } else if (part.type === "file") {
+      compressed.push({
+        type: "file",
+        file: {
+          ...part.file,
+          uint8Array: undefined as unknown as Uint8Array,
+        },
+      });
     } else {
-      if (part.type === "file") {
-        compressed.push({
-          type: "file",
-          file: {
-            ...part.file,
-            uint8Array: undefined as unknown as Uint8Array,
-          },
-        });
-      }
       compressed.push(part);
     }
   }

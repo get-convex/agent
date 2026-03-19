@@ -17,3 +17,4 @@ react/package.json
 
 *.tsbuildinfo
 .claude
+.mcp.json
