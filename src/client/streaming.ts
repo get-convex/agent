@@ -260,8 +260,9 @@ export class DeltaStreamer<T> {
               reason: "abortSignal",
             });
           }
-        } catch (e) {
-          console.error("Error during stream abort cleanup:", e);
+        } catch {
+          // Best-effort cleanup — the stream will be garbage-collected
+          // by the 10-minute timeout if this fails.
         }
       });
     }
@@ -301,7 +302,9 @@ export class DeltaStreamer<T> {
       await this.addParts([chunk]);
     }
     // Skip finish if it will be handled externally (atomically with message save)
-    // or if the stream was aborted (e.g., due to a failed delta write)
+    // or if the stream was aborted (e.g., due to a failed delta write).
+    // Aborted streams are cleaned up via streams.abort (called by the abort
+    // signal handler), so we don't need to call finish() for them.
     if (!this.#finishedExternally && !this.abortController.signal.aborted) {
       await this.finish();
     }
@@ -384,10 +387,7 @@ export class DeltaStreamer<T> {
       return;
     }
     await this.#ongoingWrite;
-    if (this.abortController.signal.aborted) {
-      return;
-    }
-    await this.#sendDelta();
+    await this.#sendDelta(); // #sendDelta checks aborted internally
     if (this.abortController.signal.aborted) {
       return;
     }
