@@ -1,7 +1,5 @@
 # Changelog
 
-## 0.6.0-beta.0
-
 ## 0.6.0
 
 - Tool approval support: `needsApproval` in `createTool`,
