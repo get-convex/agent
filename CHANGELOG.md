@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- Fix bundled package
+
 ## 0.6.0
 
 - Tool approval support: `needsApproval` in `createTool`,
