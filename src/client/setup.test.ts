@@ -10,15 +10,13 @@ import {
 } from "convex/server";
 import { type AgentComponent } from "./index.js";
 import { componentsGeneric } from "convex/server";
-export { componentSchema };
-import componentSchema from "../component/schema.js";
-export const componentModules = import.meta.glob("../component/**/*.ts");
+import component from "../test.js";
 
 export function initConvexTest<
   Schema extends SchemaDefinition<GenericSchema, boolean>,
 >(schema?: Schema) {
   const t = convexTest(schema ?? defineSchema({}), modules);
-  t.registerComponent("agent", componentSchema, componentModules);
+  component.register(t);
   return t;
 }
 export const components = componentsGeneric() as unknown as {
