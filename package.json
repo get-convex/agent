@@ -115,7 +115,7 @@
     "clsx": "2.1.1",
     "convex": "1.34.0",
     "convex-helpers": "0.1.114",
-    "convex-test": "0.0.41",
+    "convex-test": "0.0.44",
     "cpy-cli": "5.0.0",
     "dayjs": "1.11.20",
     "dotenv": "16.6.1",
