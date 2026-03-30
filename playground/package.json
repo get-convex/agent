@@ -117,6 +117,6 @@
     "react": "file:../node_modules/react",
     "react-dom": "file:../node_modules/react-dom",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.57.1"
+    "typescript-eslint": "8.57.2"
   }
 }
