@@ -11,6 +11,7 @@ import { WeatherFashion } from "./workflows/WeatherFashion";
 import RagBasic from "./rag/RagBasic";
 import { StrictMode } from "react";
 import StreamArray from "./objects/StreamArray";
+import TracedChat from "./tracing/TracedChat";
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
@@ -46,6 +47,7 @@ export function App() {
             <Route path="/rate-limiting" element={<RateLimiting />} />
             <Route path="/weather-fashion" element={<WeatherFashion />} />
             <Route path="/stream-array" element={<StreamArray />} />
+            <Route path="/tracing" element={<TracedChat />} />
           </Routes>
         </main>
         <Toaster />
@@ -135,6 +137,19 @@ function Index() {
               example of a weather agent that uses a tool to get the weather and
               a fashion agent that uses a tool to get outfit suggestions based
               on the weather.
+            </p>
+          </li>
+          <li className="border rounded p-4 hover:shadow transition">
+            <Link
+              to="/tracing"
+              className="text-xl font-semibold text-indigo-700 hover:underline"
+            >
+              LangFuse Tracing
+            </Link>
+            <p className="mt-2 text-gray-700">
+              Demonstrates observability with LangFuse tracing. See how to send
+              traces of LLM requests, responses, and token usage to LangFuse for
+              monitoring and debugging.
             </p>
           </li>
         </ul>
