@@ -321,14 +321,14 @@ async function addMessagesHandler(
   }
   const savedMessages = toReturn.map(publicMessage);
   // Call the onSaveMessages callback if provided, within the same transaction
-  if (args.onSaveMessages && savedMessages.length > 0) {
+  if (onSaveMessages && savedMessages.length > 0) {
     const callbackArgs: SaveMessagesCallbackArgs = {
       userId,
       threadId,
       messages: savedMessages,
     };
     await ctx.runMutation(
-      args.onSaveMessages as unknown as FunctionReference<
+      onSaveMessages as unknown as FunctionReference<
         "mutation",
         "public" | "internal",
         SaveMessagesCallbackArgs
