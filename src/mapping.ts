@@ -135,7 +135,7 @@ export function docsToModelMessages(messages: MessageDoc[]): ModelMessage[] {
   return messages
     .map((m) => m.message)
     .filter((m) => !!m)
-    .filter((m) => !!m.content.length)
+    .filter((m) => m.role === "tool" || !!m.content.length)
     .map(toModelMessage);
 }
 

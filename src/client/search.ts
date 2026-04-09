@@ -333,6 +333,17 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
             content,
           },
         });
+      } else if (doc.message.content.length > 0) {
+        console.warn(
+          "Dropping orphaned tool message:",
+          doc._id,
+          "toolCallIds in message:",
+          doc.message.content
+            .filter((c) => c.type === "tool-result")
+            .map((c) => c.toolCallId),
+          "available toolCallIds:",
+          [...toolCallIds],
+        );
       }
     } else {
       result.push(doc);
