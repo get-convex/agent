@@ -254,7 +254,7 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
   // Track which approvalIds have responses
   const approvalResponseIds = new Set<string>();
 
-  const result: MessageDoc[] = [];
+  // ---- PASS 1: collect all IDs ----
   for (const doc of docs) {
     if (doc.message && Array.isArray(doc.message.content)) {
       for (const content of doc.message.content) {
@@ -295,6 +295,12 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
     return approvalRequestsByToolCallId.has(toolCallId);
   };
 
+  // ---- PASS 2: filter assistant messages, track surviving tool-calls ----
+  // An assistant message survives only if its filtered content is non-empty.
+  // Tool-calls inside dropped assistant messages do NOT survive, so any
+  // downstream tool-result referencing them becomes orphaned (handled below).
+  const survivingToolCallIds = new Set<string>();
+  const intermediate: MessageDoc[] = [];
   for (const doc of docs) {
     if (
       doc.message?.role === "assistant" &&
@@ -308,7 +314,12 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
           hasApprovalRequest(p.toolCallId),
       );
       if (content.length) {
-        result.push({
+        for (const p of content) {
+          if (p.type === "tool-call") {
+            survivingToolCallIds.add(p.toolCallId);
+          }
+        }
+        intermediate.push({
           ...doc,
           message: {
             ...doc.message,
@@ -316,11 +327,25 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
           },
         });
       }
-    } else if (doc.message?.role === "tool") {
+      // else: dropped — its tool-calls do NOT survive
+    } else {
+      intermediate.push(doc);
+    }
+  }
+
+  // ---- PASS 3: filter tool messages against surviving tool-calls ----
+  // Matching against the surviving set (not the original toolCallIds)
+  // prevents cascade orphans when an assistant message was dropped above.
+  const result: MessageDoc[] = [];
+  for (const doc of intermediate) {
+    if (
+      doc.message?.role === "tool" &&
+      Array.isArray(doc.message.content)
+    ) {
       const content = doc.message.content.filter((c) => {
         // tool-result parts have toolCallId
         if (c.type === "tool-result") {
-          return toolCallIds.has(c.toolCallId);
+          return survivingToolCallIds.has(c.toolCallId);
         }
         // tool-approval-response parts don't have toolCallId, so include them
         return true;
@@ -341,8 +366,8 @@ export function filterOutOrphanedToolMessages(docs: MessageDoc[]) {
           doc.message.content
             .filter((c) => c.type === "tool-result")
             .map((c) => c.toolCallId),
-          "available toolCallIds:",
-          [...toolCallIds],
+          "surviving toolCallIds:",
+          [...survivingToolCallIds],
         );
       }
     } else {
