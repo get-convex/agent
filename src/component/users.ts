@@ -227,7 +227,7 @@ async function deletePageForUserId(
 
   if (streamResult.isDone) {
     // Streams are done, delete the thread and reset for next thread
-    await ctx.db.delete(threadInProgress);
+    await ctx.db.delete("threads", threadInProgress);
     threadInProgress = null;
     messagesCursor = null;
     streamsInProgress = false;
@@ -256,7 +256,7 @@ export const getThreadUserId = internalQuery({
   },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
-    const thread = await ctx.db.get(args.threadId);
+    const thread = await ctx.db.get("threads", args.threadId);
     return thread?.userId ?? null;
   },
 });
