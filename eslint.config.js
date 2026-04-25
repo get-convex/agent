@@ -3,6 +3,7 @@ import pluginJs from "@eslint/js";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
+import convexPlugin from "@convex-dev/eslint-plugin";
 
 export default [
   {
@@ -51,7 +52,12 @@ export default [
     languageOptions: {
       globals: globals.worker,
     },
+    plugins: {
+      "@convex-dev": convexPlugin,
+    },
     rules: {
+      ...convexPlugin.configs.recommended[0].rules,
+
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-explicit-any": "off",
       "no-unused-vars": "off",

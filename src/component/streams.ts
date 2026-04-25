@@ -38,7 +38,7 @@ export const addDelta = mutation({
   args: deltaValidator,
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    const stream = await ctx.db.get(args.streamId);
+    const stream = await ctx.db.get("streamingMessages", args.streamId);
     if (!stream) {
       console.warn("Stream not found", args.streamId);
       return false;
@@ -101,7 +101,7 @@ export const create = mutation({
       internal.streams.timeoutStream,
       { streamId },
     );
-    await ctx.db.patch(streamId, { state: { ...state, timeoutFnId } });
+    await ctx.db.patch("streamingMessages", streamId, { state: { ...state, timeoutFnId } });
     return streamId;
   },
 });
@@ -197,7 +197,7 @@ async function abortById(
     finalDelta?: WithoutSystemFields<Doc<"streamDeltas">>;
   },
 ) {
-  const stream = await ctx.db.get(args.streamId);
+  const stream = await ctx.db.get("streamingMessages", args.streamId);
   if (!stream) {
     throw new Error(`Stream not found: ${args.streamId}`);
   }
@@ -208,7 +208,7 @@ async function abortById(
     return false;
   }
   await cleanupTimeoutFn(ctx, stream);
-  await ctx.db.patch(args.streamId, {
+  await ctx.db.patch("streamingMessages", args.streamId, {
     state: { kind: "aborted", reason: args.reason },
   });
   return true;
@@ -219,7 +219,7 @@ async function cleanupTimeoutFn(
   stream: Doc<"streamingMessages">,
 ) {
   if (stream.state.kind === "streaming" && stream.state.timeoutFnId) {
-    const timeoutFn = await ctx.db.system.get(stream.state.timeoutFnId);
+    const timeoutFn = await ctx.db.system.get("_scheduled_functions", stream.state.timeoutFnId);
     if (timeoutFn?.state.kind === "pending") {
       await ctx.scheduler.cancel(stream.state.timeoutFnId);
     }
@@ -246,7 +246,7 @@ export async function finishHandler(
   if (args.finalDelta) {
     await ctx.db.insert("streamDeltas", args.finalDelta);
   }
-  const stream = await ctx.db.get(args.streamId);
+  const stream = await ctx.db.get("streamingMessages", args.streamId);
   if (!stream) {
     throw new Error(`Stream not found: ${args.streamId}`);
   }
@@ -262,7 +262,7 @@ export async function finishHandler(
     api.streams.deleteStreamAsync,
     { streamId: args.streamId },
   );
-  await ctx.db.patch(args.streamId, {
+  await ctx.db.patch("streamingMessages", args.streamId, {
     state: { kind: "finished", endedAt: Date.now(), cleanupFnId },
   });
 }
@@ -279,7 +279,7 @@ async function heartbeatStream(
   ctx: MutationCtx,
   args: { streamId: Id<"streamingMessages"> },
 ): Promise<void> {
-  const stream = await ctx.db.get(args.streamId);
+  const stream = await ctx.db.get("streamingMessages", args.streamId);
   if (!stream) {
     console.warn("Stream not found", args.streamId);
     return;
@@ -294,7 +294,7 @@ async function heartbeatStream(
   if (!stream.state.timeoutFnId) {
     throw new Error("Stream has no timeout function");
   }
-  const timeoutFn = await ctx.db.system.get(stream.state.timeoutFnId);
+  const timeoutFn = await ctx.db.system.get("_scheduled_functions", stream.state.timeoutFnId);
   if (!timeoutFn) {
     throw new Error("Timeout function not found");
   }
@@ -307,7 +307,7 @@ async function heartbeatStream(
     internal.streams.timeoutStream,
     { streamId: args.streamId },
   );
-  await ctx.db.patch(args.streamId, {
+  await ctx.db.patch("streamingMessages", args.streamId, {
     state: { kind: "streaming", lastHeartbeat: Date.now(), timeoutFnId },
   });
 }
@@ -316,12 +316,12 @@ export const timeoutStream = internalMutation({
   args: { streamId: v.id("streamingMessages") },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const stream = await ctx.db.get(args.streamId);
+    const stream = await ctx.db.get("streamingMessages", args.streamId);
     if (!stream || stream.state.kind !== "streaming") {
       console.warn("Stream not found", args.streamId);
       return;
     }
-    await ctx.db.patch(args.streamId, {
+    await ctx.db.patch("streamingMessages", args.streamId, {
       state: { kind: "aborted", reason: "timeout" },
     });
   },
@@ -338,15 +338,15 @@ async function deletePageForStreamId(
       numItems: MAX_DELTAS_PER_REQUEST,
       cursor: args.cursor ?? null,
     });
-  await Promise.all(deltas.page.map((d) => ctx.db.delete(d._id)));
+  await Promise.all(deltas.page.map((d) => ctx.db.delete("streamDeltas", d._id)));
   if (deltas.isDone) {
-    const stream = await ctx.db.get(args.streamId);
+    const stream = await ctx.db.get("streamingMessages", args.streamId);
     if (stream) {
       await cleanupTimeoutFn(ctx, stream);
       if (stream.state.kind === "finished" && stream.state.cleanupFnId) {
         await ctx.scheduler.cancel(stream.state.cleanupFnId);
       }
-      await ctx.db.delete(args.streamId);
+      await ctx.db.delete("streamingMessages", args.streamId);
     }
   }
   return deltas;
@@ -434,7 +434,7 @@ export const deleteAllStreamsForThreadIdAsync = mutation({
         },
       );
     } else {
-      await ctx.db.delete(args.threadId);
+      await ctx.db.delete("threads", args.threadId);
     }
     return result;
   },

@@ -11,6 +11,7 @@ import {
 import schema from "../schema.js";
 import {
   type EmbeddingsWithoutDenormalizedFields,
+  getVectorIdInfo,
   getVectorTableName,
   type VectorDimension,
   vEmbeddingsWithoutDenormalizedFields,
@@ -84,7 +85,7 @@ export const deleteBatchForThread = mutation({
       numItems: args.limit,
       maximumRowsRead: 300,
     });
-    await Promise.all(vectors.page.map((v) => ctx.db.delete(v._id)));
+    await Promise.all(vectors.page.map((v) => ctx.db.delete(tableName, v._id)));
     return {
       isDone: vectors.isDone,
       continueCursor: vectors.continueCursor,
@@ -108,7 +109,7 @@ export const insertBatch = mutation({
       args.vectors.map(async ({ messageId, ...v }) => {
         const embeddingId = await insertVector(ctx, args.vectorDimension, v);
         if (messageId) {
-          await ctx.db.patch(messageId, { embeddingId });
+          await ctx.db.patch("messages", messageId, { embeddingId });
         }
         return embeddingId;
       }),
@@ -180,12 +181,13 @@ export const updateBatch = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await Promise.all(
-      args.vectors.map((embedding) =>
-        ctx.db.patch(embedding.id, {
+      args.vectors.map((embedding) => {
+        const { tableName } = getVectorIdInfo(ctx, embedding.id);
+        return ctx.db.patch(tableName, embedding.id, {
           model: embedding.model,
           vector: embedding.vector,
-        }),
-      ),
+        });
+      }),
     );
   },
 });
@@ -196,6 +198,11 @@ export const deleteBatch = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await Promise.all(args.ids.map((id) => ctx.db.delete(id)));
+    await Promise.all(
+      args.ids.map((id) => {
+        const { tableName } = getVectorIdInfo(ctx, id);
+        return ctx.db.delete(tableName, id);
+      }),
+    );
   },
 });
