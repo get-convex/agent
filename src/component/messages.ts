@@ -34,6 +34,7 @@ import {
 import { schema, v } from "./schema.js";
 import { insertVector, searchVectors } from "./vector/index.js";
 import {
+  getVectorIdInfo,
   validateVectorDimension,
   type VectorTableId,
   vVectorId,
@@ -50,9 +51,10 @@ export async function deleteMessage(
   ctx: MutationCtx,
   messageDoc: Doc<"messages">,
 ) {
-  await ctx.db.delete(messageDoc._id);
+  await ctx.db.delete("messages", messageDoc._id);
   if (messageDoc.embeddingId) {
-    await ctx.db.delete(messageDoc.embeddingId);
+    const { tableName } = getVectorIdInfo(ctx, messageDoc.embeddingId);
+    await ctx.db.delete(tableName, messageDoc.embeddingId);
   }
   if (messageDoc.fileIds) {
     await changeRefcount(ctx, messageDoc.fileIds, []);
@@ -65,7 +67,7 @@ export const deleteByIds = mutation({
   handler: async (ctx, args) => {
     const deletedMessageIds = await Promise.all(
       args.messageIds.map(async (id) => {
-        const message = await ctx.db.get(id);
+        const message = await ctx.db.get("messages", id);
         if (message) {
           await deleteMessage(ctx, message);
           return id;
@@ -157,7 +159,7 @@ async function addMessagesHandler(
   let userId = args.userId;
   const threadId = args.threadId;
   if (!userId && args.threadId) {
-    const thread = await ctx.db.get(args.threadId);
+    const thread = await ctx.db.get("threads", args.threadId);
     assert(thread, `Thread ${args.threadId} not found`);
     userId = thread.userId;
   }
@@ -172,7 +174,7 @@ async function addMessagesHandler(
     hideFromUserIdSearch,
     ...rest
   } = args;
-  const promptMessage = promptMessageId && (await ctx.db.get(promptMessageId));
+  const promptMessage = promptMessageId && (await ctx.db.get("messages", promptMessageId));
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
     const pendingMessages = await ctx.db
@@ -188,9 +190,10 @@ async function addMessagesHandler(
         .filter((m) => !pendingMessageId || m._id !== pendingMessageId)
         .map(async (m) => {
           if (m.embeddingId) {
-            await ctx.db.delete(m.embeddingId);
+            const { tableName } = getVectorIdInfo(ctx, m.embeddingId);
+            await ctx.db.delete(tableName, m.embeddingId);
           }
-          await ctx.db.patch(m._id, {
+          await ctx.db.patch("messages", m._id, {
             status: "failed",
             error: "Restarting",
             embeddingId: undefined,
@@ -257,7 +260,7 @@ async function addMessagesHandler(
     // If there is a pending message, we replace that one with the first message
     // and subsequent ones will follow the regular order/subOrder advancement.
     if (i === 0 && pendingMessageId) {
-      const pendingMessage = await ctx.db.get(pendingMessageId);
+      const pendingMessage = await ctx.db.get("messages", pendingMessageId);
       assert(pendingMessage, `Pending msg ${pendingMessageId} not found`);
       if (pendingMessage.status === "failed") {
         fail = true;
@@ -274,12 +277,12 @@ async function addMessagesHandler(
           message.fileIds,
         );
       }
-      await ctx.db.replace(pendingMessage._id, {
+      await ctx.db.replace("messages", pendingMessage._id, {
         ...messageDoc,
         order: pendingMessage.order,
         stepOrder: pendingMessage.stepOrder,
       });
-      toReturn.push((await ctx.db.get(pendingMessage._id))!);
+      toReturn.push((await ctx.db.get("messages", pendingMessage._id))!);
       continue;
     }
     if (message.message.role === "user") {
@@ -306,7 +309,7 @@ async function addMessagesHandler(
       await changeRefcount(ctx, [], message.fileIds);
     }
     // TODO: delete the associated stream data for the order/stepOrder
-    toReturn.push((await ctx.db.get(messageId))!);
+    toReturn.push((await ctx.db.get("messages", messageId))!);
   }
   // Atomically finish the stream if requested, preventing UI flickering
   // from separate mutations for message save and stream finish (issue #181).
@@ -375,7 +378,7 @@ export const finalizeMessage = mutation({
   },
   returns: v.null(),
   handler: async (ctx, { messageId, result }) => {
-    const message = await ctx.db.get(messageId);
+    const message = await ctx.db.get("messages", messageId);
     assert(message, `Message ${messageId} not found`);
     if (message.status !== "pending") {
       console.debug(
@@ -406,15 +409,16 @@ export const finalizeMessage = mutation({
     }
     if (result.status === "failed") {
       if (message.embeddingId) {
-        await ctx.db.delete(message.embeddingId);
+        const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
+        await ctx.db.delete(tableName, message.embeddingId);
       }
-      await ctx.db.patch(messageId, {
+      await ctx.db.patch("messages", messageId, {
         status: "failed",
         error: result.error,
         embeddingId: undefined,
       });
     } else {
-      await ctx.db.patch(messageId, { status: "success" });
+      await ctx.db.patch("messages", messageId, { status: "success" });
     }
   },
 });
@@ -439,7 +443,7 @@ export const updateMessage = mutation({
   },
   returns: vMessageDoc,
   handler: async (ctx, args) => {
-    const message = await ctx.db.get(args.messageId);
+    const message = await ctx.db.get("messages", args.messageId);
     assert(message, `Message ${args.messageId} not found`);
 
     if (args.patch.fileIds) {
@@ -456,13 +460,14 @@ export const updateMessage = mutation({
 
     if (args.patch.status === "failed") {
       if (message.embeddingId) {
-        await ctx.db.delete(message.embeddingId);
+        const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
+        await ctx.db.delete(tableName, message.embeddingId);
       }
       patch.embeddingId = undefined;
     }
 
-    await ctx.db.patch(args.messageId, patch);
-    return publicMessage((await ctx.db.get(args.messageId))!);
+    await ctx.db.patch("messages", args.messageId, patch);
+    return publicMessage((await ctx.db.get("messages", args.messageId))!);
   },
 });
 
@@ -540,7 +545,8 @@ export const cloneMessageBatch = internalMutation({
           }
           let embeddingId: VectorTableId | undefined = undefined;
           if (m.embeddingId) {
-            const vector = await ctx.db.get(m.embeddingId);
+            const { tableName } = getVectorIdInfo(ctx, m.embeddingId);
+            const vector = await ctx.db.get(tableName, m.embeddingId);
             assert(vector, `Vector ${m.embeddingId} not found`);
             const dimension = vector.vector.length;
             validateVectorDimension(dimension);
@@ -636,7 +642,7 @@ async function listMessagesByThreadIdHandler(
   const statuses = args.statuses ?? vMessageStatus.members.map((m) => m.value);
   const last =
     args.upToAndIncludingMessageId &&
-    (await ctx.db.get(args.upToAndIncludingMessageId));
+    (await ctx.db.get("messages", args.upToAndIncludingMessageId));
   assert(
     !last || last.threadId === args.threadId,
     "upToAndIncludingMessageId must be a message in the thread",
@@ -679,7 +685,7 @@ async function listMessagesByThreadIdHandler(
 export const getMessagesByIds = query({
   args: { messageIds: v.array(v.id("messages")) },
   handler: async (ctx, args) => {
-    return (await Promise.all(args.messageIds.map((id) => ctx.db.get(id)))).map(
+    return (await Promise.all(args.messageIds.map((id) => ctx.db.get("messages", id)))).map(
       (m) => (m ? publicMessage(m) : null),
     );
   },
@@ -793,7 +799,7 @@ export const _fetchSearchMessages = internalQuery({
   returns: v.array(vMessageDoc),
   handler: async (ctx, args): Promise<MessageDoc[]> => {
     const beforeMessage =
-      args.beforeMessageId && (await ctx.db.get(args.beforeMessageId));
+      args.beforeMessageId && (await ctx.db.get("messages", args.beforeMessageId));
     const { searchAllMessagesForUserId, threadId } = args;
     assert(
       searchAllMessagesForUserId || threadId,
@@ -911,7 +917,7 @@ export const textSearch = query({
       "Specify userId or threadId",
     );
     const targetMessage =
-      args.targetMessageId && (await ctx.db.get(args.targetMessageId));
+      args.targetMessageId && (await ctx.db.get("messages", args.targetMessageId));
     const order = targetMessage?.order;
     const text = args.text || targetMessage?.text;
     if (!text) {
@@ -964,12 +970,13 @@ export const getMessageSearchFields = query({
     embedding?: number[] | undefined;
     embeddingModel?: string | undefined;
   }> => {
-    const message = await ctx.db.get(args.messageId);
+    const message = await ctx.db.get("messages", args.messageId);
     const text = message?.text;
     let embedding = undefined;
     let embeddingModel = undefined;
     if (message?.embeddingId) {
-      const target = await ctx.db.get(message.embeddingId);
+      const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
+      const target = await ctx.db.get(tableName, message.embeddingId);
       embedding = target?.vector;
       embeddingModel = target?.model;
     }

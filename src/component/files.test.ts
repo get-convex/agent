@@ -96,7 +96,7 @@ describe("files", () => {
       });
       // Manually set refcount to 0
       await t.run(async (ctx) => {
-        await ctx.db.patch(fileId, { refcount: 0 });
+        await ctx.db.patch("files", fileId, { refcount: 0 });
       });
       files.push(fileId);
     }
