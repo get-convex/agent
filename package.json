@@ -87,6 +87,7 @@
     "@ai-sdk/openai": "3.0.10",
     "@ai-sdk/provider": "3.0.3",
     "@ai-sdk/provider-utils": "4.0.6",
+    "@convex-dev/eslint-plugin": "^2.0.0",
     "@convex-dev/rag": "0.7.2",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/workflow": "0.3.6",
