@@ -29,10 +29,11 @@ export async function addFileHandler(
 ) {
   // Support both mediaType (preferred) and mimeType (deprecated)
   const mediaType = args.mediaType ?? args.mimeType;
-  
+
   const existingFile = await ctx.db
     .query("files")
     .withIndex("hash", (q) => q.eq("hash", args.hash))
+    // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
     .filter((q) => q.eq(q.field("filename"), args.filename))
     .first();
   if (existingFile) {
@@ -87,6 +88,7 @@ export const useExistingFile = mutation({
     const file = await ctx.db
       .query("files")
       .withIndex("hash", (q) => q.eq("hash", args.hash))
+      // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
       .filter((q) => q.eq(q.field("filename"), args.filename))
       .first();
     if (!file) {
