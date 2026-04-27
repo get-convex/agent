@@ -174,7 +174,8 @@ async function addMessagesHandler(
     hideFromUserIdSearch,
     ...rest
   } = args;
-  const promptMessage = promptMessageId && (await ctx.db.get("messages", promptMessageId));
+  const promptMessage =
+    promptMessageId && (await ctx.db.get("messages", promptMessageId));
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
     const pendingMessages = await ctx.db
@@ -685,9 +686,9 @@ async function listMessagesByThreadIdHandler(
 export const getMessagesByIds = query({
   args: { messageIds: v.array(v.id("messages")) },
   handler: async (ctx, args) => {
-    return (await Promise.all(args.messageIds.map((id) => ctx.db.get("messages", id)))).map(
-      (m) => (m ? publicMessage(m) : null),
-    );
+    return (
+      await Promise.all(args.messageIds.map((id) => ctx.db.get("messages", id)))
+    ).map((m) => (m ? publicMessage(m) : null));
   },
   returns: v.array(v.union(v.null(), vMessageDoc)),
 });
@@ -799,7 +800,8 @@ export const _fetchSearchMessages = internalQuery({
   returns: v.array(vMessageDoc),
   handler: async (ctx, args): Promise<MessageDoc[]> => {
     const beforeMessage =
-      args.beforeMessageId && (await ctx.db.get("messages", args.beforeMessageId));
+      args.beforeMessageId &&
+      (await ctx.db.get("messages", args.beforeMessageId));
     const { searchAllMessagesForUserId, threadId } = args;
     assert(
       searchAllMessagesForUserId || threadId,
@@ -815,6 +817,7 @@ export const _fetchSearchMessages = internalQuery({
                 ? q.eq("embeddingId", embeddingId)
                 : q.eq("embeddingId", embeddingId).eq("threadId", threadId!),
             )
+            // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many messages with the same embeddingId for different users / threads
             .filter((q) =>
               q.and(
                 q.eq(q.field("status"), "success"),
@@ -917,7 +920,8 @@ export const textSearch = query({
       "Specify userId or threadId",
     );
     const targetMessage =
-      args.targetMessageId && (await ctx.db.get("messages", args.targetMessageId));
+      args.targetMessageId &&
+      (await ctx.db.get("messages", args.targetMessageId));
     const order = targetMessage?.order;
     const text = args.text || targetMessage?.text;
     if (!text) {
@@ -932,6 +936,7 @@ export const textSearch = query({
           : q.search("text", text).eq("threadId", args.threadId!),
       )
       // Just in case tool messages slip through
+      // eslint-disable-next-line @convex-dev/no-filter-in-query -- we can't do this in the search index, but text search ideally isn't for really old orders
       .filter((q) => {
         const qq = q.eq(q.field("tool"), false);
         if (order) {
