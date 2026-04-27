@@ -744,8 +744,7 @@ function createAssistantUIMessage<
   // Process execution-denied results to update tool call states
   for (const denied of executionDeniedResults) {
     const toolCallPart = allParts.find(
-      (part) =>
-        "toolCallId" in part && part.toolCallId === denied.toolCallId,
+      (part) => "toolCallId" in part && part.toolCallId === denied.toolCallId,
     ) as ToolUIPart | undefined;
 
     if (toolCallPart) {

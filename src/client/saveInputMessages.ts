@@ -31,7 +31,10 @@ export async function saveInputMessages(
     storageOptions?: {
       saveMessages?: "all" | "promptAndOutput";
     };
-  } & Pick<Config, "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings">,
+  } & Pick<
+    Config,
+    "usageHandler" | "textEmbeddingModel" | "embeddingModel" | "callSettings"
+  >,
 ): Promise<{
   promptMessageId: string | undefined;
   pendingMessage: MessageDoc;

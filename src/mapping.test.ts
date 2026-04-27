@@ -267,13 +267,21 @@ describe("mapping", () => {
           role: "assistant" as const,
           content: [
             { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
-            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap1",
+              toolCallId: "tc1",
+            },
           ],
         },
         {
           role: "tool" as const,
           content: [
-            { type: "tool-approval-response", approvalId: "ap1", approved: true },
+            {
+              type: "tool-approval-response",
+              approvalId: "ap1",
+              approved: true,
+            },
           ],
         },
       ] as any;
@@ -289,7 +297,11 @@ describe("mapping", () => {
           role: "assistant" as const,
           content: [
             { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
-            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap1",
+              toolCallId: "tc1",
+            },
           ],
         },
         { role: "user" as const, content: "new message" },
@@ -304,7 +316,9 @@ describe("mapping", () => {
       expect(denialContent[0].type).toBe("tool-approval-response");
       expect(denialContent[0].approvalId).toBe("ap1");
       expect(denialContent[0].approved).toBe(false);
-      expect(denialContent[0].reason).toBe("auto-denied: new generation started");
+      expect(denialContent[0].reason).toBe(
+        "auto-denied: new generation started",
+      );
       // The new user message should follow
       expect(result[3].role).toBe("user");
       expect(result[3].content).toBe("new message");
@@ -317,8 +331,16 @@ describe("mapping", () => {
           content: [
             { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
             { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
-            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
-            { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap1",
+              toolCallId: "tc1",
+            },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap2",
+              toolCallId: "tc2",
+            },
           ],
         },
       ] as any;
@@ -341,14 +363,26 @@ describe("mapping", () => {
           content: [
             { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
             { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
-            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
-            { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap1",
+              toolCallId: "tc1",
+            },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap2",
+              toolCallId: "tc2",
+            },
           ],
         },
         {
           role: "tool" as const,
           content: [
-            { type: "tool-approval-response", approvalId: "ap1", approved: true },
+            {
+              type: "tool-approval-response",
+              approvalId: "ap1",
+              approved: true,
+            },
           ],
         },
         { role: "user" as const, content: "next question" },
@@ -381,8 +415,16 @@ describe("mapping", () => {
           content: [
             { type: "tool-call", toolCallId: "tc1", toolName: "a", input: {} },
             { type: "tool-call", toolCallId: "tc2", toolName: "b", input: {} },
-            { type: "tool-approval-request", approvalId: "ap1", toolCallId: "tc1" },
-            { type: "tool-approval-request", approvalId: "ap2", toolCallId: "tc2" },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap1",
+              toolCallId: "tc1",
+            },
+            {
+              type: "tool-approval-request",
+              approvalId: "ap2",
+              toolCallId: "tc2",
+            },
           ],
         },
       ] as any;
@@ -390,12 +432,8 @@ describe("mapping", () => {
       autoDenyUnresolvedApprovals(messages);
 
       expect(warnSpy).toHaveBeenCalledTimes(2);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("ap1"),
-      );
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("ap2"),
-      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("ap1"));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("ap2"));
       warnSpy.mockRestore();
     });
   });
