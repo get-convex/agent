@@ -101,7 +101,9 @@ export const create = mutation({
       internal.streams.timeoutStream,
       { streamId },
     );
-    await ctx.db.patch("streamingMessages", streamId, { state: { ...state, timeoutFnId } });
+    await ctx.db.patch("streamingMessages", streamId, {
+      state: { ...state, timeoutFnId },
+    });
     return streamId;
   },
 });
@@ -219,7 +221,10 @@ async function cleanupTimeoutFn(
   stream: Doc<"streamingMessages">,
 ) {
   if (stream.state.kind === "streaming" && stream.state.timeoutFnId) {
-    const timeoutFn = await ctx.db.system.get("_scheduled_functions", stream.state.timeoutFnId);
+    const timeoutFn = await ctx.db.system.get(
+      "_scheduled_functions",
+      stream.state.timeoutFnId,
+    );
     if (timeoutFn?.state.kind === "pending") {
       await ctx.scheduler.cancel(stream.state.timeoutFnId);
     }
@@ -294,7 +299,10 @@ async function heartbeatStream(
   if (!stream.state.timeoutFnId) {
     throw new Error("Stream has no timeout function");
   }
-  const timeoutFn = await ctx.db.system.get("_scheduled_functions", stream.state.timeoutFnId);
+  const timeoutFn = await ctx.db.system.get(
+    "_scheduled_functions",
+    stream.state.timeoutFnId,
+  );
   if (!timeoutFn) {
     throw new Error("Timeout function not found");
   }
@@ -338,7 +346,9 @@ async function deletePageForStreamId(
       numItems: MAX_DELTAS_PER_REQUEST,
       cursor: args.cursor ?? null,
     });
-  await Promise.all(deltas.page.map((d) => ctx.db.delete("streamDeltas", d._id)));
+  await Promise.all(
+    deltas.page.map((d) => ctx.db.delete("streamDeltas", d._id)),
+  );
   if (deltas.isDone) {
     const stream = await ctx.db.get("streamingMessages", args.streamId);
     if (stream) {
