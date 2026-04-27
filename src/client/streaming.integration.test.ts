@@ -152,9 +152,7 @@ describe("HTTP Streaming Initiation", () => {
 
       // Verify we can reconstruct the text from deltas
       const { parts } = getParts(deltas);
-      const textParts = parts.filter(
-        (p: any) => p.type === "text-delta",
-      );
+      const textParts = parts.filter((p: any) => p.type === "text-delta");
       expect(textParts.length).toBeGreaterThan(0);
     });
   });
@@ -265,10 +263,9 @@ describe("Stream Exclusion Logic", () => {
       await streamer2.addParts([{ type: "start" }]);
 
       // Default list: only streaming
-      const defaultStreams = await ctx.runQuery(
-        components.agent.streams.list,
-        { threadId },
-      );
+      const defaultStreams = await ctx.runQuery(components.agent.streams.list, {
+        threadId,
+      });
       expect(defaultStreams).toHaveLength(1);
       expect(defaultStreams[0].status).toBe("streaming");
       expect(defaultStreams[0].order).toBe(1);
@@ -325,10 +322,10 @@ describe("Stream Exclusion Logic", () => {
       expect(finishedStreams[0].status).toBe("finished");
 
       // Query for only aborted
-      const abortedStreams = await ctx.runQuery(
-        components.agent.streams.list,
-        { threadId, statuses: ["aborted"] },
-      );
+      const abortedStreams = await ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["aborted"],
+      });
       expect(abortedStreams).toHaveLength(1);
       expect(abortedStreams[0].status).toBe("aborted");
 
@@ -487,10 +484,10 @@ describe("Delta Stream Consumption", () => {
       expect(laterParts.length).toBeLessThanOrEqual(allParts.length);
 
       // Fetching from the end cursor should yield nothing
-      const noDeltas = await ctx.runQuery(
-        components.agent.streams.listDeltas,
-        { threadId, cursors: [{ cursor: endCursor, streamId }] },
-      );
+      const noDeltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ cursor: endCursor, streamId }],
+      });
       expect(noDeltas).toHaveLength(0);
     });
   });
@@ -526,16 +523,13 @@ describe("Delta Stream Consumption", () => {
       const id2 = streamer2.streamId!;
 
       // Fetch deltas for both streams simultaneously
-      const deltas = await ctx.runQuery(
-        components.agent.streams.listDeltas,
-        {
-          threadId,
-          cursors: [
-            { cursor: 0, streamId: id1 },
-            { cursor: 0, streamId: id2 },
-          ],
-        },
-      );
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [
+          { cursor: 0, streamId: id1 },
+          { cursor: 0, streamId: id2 },
+        ],
+      });
 
       // Should have deltas for both streams
       const s1Deltas = deltas.filter((d) => d.streamId === id1);
@@ -568,10 +562,10 @@ describe("Delta Stream Consumption", () => {
         threadId,
         statuses: ["finished"],
       });
-      const deltas = await ctx.runQuery(
-        components.agent.streams.listDeltas,
-        { threadId, cursors: [{ cursor: 0, streamId }] },
-      );
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ cursor: 0, streamId }],
+      });
 
       // Derive UI messages
       const uiMessages = await deriveUIMessagesFromDeltas(
@@ -615,10 +609,10 @@ describe("Delta Stream Consumption", () => {
       await streamer.consumeStream(result.toUIMessageStream());
       const streamId = streamer.streamId!;
 
-      const deltas = await ctx.runQuery(
-        components.agent.streams.listDeltas,
-        { threadId, cursors: [{ cursor: 0, streamId }] },
-      );
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ cursor: 0, streamId }],
+      });
       const { parts } = getParts(deltas);
 
       // Compressed: all text-deltas for one text section should be merged
@@ -691,7 +685,9 @@ describe("Delta Stream Consumption", () => {
         streamId,
         start: 0,
         end: 1,
-        parts: [{ type: "text-delta", id: "txt-0", text: "Let me call a tool. " }],
+        parts: [
+          { type: "text-delta", id: "txt-0", text: "Let me call a tool. " },
+        ],
       },
       {
         streamId,
@@ -743,9 +739,7 @@ describe("Delta Stream Consumption", () => {
     expect(msg.text).toContain("Let me call a tool.");
     expect(msg.text).toContain("Here are the results.");
 
-    const toolParts = msg.parts.filter((p: any) =>
-      p.type.startsWith("tool-"),
-    );
+    const toolParts = msg.parts.filter((p: any) => p.type.startsWith("tool-"));
     expect(toolParts.length).toBeGreaterThan(0);
   });
 });
@@ -1001,10 +995,10 @@ describe("Stream Lifecycle Integration", () => {
       expect(finished).toHaveLength(1);
 
       // 4. Derive UI messages from stored deltas
-      const deltas = await ctx.runQuery(
-        components.agent.streams.listDeltas,
-        { threadId, cursors: [{ cursor: 0, streamId }] },
-      );
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ cursor: 0, streamId }],
+      });
       const uiMessages = await deriveUIMessagesFromDeltas(
         threadId,
         finished,
@@ -1056,10 +1050,10 @@ describe("Stream Lifecycle Integration", () => {
       expect(aborted[0].status).toBe("aborted");
 
       // Even aborted streams have their deltas stored
-      const deltas = await ctx.runQuery(
-        components.agent.streams.listDeltas,
-        { threadId, cursors: [{ cursor: 0, streamId }] },
-      );
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ cursor: 0, streamId }],
+      });
       expect(deltas.length).toBeGreaterThan(0);
     });
   });
