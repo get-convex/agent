@@ -703,7 +703,7 @@ describe("agent", () => {
         ],
       },
     );
-    const targetMessageId = newMessages[0]._id;
+    const targetMessageId = newMessages[0]._id as Id<"messages">;
 
     const results = await t.query(api.messages.textSearch, {
       searchAllMessagesForUserId: userId,
@@ -759,7 +759,7 @@ describe("agent", () => {
 
     const results = await t.query(api.messages.textSearch, {
       searchAllMessagesForUserId: userId,
-      targetMessageId: targetMessages[0]._id,
+      targetMessageId: targetMessages[0]._id as Id<"messages">,
       text: "high-ticket",
       limit: 10,
     });
