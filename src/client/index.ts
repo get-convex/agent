@@ -1717,6 +1717,17 @@ export class Agent<
     request: Request,
   ) => Promise<Response> {
     return async (ctx_, request) => {
+      // Run authorize FIRST, before consuming the body, so callbacks that
+      // need to read the raw request (e.g. HMAC signature verification)
+      // still have an unread body to work with.
+      let userId: string | undefined;
+      let threadId: string | undefined;
+      if (spec?.authorize) {
+        const authResult = await spec.authorize(ctx_, request);
+        if (authResult?.userId) userId = authResult.userId;
+        if (authResult?.threadId) threadId = authResult.threadId;
+      }
+
       let body: {
         threadId?: string;
         prompt?: string;
@@ -1735,14 +1746,7 @@ export class Agent<
         );
       }
 
-      let userId: string | undefined;
-      let threadId: string | undefined = body.threadId;
-
-      if (spec?.authorize) {
-        const authResult = await spec.authorize(ctx_, request);
-        if (authResult?.userId) userId = authResult.userId;
-        if (authResult?.threadId) threadId = authResult.threadId;
-      }
+      threadId = threadId ?? body.threadId;
 
       const targetArgs = { userId, threadId };
       const llmArgs = {
@@ -1750,6 +1754,9 @@ export class Agent<
         promptMessageId: body.promptMessageId,
         messages: body.messages?.map((m) => toModelMessage(m as never)),
         stopWhen: spec?.stopWhen,
+        // Forward the request abort signal so a client disconnect halts
+        // model execution and tool work instead of running to completion.
+        abortSignal: request.signal,
       };
       const ctx = (
         spec?.customCtx

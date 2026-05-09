@@ -84,12 +84,13 @@ export async function streamText<
   let pendingFinalStep: StepResult<TOOLS> | undefined;
 
   // Whether streamText will await stream consumption before returning.
-  // When false (saveStreamDeltas with returnImmediately, or no deltas),
-  // we cannot defer the final-step save — the deferred work would never run.
+  // Only true when there's an actual DeltaStreamer to drain — otherwise
+  // we'd block the response with no persister to drain into.
   const willAwaitStream =
-    options.saveStreamDeltas === true ||
-    (typeof options.saveStreamDeltas === "object" &&
-      !options.saveStreamDeltas.returnImmediately);
+    Boolean(threadId) &&
+    (options.saveStreamDeltas === true ||
+      (typeof options.saveStreamDeltas === "object" &&
+        !options.saveStreamDeltas.returnImmediately));
 
   const streamer =
     threadId && options.saveStreamDeltas
