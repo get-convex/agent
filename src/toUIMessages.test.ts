@@ -32,7 +32,11 @@ describe("toUIMessages", () => {
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("user");
     expect(uiMessages[0].text).toBe("Hello!");
-    expect(uiMessages[0].parts[0]).toEqual({ type: "text", text: "Hello!" });
+    expect(uiMessages[0].parts[0]).toEqual({
+      type: "text",
+      text: "Hello!",
+      state: "done",
+    });
   });
 
   it("handles assistant message", () => {

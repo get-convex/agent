@@ -337,7 +337,7 @@ function createUserUIMessage<
 
   const parts: UIMessage<METADATA, DATA_PARTS, TOOLS>["parts"] = [];
   if (text && !nonStringContent.length) {
-    parts.push({ type: "text", text });
+    parts.push({ type: "text", text, ...partCommon });
   }
   for (const contentPart of nonStringContent) {
     switch (contentPart.type) {

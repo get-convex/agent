@@ -928,20 +928,26 @@ export const textSearch = query({
       // Just in case tool messages slip through
       .filter((q) => {
         const qq = q.eq(q.field("tool"), false);
-        if (order) {
+        // Order is only comparable within a single thread, so when searching
+        // across threads for a user we skip the DB-level order filter and
+        // apply it per-thread below.
+        if (order && !args.searchAllMessagesForUserId) {
           return q.and(qq, q.lte(q.field("order"), order));
         }
         return qq;
       })
       .take(args.limit);
     return messages
-      .filter(
-        (m) =>
-          !targetMessage ||
+      .filter((m) => {
+        if (!targetMessage) return true;
+        // Different threads have independent order sequences; don't compare across them.
+        if (m.threadId !== targetMessage.threadId) return true;
+        return (
           m.order < targetMessage.order ||
           (m.order === targetMessage.order &&
-            m.stepOrder < targetMessage.stepOrder),
-      )
+            m.stepOrder < targetMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
   },
   returns: v.array(vMessageDoc),
