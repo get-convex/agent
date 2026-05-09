@@ -9,6 +9,23 @@ import type {
   Output,
 } from "./types.js";
 import type { StreamingOptions } from "./streaming.js";
+import {
+  HTTP_STREAM_MESSAGE_ID_HEADER,
+  HTTP_STREAM_STREAM_ID_HEADER,
+} from "../shared.js";
+
+export {
+  HTTP_STREAM_MESSAGE_ID_HEADER,
+  HTTP_STREAM_STREAM_ID_HEADER,
+} from "../shared.js";
+
+/** JSON request body shape consumed by HTTP streaming helpers. */
+export type HttpStreamRequestBody = {
+  threadId?: string;
+  prompt?: string;
+  promptMessageId?: string;
+  messages?: unknown[];
+};
 
 export type HttpStreamOptions = Options & {
   agentName: string;
@@ -86,7 +103,7 @@ export async function httpStreamText<
   );
 
   const response = result.toTextStreamResponse();
-  applyHeaders(response, result, options.corsHeaders);
+  applyStreamHeaders(response, result, options.corsHeaders);
   return response;
 }
 
@@ -130,7 +147,7 @@ export async function httpStreamUIMessages<
   );
 
   const response = result.toUIMessageStreamResponse();
-  applyHeaders(response, result, options.corsHeaders);
+  applyStreamHeaders(response, result, options.corsHeaders);
   return response;
 }
 
@@ -145,16 +162,25 @@ async function resolveThreadId(
   });
 }
 
-function applyHeaders(
+/**
+ * Set the standard HTTP-streaming response headers (`X-Message-Id`,
+ * `X-Stream-Id`) plus any caller-supplied CORS headers. Shared between
+ * the standalone helpers and `Agent.asHttpAction()` so the on-the-wire
+ * contract has a single source of truth.
+ */
+export function applyStreamHeaders(
   response: Response,
   result: { promptMessageId?: string; streamId?: string },
   corsHeaders?: Record<string, string>,
 ) {
   if (result.promptMessageId) {
-    response.headers.set("X-Message-Id", result.promptMessageId);
+    response.headers.set(
+      HTTP_STREAM_MESSAGE_ID_HEADER,
+      result.promptMessageId,
+    );
   }
   if (result.streamId) {
-    response.headers.set("X-Stream-Id", result.streamId);
+    response.headers.set(HTTP_STREAM_STREAM_ID_HEADER, result.streamId);
   }
   if (corsHeaders) {
     for (const [key, value] of Object.entries(corsHeaders)) {

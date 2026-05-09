@@ -1,5 +1,9 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
+import {
+  HTTP_STREAM_MESSAGE_ID_HEADER,
+  HTTP_STREAM_STREAM_ID_HEADER,
+} from "../shared.js";
 import { consumeTextStream } from "./httpStreamUtils.js";
 
 /**
@@ -94,8 +98,12 @@ export function useHttpStream(options: {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const responseStreamId = response.headers.get("X-Stream-Id");
-        const responseMessageId = response.headers.get("X-Message-Id");
+        const responseStreamId = response.headers.get(
+          HTTP_STREAM_STREAM_ID_HEADER,
+        );
+        const responseMessageId = response.headers.get(
+          HTTP_STREAM_MESSAGE_ID_HEADER,
+        );
         if (requestId === requestIdRef.current) {
           if (responseStreamId) setStreamId(responseStreamId);
           if (responseMessageId) setMessageId(responseMessageId);

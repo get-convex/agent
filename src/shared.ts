@@ -17,6 +17,20 @@ import type { Message, MessageContentParts } from "./validators.js";
 
 export const DEFAULT_RECENT_MESSAGES = 100;
 
+/**
+ * Header name carrying the prompt message ID on HTTP streaming responses.
+ * Clients (e.g. `useHttpStream`) read this to associate the streamed
+ * response with a persisted message.
+ */
+export const HTTP_STREAM_MESSAGE_ID_HEADER = "X-Message-Id";
+
+/**
+ * Header name carrying the delta stream ID on HTTP streaming responses.
+ * Clients pass this to `useUIMessages`'s `skipStreamIds` to dedupe HTTP
+ * stream content against the persisted delta stream.
+ */
+export const HTTP_STREAM_STREAM_ID_HEADER = "X-Stream-Id";
+
 export function isTool(message: Message | ModelMessage) {
   return (
     message.role === "tool" ||

@@ -289,7 +289,66 @@ HTTP streaming additions should be exported from the main surface or a new `@con
 
 ---
 
-## 8. Open Questions
+## 8. Security Considerations
+
+HTTP streaming widens the surface area for cross-tenant data exposure compared to the WebSocket path, which sits behind Convex auth on every reactive query. Three invariants must be enforced by consumers:
+
+### 8.1 thread ownership must be validated by `authorize`
+
+`Agent.asHttpAction()` will only honor a `threadId` supplied via `authorize`'s return value, not from the JSON body. Without an `authorize` callback (or with one that doesn't return `threadId`), the helper creates a fresh thread and ignores `body.threadId` entirely. This is the default-deny path.
+
+To accept caller-supplied `threadId` from the body, `authorize` MUST validate ownership before returning it:
+
+```ts
+agent.asHttpAction({
+  authorize: async (ctx, _request, body) => {
+    const userId = await getUserIdFromAuth(ctx);
+    if (body.threadId) {
+      // Throws or returns falsy if userId doesn't own the thread.
+      await assertThreadOwnedBy(ctx, body.threadId, userId);
+      return { userId, threadId: body.threadId };
+    }
+    return { userId };
+  },
+})
+```
+
+A consumer who omits validation and returns `body.threadId` unconditionally re-introduces the cross-tenant hole.
+
+### 8.2 Concurrent streams on the same thread are not deduplicated
+
+The component schema does not enforce uniqueness on `(threadId, order, stepOrder)` for `streamingMessages` (see `streams.create` — there's an explicit TODO). Two simultaneous streams against the same thread are allowed; both write deltas; subscribers see the interleaved output.
+
+In practice this matters when:
+- the same client triggers two generations before the first finishes, or
+- two authenticated callers with thread access stream concurrently.
+
+If your application can have multiple writers per thread, either:
+- single-flight per-thread on your side (mutex / debounce), or
+- abort the previous stream before starting a new one (`abortStream` from `@convex-dev/agent`).
+
+### 8.3 `abortStream` does not authorize the caller
+
+The component-level `streams.abort` and `streams.abortByOrder` mutations do not check that the caller owns the stream — they accept any valid `streamId` or `(threadId, order)`. The `abortStream` client helper plumbs straight through. If you re-export it as a public mutation, **wrap it in your own ownership check**:
+
+```ts
+export const stopStream = mutation({
+  args: { streamId: v.string() },
+  handler: async (ctx, { streamId }) => {
+    const userId = await getUserIdFromAuth(ctx);
+    await assertStreamOwnedBy(ctx, streamId, userId);
+    return abortStream(ctx, components.agent, {
+      streamId, reason: "user",
+    });
+  },
+});
+```
+
+The `X-Stream-Id` response header on the HTTP path normalizes `streamId` as a known-to-clients value, which strengthens the case for adding ownership checks at the component layer in a follow-up. Until then, treat `streamId` as a capability and only expose abort behind an auth check.
+
+---
+
+## 9. Open Questions
 
 1. **SSE vs NDJSON**: Should the HTTP transport use SSE (native browser support, automatic reconnection) or NDJSON (simpler, works with `fetch` + `ReadableStream`)?
 

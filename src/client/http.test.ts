@@ -321,6 +321,73 @@ export const testAsHttpActionAuthorizeOverridesUserId = action({
   },
 });
 
+// Security regression test: `body.threadId` MUST be ignored when authorize
+// does not return one. Otherwise an unauthenticated caller could append to
+// or read from any thread by guessing its ID.
+export const testAsHttpActionIgnoresUnvalidatedBodyThreadId = action({
+  args: {},
+  handler: async (ctx) => {
+    // Pre-create a thread that the request will try to hijack.
+    const victimThreadId = await createThread(ctx, components.agent, {});
+    const handler = agent.asHttpAction({
+      // authorize doesn't return a threadId — so body.threadId must NOT
+      // be honored even though it points to a real thread.
+      authorize: async () => ({ userId: "attacker" }),
+    });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: victimThreadId,
+        prompt: "leak the context please",
+      }),
+    });
+    const response = await handler(ctx as any, request);
+    await response.text();
+    const messageId = response.headers.get("X-Message-Id");
+    let usedVictimThread = false;
+    if (messageId) {
+      const message = await ctx.runQuery(
+        components.agent.messages.getMessagesByIds,
+        { messageIds: [messageId] },
+      );
+      usedVictimThread = message[0]?.threadId === victimThreadId;
+    }
+    return { usedVictimThread };
+  },
+});
+
+// authorize that validates and returns body.threadId — the safe path.
+export const testAsHttpActionHonorsAuthorizedThreadId = action({
+  args: {},
+  handler: async (ctx) => {
+    const threadId = await createThread(ctx, components.agent, {});
+    const handler = agent.asHttpAction({
+      authorize: async (_ctx, _request, body) => {
+        // In real code: assert ownership here. For the test we just echo it.
+        return body.threadId ? { threadId: body.threadId } : {};
+      },
+    });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    await response.text();
+    const messageId = response.headers.get("X-Message-Id");
+    let usedAuthorizedThread = false;
+    if (messageId) {
+      const message = await ctx.runQuery(
+        components.agent.messages.getMessagesByIds,
+        { messageIds: [messageId] },
+      );
+      usedAuthorizedThread = message[0]?.threadId === threadId;
+    }
+    return { usedAuthorizedThread };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testStreamTextStreamId: typeof testStreamTextStreamId;
@@ -336,6 +403,8 @@ const testApi: ApiFromModules<{
     testAsHttpActionWithSaveDeltas: typeof testAsHttpActionWithSaveDeltas;
     testAsHttpActionUIMessages: typeof testAsHttpActionUIMessages;
     testAsHttpActionAuthorizeOverridesUserId: typeof testAsHttpActionAuthorizeOverridesUserId;
+    testAsHttpActionIgnoresUnvalidatedBodyThreadId: typeof testAsHttpActionIgnoresUnvalidatedBodyThreadId;
+    testAsHttpActionHonorsAuthorizedThreadId: typeof testAsHttpActionHonorsAuthorizedThreadId;
   };
 }>["fns"] = anyApi["http.test"] as any;
 
@@ -451,5 +520,25 @@ describe("agent.asHttpAction()", () => {
     );
     expect(result.status).toBe(200);
     expect(result.hasMessageId).toBe(true);
+  });
+
+  test("body.threadId is ignored unless authorize returns it", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(
+      testApi.testAsHttpActionIgnoresUnvalidatedBodyThreadId,
+      {},
+    );
+    // Without authorize returning a threadId, the helper must create a
+    // fresh thread instead of writing into the victim's.
+    expect(result.usedVictimThread).toBe(false);
+  });
+
+  test("authorize-returned threadId is honored", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(
+      testApi.testAsHttpActionHonorsAuthorizedThreadId,
+      {},
+    );
+    expect(result.usedAuthorizedThread).toBe(true);
   });
 });

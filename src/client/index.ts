@@ -99,13 +99,21 @@ import type {
   Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
+import {
+  applyStreamHeaders,
+  type HttpStreamRequestBody,
+} from "./http.js";
 import { errorToString, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
 export {
+  HTTP_STREAM_MESSAGE_ID_HEADER,
+  HTTP_STREAM_STREAM_ID_HEADER,
+  applyStreamHeaders,
   httpStreamText,
   httpStreamUIMessages,
   type HttpStreamOptions,
+  type HttpStreamRequestBody,
 } from "./http.js";
 export {
   docsToModelMessages,
@@ -1711,13 +1719,34 @@ export class Agent<
       /** Extra headers to add to the response (e.g. CORS headers). */
       corsHeaders?: Record<string, string>;
       /**
-       * Optional authorization callback. Receives the raw request and may
-       * return `{ userId?, threadId? }` to override values from the body.
+       * Authorization callback. Receives the action ctx, a clone of the
+       * raw request (so HMAC verification can still read the body), and
+       * the parsed JSON body.
+       *
+       * IMPORTANT: `body.threadId` is **only** honored if you return a
+       * `threadId` from this callback after validating that the caller
+       * owns the thread. Without an explicit return, body.threadId is
+       * ignored and a new thread is created. This prevents a caller from
+       * appending to or reading from an arbitrary thread by guessing IDs.
+       *
        * Throw to reject the request.
+       *
+       * @example
+       * ```ts
+       * authorize: async (ctx, _request, body) => {
+       *   const userId = await getUserIdFromAuth(ctx);
+       *   if (body.threadId) {
+       *     await assertThreadOwnedBy(ctx, body.threadId, userId);
+       *     return { userId, threadId: body.threadId };
+       *   }
+       *   return { userId };
+       * }
+       * ```
        */
       authorize?: (
         ctx: GenericActionCtx<DataModel>,
         request: Request,
+        body: HttpStreamRequestBody,
       ) => Promise<{ userId?: string; threadId?: string } | void>;
     } & Options,
   ): (
@@ -1725,25 +1754,13 @@ export class Agent<
     request: Request,
   ) => Promise<Response> {
     return async (ctx_, request) => {
-      // Run authorize FIRST, before consuming the body, so callbacks that
-      // need to read the raw request (e.g. HMAC signature verification)
-      // still have an unread body to work with.
-      let userId: string | undefined;
-      let threadId: string | undefined;
-      if (spec?.authorize) {
-        const authResult = await spec.authorize(ctx_, request);
-        if (authResult?.userId) userId = authResult.userId;
-        if (authResult?.threadId) threadId = authResult.threadId;
-      }
+      // Clone before parsing so `authorize` can read the raw body if it
+      // needs to (e.g. HMAC signature verification).
+      const cloned = request.clone();
 
-      let body: {
-        threadId?: string;
-        prompt?: string;
-        promptMessageId?: string;
-        messages?: unknown[];
-      };
+      let body: HttpStreamRequestBody;
       try {
-        body = (await request.json()) as typeof body;
+        body = (await request.json()) as HttpStreamRequestBody;
       } catch {
         return new Response(
           JSON.stringify({ error: "Invalid JSON in request body" }),
@@ -1754,7 +1771,19 @@ export class Agent<
         );
       }
 
-      threadId = threadId ?? body.threadId;
+      let userId: string | undefined;
+      let authorizedThreadId: string | undefined;
+      if (spec?.authorize) {
+        const authResult = await spec.authorize(ctx_, cloned, body);
+        if (authResult?.userId) userId = authResult.userId;
+        if (authResult?.threadId) authorizedThreadId = authResult.threadId;
+      }
+
+      // Default-deny: only honor a thread the authorize callback has
+      // explicitly returned (after validating ownership). If authorize
+      // didn't run or didn't return a threadId, we ignore body.threadId
+      // and create a fresh thread below.
+      let threadId: string | undefined = authorizedThreadId;
 
       const targetArgs = { userId, threadId };
       const llmArgs = {
@@ -1797,18 +1826,7 @@ export class Agent<
         spec?.format === "ui-messages"
           ? result.toUIMessageStreamResponse()
           : result.toTextStreamResponse();
-
-      if (result.promptMessageId) {
-        response.headers.set("X-Message-Id", result.promptMessageId);
-      }
-      if (result.streamId) {
-        response.headers.set("X-Stream-Id", result.streamId);
-      }
-      if (spec?.corsHeaders) {
-        for (const [key, value] of Object.entries(spec.corsHeaders)) {
-          response.headers.set(key, value);
-        }
-      }
+      applyStreamHeaders(response, result, spec?.corsHeaders);
       return response;
     };
   }

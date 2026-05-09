@@ -73,18 +73,32 @@ export const streamResponse = internalAction({
 // Pattern 2: HTTP Streaming
 //
 // Streams text directly over an HTTP response using `agent.asHttpAction()`.
-// The handler parses the JSON body, creates a thread if needed, streams
-// the response, and sets X-Message-Id / X-Stream-Id headers.
+// The handler parses the JSON body, streams the response, and sets
+// X-Message-Id / X-Stream-Id headers.
 //
 // `saveStreamDeltas: { returnImmediately: true }` saves deltas in the
 // background so `useUIMessages` can dedupe by `streamId` AND the response
 // body starts streaming immediately. Plain `true` would buffer the full
 // generation before opening the body.
+//
+// IMPORTANT: `body.threadId` is only honored if `authorize` validates
+// ownership and returns it. Without authorize (or without returning
+// `threadId`), the helper creates a new thread instead — preventing a
+// caller from appending to or reading from arbitrary threads by guessing
+// IDs. This demo authorizes against the (mocked) authorizeThreadAccess
+// helper used by the rest of the example app.
 // ============================================================================
 
 export const streamOverHttp = httpAction(
   streamingDemoAgent.asHttpAction({
     saveStreamDeltas: { returnImmediately: true },
+    authorize: async (ctx, _request, body) => {
+      if (body.threadId) {
+        await authorizeThreadAccess(ctx, body.threadId);
+        return { threadId: body.threadId };
+      }
+      return {};
+    },
   }),
 );
 
