@@ -99,7 +99,6 @@ import type {
   Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
-import { normalizeHttpSaveStreamDeltas } from "./http.js";
 import { errorToString, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
@@ -1674,7 +1673,12 @@ export class Agent<
    * http.route({
    *   path: "/chat",
    *   method: "POST",
-   *   handler: httpAction(myAgent.asHttpAction()),
+   *   handler: httpAction(myAgent.asHttpAction({
+   *     // Save deltas in the background and start the response immediately
+   *     // (otherwise `saveStreamDeltas: true` buffers the full generation
+   *     // before the body opens).
+   *     saveStreamDeltas: { returnImmediately: true },
+   *   })),
    * });
    * ```
    */
@@ -1684,8 +1688,12 @@ export class Agent<
        * Whether to save incremental data (deltas) from streaming responses
        * to the database alongside the HTTP stream. Defaults to false.
        *
-       * For HTTP flows, `true` is normalized so the response body starts
-       * streaming without buffering the entire generation first.
+       * - `true` — save deltas; `streamText` consumes the model output before
+       *   returning, so the HTTP response body buffers until generation is
+       *   done. Stronger durability, slower first-byte.
+       * - `{ returnImmediately: true, ...}` — save deltas in the background
+       *   and return the response immediately so the body actually streams.
+       *   This is the typical HTTP setting.
        */
       saveStreamDeltas?: boolean | StreamingOptions;
       /**
@@ -1782,9 +1790,6 @@ export class Agent<
           // storageOptions, usageHandler, contextHandler,
           // rawRequestResponseHandler) so they actually take effect.
           ...spec,
-          saveStreamDeltas: normalizeHttpSaveStreamDeltas(
-            spec?.saveStreamDeltas,
-          ),
         },
       );
 

@@ -18,8 +18,13 @@ export type HttpStreamOptions = Options & {
    * Whether to save incremental data (deltas) from streaming responses
    * to the database alongside the HTTP stream. Defaults to false.
    *
-   * NOTE: For HTTP flows, `true` is normalized to `{ returnImmediately: true }`
-   * so the response body starts streaming without waiting for completion.
+   * Behaviour matches {@link streamText}'s `saveStreamDeltas`:
+   * - `true` — save deltas; `streamText` consumes the model output before
+   *   returning, so the HTTP response body buffers until generation is
+   *   done. Stronger durability, slower first-byte.
+   * - `{ returnImmediately: true, ...}` — save deltas in the background
+   *   and return the response immediately so the body actually streams.
+   *   This is the typical HTTP setting.
    */
   saveStreamDeltas?: boolean | StreamingOptions;
   /** Extra headers to add to the response (e.g. CORS headers). */
@@ -76,7 +81,7 @@ export async function httpStreamText<
     {
       ...options,
       threadId,
-      saveStreamDeltas: normalizeHttpSaveStreamDeltas(options.saveStreamDeltas),
+      saveStreamDeltas: options.saveStreamDeltas,
     },
   );
 
@@ -120,7 +125,7 @@ export async function httpStreamUIMessages<
     {
       ...options,
       threadId,
-      saveStreamDeltas: normalizeHttpSaveStreamDeltas(options.saveStreamDeltas),
+      saveStreamDeltas: options.saveStreamDeltas,
     },
   );
 
@@ -138,22 +143,6 @@ async function resolveThreadId(
   return createThread(ctx, component, {
     userId: options.userId ?? null,
   });
-}
-
-/**
- * If callers pass `saveStreamDeltas: true` for an HTTP flow, force
- * `returnImmediately: true` — otherwise `streamText` consumes the stream
- * before returning, which buffers the entire response and defeats the
- * purpose of streaming over HTTP.
- */
-export function normalizeHttpSaveStreamDeltas(
-  saveStreamDeltas?: boolean | StreamingOptions,
-): boolean | StreamingOptions | undefined {
-  if (saveStreamDeltas === true) return { returnImmediately: true };
-  if (saveStreamDeltas && typeof saveStreamDeltas === "object") {
-    return { ...saveStreamDeltas, returnImmediately: true };
-  }
-  return saveStreamDeltas;
 }
 
 function applyHeaders(

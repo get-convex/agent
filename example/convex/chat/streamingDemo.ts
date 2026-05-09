@@ -75,9 +75,18 @@ export const streamResponse = internalAction({
 // Streams text directly over an HTTP response using `agent.asHttpAction()`.
 // The handler parses the JSON body, creates a thread if needed, streams
 // the response, and sets X-Message-Id / X-Stream-Id headers.
+//
+// `saveStreamDeltas: { returnImmediately: true }` saves deltas in the
+// background so `useUIMessages` can dedupe by `streamId` AND the response
+// body starts streaming immediately. Plain `true` would buffer the full
+// generation before opening the body.
 // ============================================================================
 
-export const streamOverHttp = httpAction(streamingDemoAgent.asHttpAction());
+export const streamOverHttp = httpAction(
+  streamingDemoAgent.asHttpAction({
+    saveStreamDeltas: { returnImmediately: true },
+  }),
+);
 
 // ============================================================================
 // Pattern 3: One-Shot Streaming
