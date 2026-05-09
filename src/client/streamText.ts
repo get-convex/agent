@@ -111,6 +111,13 @@ export async function streamText<
         )
       : undefined;
 
+  // Eagerly create the streamId so it's available on the returned metadata
+  // (e.g. so HTTP responses can set an X-Stream-Id header) without having
+  // to wait for stream consumption to begin.
+  if (streamer) {
+    await streamer.getStreamId();
+  }
+
   const result = streamTextAi({
     ...args,
     abortSignal: streamer?.abortController.signal ?? args.abortSignal,
@@ -190,6 +197,7 @@ export async function streamText<
     promptMessageId,
     order,
     savedMessages: call.getSavedMessages(),
+    streamId: streamer?.streamId,
     messageId: promptMessageId,
   };
   return Object.assign(result, metadata);

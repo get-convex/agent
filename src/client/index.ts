@@ -103,6 +103,11 @@ import { errorToString, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
 export {
+  httpStreamText,
+  httpStreamUIMessages,
+  type HttpStreamOptions,
+} from "./http.js";
+export {
   docsToModelMessages,
   toModelMessage,
   //** @deprecated use toModelMessage instead */
