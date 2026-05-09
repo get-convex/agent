@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { createThread, httpStreamText, httpStreamUIMessages } from "./index.js";
+import {
+  Agent,
+  createThread,
+  httpStreamText,
+  httpStreamUIMessages,
+} from "./index.js";
 import {
   anyApi,
   actionGeneric,
@@ -19,6 +24,12 @@ const model = () =>
   mockModel({
     content: [{ type: "text", text: "Hello from mock" }],
   });
+
+const agent = new Agent(components.agent, {
+  name: "http-test-agent",
+  instructions: "You are a test agent for HTTP streaming",
+  languageModel: model(),
+});
 
 // ============================================================================
 // Test action exports — convex-test requires these to live in test files so
@@ -186,6 +197,130 @@ export const testHttpStreamUIMessages = action({
   },
 });
 
+export const testAsHttpActionParsesBody = action({
+  args: {},
+  handler: async (ctx) => {
+    const threadId = await createThread(ctx, components.agent, {});
+    const handler = agent.asHttpAction();
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    const text = await response.text();
+    return {
+      status: response.status,
+      hasText: text.length > 0,
+      hasMessageId: response.headers.has("X-Message-Id"),
+    };
+  },
+});
+
+export const testAsHttpActionCreatesThread = action({
+  args: {},
+  handler: async (ctx) => {
+    const handler = agent.asHttpAction();
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    const text = await response.text();
+    return {
+      status: response.status,
+      hasText: text.length > 0,
+      hasMessageId: response.headers.has("X-Message-Id"),
+    };
+  },
+});
+
+export const testAsHttpActionWithCorsHeaders = action({
+  args: {},
+  handler: async (ctx) => {
+    const threadId = await createThread(ctx, components.agent, {});
+    const handler = agent.asHttpAction({
+      corsHeaders: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Expose-Headers": "X-Message-Id, X-Stream-Id",
+      },
+    });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    await response.text();
+    return {
+      status: response.status,
+      corsOrigin: response.headers.get("Access-Control-Allow-Origin"),
+      corsExpose: response.headers.get("Access-Control-Expose-Headers"),
+    };
+  },
+});
+
+export const testAsHttpActionWithSaveDeltas = action({
+  args: {},
+  handler: async (ctx) => {
+    const threadId = await createThread(ctx, components.agent, {});
+    const handler = agent.asHttpAction({ saveStreamDeltas: true });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    await response.text();
+    return {
+      status: response.status,
+      hasStreamId: response.headers.has("X-Stream-Id"),
+      hasMessageId: response.headers.has("X-Message-Id"),
+    };
+  },
+});
+
+export const testAsHttpActionUIMessages = action({
+  args: {},
+  handler: async (ctx) => {
+    const threadId = await createThread(ctx, components.agent, {});
+    const handler = agent.asHttpAction({ format: "ui-messages" });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId, prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    const text = await response.text();
+    return {
+      status: response.status,
+      hasText: text.length > 0,
+      hasMessageId: response.headers.has("X-Message-Id"),
+    };
+  },
+});
+
+export const testAsHttpActionAuthorizeOverridesUserId = action({
+  args: {},
+  handler: async (ctx) => {
+    const handler = agent.asHttpAction({
+      authorize: async () => ({ userId: "user-from-auth" }),
+    });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Hello" }),
+    });
+    const response = await handler(ctx as any, request);
+    await response.text();
+    return {
+      status: response.status,
+      hasMessageId: response.headers.has("X-Message-Id"),
+    };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     testStreamTextStreamId: typeof testStreamTextStreamId;
@@ -195,6 +330,12 @@ const testApi: ApiFromModules<{
     testHttpStreamTextWithCors: typeof testHttpStreamTextWithCors;
     testHttpStreamTextSavesDeltas: typeof testHttpStreamTextSavesDeltas;
     testHttpStreamUIMessages: typeof testHttpStreamUIMessages;
+    testAsHttpActionParsesBody: typeof testAsHttpActionParsesBody;
+    testAsHttpActionCreatesThread: typeof testAsHttpActionCreatesThread;
+    testAsHttpActionWithCorsHeaders: typeof testAsHttpActionWithCorsHeaders;
+    testAsHttpActionWithSaveDeltas: typeof testAsHttpActionWithSaveDeltas;
+    testAsHttpActionUIMessages: typeof testAsHttpActionUIMessages;
+    testAsHttpActionAuthorizeOverridesUserId: typeof testAsHttpActionAuthorizeOverridesUserId;
   };
 }>["fns"] = anyApi["http.test"] as any;
 
@@ -257,6 +398,58 @@ describe("httpStreamUIMessages", () => {
     const result = await t.action(testApi.testHttpStreamUIMessages, {});
     expect(result.status).toBe(200);
     expect(result.hasText).toBe(true);
+    expect(result.hasMessageId).toBe(true);
+  });
+});
+
+describe("agent.asHttpAction()", () => {
+  test("parses JSON body and streams text", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testAsHttpActionParsesBody, {});
+    expect(result.status).toBe(200);
+    expect(result.hasText).toBe(true);
+    expect(result.hasMessageId).toBe(true);
+  });
+
+  test("creates a thread when threadId is omitted", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testAsHttpActionCreatesThread, {});
+    expect(result.status).toBe(200);
+    expect(result.hasText).toBe(true);
+    expect(result.hasMessageId).toBe(true);
+  });
+
+  test("applies corsHeaders to the response", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testAsHttpActionWithCorsHeaders, {});
+    expect(result.status).toBe(200);
+    expect(result.corsOrigin).toBe("*");
+    expect(result.corsExpose).toBe("X-Message-Id, X-Stream-Id");
+  });
+
+  test("sets X-Stream-Id when saveStreamDeltas is enabled", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testAsHttpActionWithSaveDeltas, {});
+    expect(result.status).toBe(200);
+    expect(result.hasStreamId).toBe(true);
+    expect(result.hasMessageId).toBe(true);
+  });
+
+  test("returns a UI message stream when format=ui-messages", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.testAsHttpActionUIMessages, {});
+    expect(result.status).toBe(200);
+    expect(result.hasText).toBe(true);
+    expect(result.hasMessageId).toBe(true);
+  });
+
+  test("authorize callback can supply userId for thread creation", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(
+      testApi.testAsHttpActionAuthorizeOverridesUserId,
+      {},
+    );
+    expect(result.status).toBe(200);
     expect(result.hasMessageId).toBe(true);
   });
 });

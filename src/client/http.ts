@@ -146,7 +146,7 @@ async function resolveThreadId(
  * before returning, which buffers the entire response and defeats the
  * purpose of streaming over HTTP.
  */
-function normalizeHttpSaveStreamDeltas(
+export function normalizeHttpSaveStreamDeltas(
   saveStreamDeltas?: boolean | StreamingOptions,
 ): boolean | StreamingOptions | undefined {
   if (saveStreamDeltas === true) return { returnImmediately: true };

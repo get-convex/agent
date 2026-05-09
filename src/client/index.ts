@@ -99,6 +99,7 @@ import type {
   Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
+import { normalizeHttpSaveStreamDeltas } from "./http.js";
 import { errorToString, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
@@ -1653,6 +1654,138 @@ export class Agent<
         };
       },
     });
+  }
+
+  /**
+   * Build a plain handler `(ctx, request) => Promise<Response>` for an
+   * HTTP streaming endpoint. Wrap the return value in your app's
+   * `httpAction()`.
+   *
+   * The handler parses the JSON body for
+   * `{ threadId?, prompt?, promptMessageId?, messages? }`, creates a
+   * thread if one isn't supplied, streams the response, and returns it
+   * with `X-Message-Id` and (if `saveStreamDeltas` is on) `X-Stream-Id`
+   * headers.
+   *
+   * @example
+   * ```ts
+   * // convex/http.ts
+   * import { httpAction } from "./_generated/server";
+   * http.route({
+   *   path: "/chat",
+   *   method: "POST",
+   *   handler: httpAction(myAgent.asHttpAction()),
+   * });
+   * ```
+   */
+  asHttpAction<DataModel extends GenericDataModel>(
+    spec?: MaybeCustomCtx<CustomCtx, DataModel, AgentTools> & {
+      /**
+       * Whether to save incremental data (deltas) from streaming responses
+       * to the database alongside the HTTP stream. Defaults to false.
+       *
+       * For HTTP flows, `true` is normalized so the response body starts
+       * streaming without buffering the entire generation first.
+       */
+      saveStreamDeltas?: boolean | StreamingOptions;
+      /**
+       * When to stop generating text.
+       * Defaults to the {@link Agent["options"].stopWhen} option.
+       */
+      stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
+      /**
+       * Response format:
+       * - `"text"` (default) — plain text via `toTextStreamResponse()`.
+       * - `"ui-messages"` — rich AI SDK UI message stream via
+       *   `toUIMessageStreamResponse()` (tool calls, reasoning, sources).
+       */
+      format?: "text" | "ui-messages";
+      /** Extra headers to add to the response (e.g. CORS headers). */
+      corsHeaders?: Record<string, string>;
+      /**
+       * Optional authorization callback. Receives the raw request and may
+       * return `{ userId?, threadId? }` to override values from the body.
+       * Throw to reject the request.
+       */
+      authorize?: (
+        ctx: GenericActionCtx<DataModel>,
+        request: Request,
+      ) => Promise<{ userId?: string; threadId?: string } | void>;
+    } & Options,
+  ): (
+    ctx: GenericActionCtx<DataModel>,
+    request: Request,
+  ) => Promise<Response> {
+    return async (ctx_, request) => {
+      const body = (await request.json()) as {
+        threadId?: string;
+        prompt?: string;
+        promptMessageId?: string;
+        messages?: unknown[];
+      };
+
+      let userId: string | undefined;
+      let threadId: string | undefined = body.threadId;
+
+      if (spec?.authorize) {
+        const authResult = await spec.authorize(ctx_, request);
+        if (authResult?.userId) userId = authResult.userId;
+        if (authResult?.threadId) threadId = authResult.threadId;
+      }
+
+      const targetArgs = { userId, threadId };
+      const llmArgs = {
+        prompt: body.prompt,
+        promptMessageId: body.promptMessageId,
+        messages: body.messages?.map((m) => toModelMessage(m as never)),
+        stopWhen: spec?.stopWhen,
+      };
+      const ctx = (
+        spec?.customCtx
+          ? {
+              ...ctx_,
+              ...spec.customCtx(ctx_, targetArgs, llmArgs as never),
+            }
+          : ctx_
+      ) as unknown as ActionCtx & CustomCtx;
+
+      if (!threadId) {
+        threadId = await createThread(ctx, this.component, {
+          userId: userId ?? null,
+        });
+      }
+
+      const result = await this.streamText(
+        ctx,
+        { threadId, userId },
+        llmArgs,
+        {
+          contextOptions: spec?.contextOptions,
+          storageOptions: spec?.storageOptions,
+          saveStreamDeltas: normalizeHttpSaveStreamDeltas(
+            spec?.saveStreamDeltas,
+          ),
+        },
+      );
+
+      const response =
+        spec?.format === "ui-messages"
+          ? result.toUIMessageStreamResponse()
+          : result.toTextStreamResponse();
+
+      if (result.promptMessageId) {
+        response.headers.set("X-Message-Id", result.promptMessageId);
+      }
+      if (result.streamId) {
+        response.headers.set("X-Stream-Id", result.streamId);
+      }
+      if (spec?.corsHeaders) {
+        for (const [key, value] of Object.entries(spec.corsHeaders)) {
+          response.headers.set(key, value);
+        }
+      }
+      return response;
+    };
   }
 
   /**
