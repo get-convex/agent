@@ -833,6 +833,105 @@ describe("Fallback Behavior", () => {
     });
   });
 
+  test("abort throws when caller's userId doesn't match owner", async () => {
+    await t.run(async (ctx) => {
+      // Owner-bound thread + stream
+      const ownedThread = await ctx.runMutation(
+        components.agent.threads.createThread,
+        { userId: "alice" },
+      );
+      const ownedThreadId = ownedThread._id;
+      const streamer = new DeltaStreamer(
+        components.agent,
+        ctx,
+        { ...defaultTestOptions },
+        { ...testMetadata, threadId: ownedThreadId, userId: "alice" },
+      );
+      const streamId = await streamer.getStreamId();
+
+      // Wrong user (case 1: missing userId)
+      await expect(
+        ctx.runMutation(components.agent.streams.abort, {
+          streamId,
+          reason: "evil",
+        }),
+      ).rejects.toThrow(/userId must be supplied/);
+
+      // Wrong user (case 2: mismatched userId)
+      await expect(
+        ctx.runMutation(components.agent.streams.abort, {
+          streamId,
+          reason: "evil",
+          userId: "mallory",
+        }),
+      ).rejects.toThrow(/not owned/);
+
+      // Correct user — succeeds
+      const ok = await ctx.runMutation(components.agent.streams.abort, {
+        streamId,
+        reason: "user",
+        userId: "alice",
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
+  test("abort permits no-userId calls on anonymous streams", async () => {
+    await t.run(async (ctx) => {
+      const streamer = new DeltaStreamer(
+        components.agent,
+        ctx,
+        { ...defaultTestOptions },
+        { ...testMetadata, threadId },
+      );
+      const streamId = await streamer.getStreamId();
+      const ok = await ctx.runMutation(components.agent.streams.abort, {
+        streamId,
+        reason: "user",
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
+  test("abortByOrder throws when caller's userId doesn't match thread", async () => {
+    await t.run(async (ctx) => {
+      const ownedThread = await ctx.runMutation(
+        components.agent.threads.createThread,
+        { userId: "alice" },
+      );
+      const ownedThreadId = ownedThread._id;
+      const streamer = new DeltaStreamer(
+        components.agent,
+        ctx,
+        { ...defaultTestOptions },
+        {
+          ...testMetadata,
+          threadId: ownedThreadId,
+          userId: "alice",
+          order: 7,
+        },
+      );
+      await streamer.getStreamId();
+
+      await expect(
+        ctx.runMutation(components.agent.streams.abortByOrder, {
+          threadId: ownedThreadId,
+          order: 7,
+          reason: "evil",
+        }),
+      ).rejects.toThrow(/userId must be supplied/);
+
+      await expect(
+        ctx.runMutation(components.agent.streams.abortByOrder, {
+          threadId: ownedThreadId,
+          order: 7,
+          reason: "evil",
+          userId: "mallory",
+        }),
+      ).rejects.toThrow(/not owned/);
+    });
+  });
+
   test("fail on already-aborted stream is a no-op", async () => {
     await t.run(async (ctx) => {
       const streamer = new DeltaStreamer(

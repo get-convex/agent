@@ -327,9 +327,14 @@ If your application can have multiple writers per thread, either:
 - single-flight per-thread on your side (mutex / debounce), or
 - abort the previous stream before starting a new one (`abortStream` from `@convex-dev/agent`).
 
-### 8.3 `abortStream` accepts an optional `userId` for defense-in-depth
+### 8.3 `abortStream` enforces ownership at the component layer
 
-The `abortStream` client helper now accepts an optional `userId`. When supplied, the component verifies the stream's thread is owned by that user and rejects the mutation otherwise. Pass it whenever you have a userId in scope:
+The component-level `streams.abort` and `streams.abortByOrder` mutations now enforce ownership:
+
+- If the stream / thread has a `userId`, the caller MUST supply a matching `userId`. Otherwise the mutation throws.
+- If the stream / thread is anonymous (no `userId`), the check is skipped — anonymous streams are public.
+
+This means a consumer who re-exposes `abortStream` as a public mutation without auth can only kill anonymous streams. For any tenant-bound stream, the caller must prove ownership by supplying the userId.
 
 ```ts
 export const stopStream = mutation({
@@ -339,13 +344,15 @@ export const stopStream = mutation({
     return abortStream(ctx, components.agent, {
       streamId,
       reason: "user",
-      userId, // component verifies thread ownership against this
+      userId, // required when the stream was created with a userId
     });
   },
 });
 ```
 
-The check is opt-in (a missing `userId` skips it) so internal abort paths inside the agent itself — which run inside an action that has already authorized the thread — are not regressed. For any consumer code that re-exposes `abortStream`, always pass `userId`.
+Internal abort paths inside the agent itself (e.g. DeltaStreamer's own cleanup) plumb the originating userId through automatically, so they don't regress.
+
+The residual risk: an attacker who knows BOTH the streamId and the victim's userId can still abort. userId is typically not secret. If you need stronger isolation, add an additional capability check in your wrapper (e.g. require a per-stream signed token).
 
 ### 8.4 streamText / generateText reject mismatched (userId, threadId)
 

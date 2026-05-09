@@ -271,6 +271,7 @@ export class DeltaStreamer<T> {
             await this.ctx.runMutation(this.component.streams.abort, {
               streamId: this.streamId,
               reason: "abortSignal",
+              userId: this.metadata.userId,
             });
           }
         } catch {
@@ -428,6 +429,7 @@ export class DeltaStreamer<T> {
     await this.ctx.runMutation(this.component.streams.abort, {
       streamId: this.streamId,
       reason,
+      userId: this.metadata.userId,
     });
   }
 }
