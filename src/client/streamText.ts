@@ -83,6 +83,14 @@ export async function streamText<
   // Track the final step for atomic save with stream finish (issue #181)
   let pendingFinalStep: StepResult<TOOLS> | undefined;
 
+  // Whether streamText will await stream consumption before returning.
+  // When false (saveStreamDeltas with returnImmediately, or no deltas),
+  // we cannot defer the final-step save — the deferred work would never run.
+  const willAwaitStream =
+    options.saveStreamDeltas === true ||
+    (typeof options.saveStreamDeltas === "object" &&
+      !options.saveStreamDeltas.returnImmediately);
+
   const streamer =
     threadId && options.saveStreamDeltas
       ? new DeltaStreamer(
@@ -149,10 +157,21 @@ export async function streamText<
       steps.push(step);
       const createPendingMessage = await willContinue(steps, args.stopWhen);
       if (!createPendingMessage && streamer) {
-        // This is the final step with streaming enabled.
-        // Defer saving until stream consumption completes for atomic finish (issue #181).
+        // Final step with streaming enabled: save the message and finish
+        // the stream atomically (issue #181). When `willAwaitStream` is
+        // true we defer the save to after consumption (so any post-step
+        // delta writes land on the saved row). When false (e.g.
+        // `returnImmediately` for HTTP), we save inline using the streamId
+        // and mark the streamer finished externally — otherwise the
+        // background `consumeStream` would call `finish()` after the
+        // caller has moved on.
         streamer.markFinishedExternally();
-        pendingFinalStep = step;
+        if (willAwaitStream) {
+          pendingFinalStep = step;
+        } else {
+          const finishStreamId = await streamer.getOrCreateStreamId();
+          await call.save({ step }, false, finishStreamId);
+        }
       } else {
         await call.save({ step }, createPendingMessage);
       }
@@ -162,11 +181,7 @@ export async function streamText<
   const stream = streamer?.consumeStream(
     result.toUIMessageStream<AIUIMessage<TOOLS>>(),
   );
-  if (
-    (typeof options?.saveStreamDeltas === "object" &&
-      !options.saveStreamDeltas.returnImmediately) ||
-    options?.saveStreamDeltas === true
-  ) {
+  if (willAwaitStream) {
     try {
       await stream;
       await result.consumeStream();

@@ -1717,12 +1717,23 @@ export class Agent<
     request: Request,
   ) => Promise<Response> {
     return async (ctx_, request) => {
-      const body = (await request.json()) as {
+      let body: {
         threadId?: string;
         prompt?: string;
         promptMessageId?: string;
         messages?: unknown[];
       };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return new Response(
+          JSON.stringify({ error: "Invalid JSON in request body" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
 
       let userId: string | undefined;
       let threadId: string | undefined = body.threadId;
@@ -1760,8 +1771,10 @@ export class Agent<
         { threadId, userId },
         llmArgs,
         {
-          contextOptions: spec?.contextOptions,
-          storageOptions: spec?.storageOptions,
+          // Forward all per-request Options from spec (contextOptions,
+          // storageOptions, usageHandler, contextHandler,
+          // rawRequestResponseHandler) so they actually take effect.
+          ...spec,
           saveStreamDeltas: normalizeHttpSaveStreamDeltas(
             spec?.saveStreamDeltas,
           ),
