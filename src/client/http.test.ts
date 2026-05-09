@@ -357,6 +357,38 @@ export const testAsHttpActionIgnoresUnvalidatedBodyThreadId = action({
   },
 });
 
+// Defense-in-depth: a misconfigured authorize that pairs a requester's
+// userId with a thread owned by a different user must be rejected at the
+// component layer rather than silently leaking cross-tenant context.
+export const testAsHttpActionRejectsMismatchedUserAndThread = action({
+  args: {},
+  handler: async (ctx) => {
+    const victimThreadId = await createThread(ctx, components.agent, {
+      userId: "victim-user",
+    });
+    const handler = agent.asHttpAction({
+      // Misconfigured: returns attacker's userId AND victim's threadId.
+      authorize: async () => ({
+        userId: "attacker-user",
+        threadId: victimThreadId,
+      }),
+    });
+    const request = new Request("https://example.com/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "leak" }),
+    });
+    let threwTenantMismatch = false;
+    try {
+      await handler(ctx as any, request);
+    } catch (e) {
+      threwTenantMismatch =
+        e instanceof Error && /not owned|refusing/.test(e.message);
+    }
+    return { threwTenantMismatch };
+  },
+});
+
 // authorize that validates and returns body.threadId — the safe path.
 export const testAsHttpActionHonorsAuthorizedThreadId = action({
   args: {},
@@ -404,6 +436,7 @@ const testApi: ApiFromModules<{
     testAsHttpActionUIMessages: typeof testAsHttpActionUIMessages;
     testAsHttpActionAuthorizeOverridesUserId: typeof testAsHttpActionAuthorizeOverridesUserId;
     testAsHttpActionIgnoresUnvalidatedBodyThreadId: typeof testAsHttpActionIgnoresUnvalidatedBodyThreadId;
+    testAsHttpActionRejectsMismatchedUserAndThread: typeof testAsHttpActionRejectsMismatchedUserAndThread;
     testAsHttpActionHonorsAuthorizedThreadId: typeof testAsHttpActionHonorsAuthorizedThreadId;
   };
 }>["fns"] = anyApi["http.test"] as any;
@@ -531,6 +564,15 @@ describe("agent.asHttpAction()", () => {
     // Without authorize returning a threadId, the helper must create a
     // fresh thread instead of writing into the victim's.
     expect(result.usedVictimThread).toBe(false);
+  });
+
+  test("rejects a misconfigured authorize pairing wrong user with thread", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(
+      testApi.testAsHttpActionRejectsMismatchedUserAndThread,
+      {},
+    );
+    expect(result.threwTenantMismatch).toBe(true);
   });
 
   test("authorize-returned threadId is honored", async () => {

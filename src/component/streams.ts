@@ -160,9 +160,23 @@ function publicStreamMessage(m: Doc<"streamingMessages">): StreamMessage {
 }
 
 export const abortByOrder = mutation({
-  args: { threadId: v.id("threads"), order: v.number(), reason: v.string() },
+  args: {
+    threadId: v.id("threads"),
+    order: v.number(),
+    reason: v.string(),
+    /**
+     * Defense-in-depth: when set, the mutation throws if the thread is
+     * not owned by this userId. Skip only when the calling code has
+     * already validated ownership (e.g. the agent's own internal abort
+     * paths run inside an action that already authorized the thread).
+     */
+    userId: v.optional(v.string()),
+  },
   returns: v.boolean(),
   handler: async (ctx, args) => {
+    if (args.userId !== undefined) {
+      await assertThreadOwnedBy(ctx, args.threadId, args.userId);
+    }
     const streams = await ctx.db
       .query("streamingMessages")
       .withIndex("threadId_state_order_stepOrder", (q) =>
@@ -184,10 +198,41 @@ export const abort = mutation({
     streamId: v.id("streamingMessages"),
     reason: v.string(),
     finalDelta: v.optional(deltaValidator),
+    /**
+     * Defense-in-depth: when set, the mutation throws if the stream's
+     * thread is not owned by this userId. Skip only when the calling
+     * code has already validated ownership.
+     */
+    userId: v.optional(v.string()),
   },
   returns: v.boolean(),
-  handler: abortById,
+  handler: async (ctx, args) => {
+    if (args.userId !== undefined) {
+      const stream = await ctx.db.get(args.streamId);
+      if (!stream) {
+        throw new Error(`Stream not found: ${args.streamId}`);
+      }
+      await assertThreadOwnedBy(ctx, stream.threadId, args.userId);
+    }
+    return abortById(ctx, args);
+  },
 });
+
+async function assertThreadOwnedBy(
+  ctx: MutationCtx,
+  threadId: Id<"threads">,
+  userId: string,
+) {
+  const thread = await ctx.db.get(threadId);
+  if (!thread) {
+    throw new Error(`Thread not found: ${threadId}`);
+  }
+  if (thread.userId !== userId) {
+    throw new Error(
+      `Thread ${threadId} is not owned by ${userId}; refusing operation`,
+    );
+  }
+}
 
 async function abortById(
   ctx: MutationCtx,

@@ -327,24 +327,29 @@ If your application can have multiple writers per thread, either:
 - single-flight per-thread on your side (mutex / debounce), or
 - abort the previous stream before starting a new one (`abortStream` from `@convex-dev/agent`).
 
-### 8.3 `abortStream` does not authorize the caller
+### 8.3 `abortStream` accepts an optional `userId` for defense-in-depth
 
-The component-level `streams.abort` and `streams.abortByOrder` mutations do not check that the caller owns the stream — they accept any valid `streamId` or `(threadId, order)`. The `abortStream` client helper plumbs straight through. If you re-export it as a public mutation, **wrap it in your own ownership check**:
+The `abortStream` client helper now accepts an optional `userId`. When supplied, the component verifies the stream's thread is owned by that user and rejects the mutation otherwise. Pass it whenever you have a userId in scope:
 
 ```ts
 export const stopStream = mutation({
   args: { streamId: v.string() },
   handler: async (ctx, { streamId }) => {
     const userId = await getUserIdFromAuth(ctx);
-    await assertStreamOwnedBy(ctx, streamId, userId);
     return abortStream(ctx, components.agent, {
-      streamId, reason: "user",
+      streamId,
+      reason: "user",
+      userId, // component verifies thread ownership against this
     });
   },
 });
 ```
 
-The `X-Stream-Id` response header on the HTTP path normalizes `streamId` as a known-to-clients value, which strengthens the case for adding ownership checks at the component layer in a follow-up. Until then, treat `streamId` as a capability and only expose abort behind an auth check.
+The check is opt-in (a missing `userId` skips it) so internal abort paths inside the agent itself — which run inside an action that has already authorized the thread — are not regressed. For any consumer code that re-exposes `abortStream`, always pass `userId`.
+
+### 8.4 streamText / generateText reject mismatched (userId, threadId)
+
+`startGeneration` validates that, when both `opts.userId` and a thread userId are present, they match. A misconfigured `authorize` callback that pairs the requester's userId with a thread owned by a different user is rejected at the component layer with a clear error rather than silently leaking cross-tenant context. This is the second line of defense behind the `body.threadId` invariant in §8.1.
 
 ---
 
