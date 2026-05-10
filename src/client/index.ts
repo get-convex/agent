@@ -99,9 +99,10 @@ import type {
   Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
-import { errorToString, willContinue } from "./utils.js";
+import { errorToString, hasSuccessfulToolCall, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
+export { hasSuccessfulToolCall };
 export {
   docsToModelMessages,
   toModelMessage,
