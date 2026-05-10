@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- Add `hasSuccessfulToolCall(toolName)` stop-condition helper. Like the AI
+  SDK's `hasToolCall` but only matches tool calls that produced a
+  `tool-result` content part — failed tool calls (`tool-error` parts under
+  AI SDK v6) do not match. Use when you want the agent to retry on
+  argument-validation or runtime tool failures rather than stopping.
+
+  ```ts
+  import { hasSuccessfulToolCall, stepCountIs } from "@convex-dev/agent";
+
+  await agent.streamText(ctx, { threadId }, {
+    prompt: "...",
+    stopWhen: [hasSuccessfulToolCall("generateImage"), stepCountIs(5)],
+  });
+  ```
+
+- Fix: `willContinue` (the internal helper that decides whether to keep
+  looping after a step that has tool calls) now counts `tool-error`
+  content parts as completed outputs. Without this, AI SDK v6 agents
+  would stop after a step where any tool call errored, even if the model
+  had more work queued.
+
 ## 0.6.1
 
 - Fix bundled package
