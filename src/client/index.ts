@@ -99,9 +99,22 @@ import type {
   Output,
 } from "./types.js";
 import { streamText } from "./streamText.js";
+import {
+  applyStreamHeaders,
+  type HttpStreamRequestBody,
+} from "./http.js";
 import { errorToString, willContinue } from "./utils.js";
 
 export { stepCountIs } from "ai";
+export {
+  HTTP_STREAM_MESSAGE_ID_HEADER,
+  HTTP_STREAM_STREAM_ID_HEADER,
+  applyStreamHeaders,
+  httpStreamText,
+  httpStreamUIMessages,
+  type HttpStreamOptions,
+  type HttpStreamRequestBody,
+} from "./http.js";
 export {
   docsToModelMessages,
   toModelMessage,
@@ -1648,6 +1661,174 @@ export class Agent<
         };
       },
     });
+  }
+
+  /**
+   * Build a plain handler `(ctx, request) => Promise<Response>` for an
+   * HTTP streaming endpoint. Wrap the return value in your app's
+   * `httpAction()`.
+   *
+   * The handler parses the JSON body for
+   * `{ threadId?, prompt?, promptMessageId?, messages? }`, creates a
+   * thread if one isn't supplied, streams the response, and returns it
+   * with `X-Message-Id` and (if `saveStreamDeltas` is on) `X-Stream-Id`
+   * headers.
+   *
+   * @example
+   * ```ts
+   * // convex/http.ts
+   * import { httpAction } from "./_generated/server";
+   * http.route({
+   *   path: "/chat",
+   *   method: "POST",
+   *   handler: httpAction(myAgent.asHttpAction({
+   *     // Save deltas in the background and start the response immediately
+   *     // (otherwise `saveStreamDeltas: true` buffers the full generation
+   *     // before the body opens).
+   *     saveStreamDeltas: { returnImmediately: true },
+   *   })),
+   * });
+   * ```
+   */
+  asHttpAction<DataModel extends GenericDataModel>(
+    spec?: MaybeCustomCtx<CustomCtx, DataModel, AgentTools> & {
+      /**
+       * Whether to save incremental data (deltas) from streaming responses
+       * to the database alongside the HTTP stream. Defaults to false.
+       *
+       * - `true` — save deltas; `streamText` consumes the model output before
+       *   returning, so the HTTP response body buffers until generation is
+       *   done. Stronger durability, slower first-byte.
+       * - `{ returnImmediately: true, ...}` — save deltas in the background
+       *   and return the response immediately so the body actually streams.
+       *   This is the typical HTTP setting.
+       */
+      saveStreamDeltas?: boolean | StreamingOptions;
+      /**
+       * When to stop generating text.
+       * Defaults to the {@link Agent["options"].stopWhen} option.
+       */
+      stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
+      /**
+       * Response format:
+       * - `"text"` (default) — plain text via `toTextStreamResponse()`.
+       * - `"ui-messages"` — rich AI SDK UI message stream via
+       *   `toUIMessageStreamResponse()` (tool calls, reasoning, sources).
+       */
+      format?: "text" | "ui-messages";
+      /** Extra headers to add to the response (e.g. CORS headers). */
+      corsHeaders?: Record<string, string>;
+      /**
+       * Authorization callback. Receives the action ctx, a clone of the
+       * raw request (so HMAC verification can still read the body), and
+       * the parsed JSON body.
+       *
+       * IMPORTANT: `body.threadId` is **only** honored if you return a
+       * `threadId` from this callback after validating that the caller
+       * owns the thread. Without an explicit return, body.threadId is
+       * ignored and a new thread is created. This prevents a caller from
+       * appending to or reading from an arbitrary thread by guessing IDs.
+       *
+       * Throw to reject the request.
+       *
+       * @example
+       * ```ts
+       * authorize: async (ctx, _request, body) => {
+       *   const userId = await getUserIdFromAuth(ctx);
+       *   if (body.threadId) {
+       *     await assertThreadOwnedBy(ctx, body.threadId, userId);
+       *     return { userId, threadId: body.threadId };
+       *   }
+       *   return { userId };
+       * }
+       * ```
+       */
+      authorize?: (
+        ctx: GenericActionCtx<DataModel>,
+        request: Request,
+        body: HttpStreamRequestBody,
+      ) => Promise<{ userId?: string; threadId?: string } | void>;
+    } & Options,
+  ): (
+    ctx: GenericActionCtx<DataModel>,
+    request: Request,
+  ) => Promise<Response> {
+    return async (ctx_, request) => {
+      // Clone before parsing so `authorize` can read the raw body if it
+      // needs to (e.g. HMAC signature verification).
+      const cloned = request.clone();
+
+      let body: HttpStreamRequestBody;
+      try {
+        body = (await request.json()) as HttpStreamRequestBody;
+      } catch {
+        return new Response(
+          JSON.stringify({ error: "Invalid JSON in request body" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      let userId: string | undefined;
+      let authorizedThreadId: string | undefined;
+      if (spec?.authorize) {
+        const authResult = await spec.authorize(ctx_, cloned, body);
+        if (authResult?.userId) userId = authResult.userId;
+        if (authResult?.threadId) authorizedThreadId = authResult.threadId;
+      }
+
+      // Default-deny: only honor a thread the authorize callback has
+      // explicitly returned (after validating ownership). If authorize
+      // didn't run or didn't return a threadId, we ignore body.threadId
+      // and create a fresh thread below.
+      let threadId: string | undefined = authorizedThreadId;
+
+      const targetArgs = { userId, threadId };
+      const llmArgs = {
+        prompt: body.prompt,
+        promptMessageId: body.promptMessageId,
+        messages: body.messages?.map((m) => toModelMessage(m as never)),
+        stopWhen: spec?.stopWhen,
+        // Forward the request abort signal so a client disconnect halts
+        // model execution and tool work instead of running to completion.
+        abortSignal: request.signal,
+      };
+      const ctx = (
+        spec?.customCtx
+          ? {
+              ...ctx_,
+              ...spec.customCtx(ctx_, targetArgs, llmArgs as never),
+            }
+          : ctx_
+      ) as unknown as ActionCtx & CustomCtx;
+
+      if (!threadId) {
+        threadId = await createThread(ctx, this.component, {
+          userId: userId ?? null,
+        });
+      }
+
+      const result = await this.streamText(
+        ctx,
+        { threadId, userId },
+        llmArgs,
+        {
+          // Forward all per-request Options from spec (contextOptions,
+          // storageOptions, usageHandler, contextHandler,
+          // rawRequestResponseHandler) so they actually take effect.
+          ...spec,
+        },
+      );
+
+      const response =
+        spec?.format === "ui-messages"
+          ? result.toUIMessageStreamResponse()
+          : result.toTextStreamResponse();
+      applyStreamHeaders(response, result, spec?.corsHeaders);
+      return response;
+    };
   }
 
   /**

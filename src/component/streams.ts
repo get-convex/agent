@@ -159,6 +159,11 @@ function publicStreamMessage(m: Doc<"streamingMessages">): StreamMessage {
   };
 }
 
+// Abort mutations are unauthenticated primitives — components have no
+// access to ctx.auth, and the only "ownership" args we could require
+// (userId, streamId) are not secret. Authentication and ownership
+// validation MUST happen in the consumer's wrapping mutation. See
+// docs/http-streaming-requirements.md §8.3 for the recommended pattern.
 export const abortByOrder = mutation({
   args: { threadId: v.id("threads"), order: v.number(), reason: v.string() },
   returns: v.boolean(),

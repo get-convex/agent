@@ -117,12 +117,26 @@ export async function startGeneration<
   fail: (reason: string) => Promise<void>;
   getSavedMessages: () => MessageDoc[];
 }> {
-  const userId =
-    opts.userId ??
-    (threadId &&
-      (await ctx.runQuery(component.threads.getThread, { threadId }))
-        ?.userId) ??
-    undefined;
+  const thread = threadId
+    ? await ctx.runQuery(component.threads.getThread, { threadId })
+    : undefined;
+
+  // Defense-in-depth tenant check: if the caller asserted a userId AND
+  // the thread is owned by a (different) user, refuse the operation.
+  // Catches a misconfigured `authorize` callback that pairs the requester's
+  // userId with a thread it doesn't own.
+  if (
+    opts.userId != null &&
+    thread?.userId != null &&
+    thread.userId !== opts.userId
+  ) {
+    throw new Error(
+      `Thread ${threadId} is owned by ${thread.userId}; ` +
+        `refusing to operate on it as user ${opts.userId}`,
+    );
+  }
+
+  const userId = opts.userId ?? thread?.userId ?? undefined;
 
   const context = await fetchContextWithPrompt(ctx, component, {
     ...opts,

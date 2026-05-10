@@ -80,6 +80,17 @@ export async function syncStreams(
   }
 }
 
+/**
+ * Abort an in-progress stream.
+ *
+ * IMPORTANT: This is an unauthenticated primitive. The component layer
+ * has no access to `ctx.auth` and cannot verify the caller. Consumers
+ * MUST authenticate and authorize the caller (e.g. via
+ * `ctx.auth.getUserIdentity()` and a thread-ownership check) BEFORE
+ * calling this helper from a public mutation. Re-exposing `abortStream`
+ * without an auth wrapper lets any caller kill any stream whose ID they
+ * can guess or enumerate.
+ */
 export async function abortStream(
   ctx: MutationCtx | ActionCtx,
   component: AgentComponent,
@@ -285,6 +296,13 @@ export class DeltaStreamer<T> {
 
   public async addParts(parts: T[]) {
     if (this.abortController.signal.aborted) {
+      return;
+    }
+    // Once the stream has been finished externally (e.g. by an atomic save
+    // in `streamText`'s onStepFinish), the stream record is already in the
+    // "finished" state in the DB. Late deltas would be silently dropped by
+    // `streams.addDelta`, so skip the work.
+    if (this.#finishedExternally) {
       return;
     }
     await this.getStreamId();
