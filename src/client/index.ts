@@ -140,8 +140,13 @@ export {
 export { createTool, type ToolCtx } from "./createTool.js";
 export {
   definePlaygroundAPI,
+  definePlaygroundQueries,
+  definePlaygroundActions,
   type AgentsFn,
+  type AgentInfo,
   type PlaygroundAPI,
+  type PlaygroundQueriesAPI,
+  type PlaygroundActionsAPI,
 } from "./definePlaygroundAPI.js";
 export { getFile, storeFile } from "./files.js";
 export {
