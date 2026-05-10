@@ -937,6 +937,11 @@ export const textSearch = query({
         return qq;
       })
       .take(args.limit);
+    // Tradeoff for cross-thread search: in-thread matches with order >=
+    // targetMessage.order are dropped here rather than at the DB layer, so
+    // when there are many cross-thread matches they can edge out valid
+    // older in-thread matches. Acceptable for now; revisit with a merged
+    // per-thread + cross-thread query if it becomes an issue in practice.
     return messages
       .filter((m) => {
         if (!targetMessage) return true;
