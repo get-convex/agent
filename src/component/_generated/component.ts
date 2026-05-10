@@ -4467,7 +4467,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           };
           reason: string;
           streamId: string;
-          userId?: string;
         },
         boolean,
         Name
@@ -4475,12 +4474,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       abortByOrder: FunctionReference<
         "mutation",
         "internal",
-        {
-          order: number;
-          reason: string;
-          threadId: string;
-          userId?: string;
-        },
+        { order: number; reason: string; threadId: string },
         boolean,
         Name
       >;

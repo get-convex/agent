@@ -159,53 +159,15 @@ function publicStreamMessage(m: Doc<"streamingMessages">): StreamMessage {
   };
 }
 
-/**
- * Enforce that a caller-provided userId matches the owner of the
- * resource being aborted. The check is required when the resource is
- * owned by some user; for anonymous (no-userId) resources, no check is
- * performed. This means a consumer who re-exposes `abortStream` without
- * auth can only kill anonymous streams — for any tenant-bound stream,
- * the caller MUST supply the matching userId.
- */
-function assertOwner(
-  resourceUserId: string | undefined,
-  callerUserId: string | undefined,
-  resourceLabel: string,
-) {
-  if (resourceUserId === undefined) {
-    return;
-  }
-  if (callerUserId === undefined) {
-    throw new Error(
-      `${resourceLabel} is owned by a user; userId must be supplied to abort it.`,
-    );
-  }
-  if (callerUserId !== resourceUserId) {
-    throw new Error(
-      `${resourceLabel} is not owned by ${callerUserId}; refusing operation.`,
-    );
-  }
-}
-
+// Abort mutations are unauthenticated primitives — components have no
+// access to ctx.auth, and the only "ownership" args we could require
+// (userId, streamId) are not secret. Authentication and ownership
+// validation MUST happen in the consumer's wrapping mutation. See
+// docs/http-streaming-requirements.md §8.3 for the recommended pattern.
 export const abortByOrder = mutation({
-  args: {
-    threadId: v.id("threads"),
-    order: v.number(),
-    reason: v.string(),
-    /**
-     * Required to abort a stream on a tenant-bound thread (one with a
-     * userId). Anonymous threads (no userId) may be aborted without
-     * supplying a userId.
-     */
-    userId: v.optional(v.string()),
-  },
+  args: { threadId: v.id("threads"), order: v.number(), reason: v.string() },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    const thread = await ctx.db.get(args.threadId);
-    if (!thread) {
-      throw new Error(`Thread not found: ${args.threadId}`);
-    }
-    assertOwner(thread.userId, args.userId, `Thread ${args.threadId}`);
     const streams = await ctx.db
       .query("streamingMessages")
       .withIndex("threadId_state_order_stepOrder", (q) =>
@@ -227,22 +189,9 @@ export const abort = mutation({
     streamId: v.id("streamingMessages"),
     reason: v.string(),
     finalDelta: v.optional(deltaValidator),
-    /**
-     * Required to abort a stream that was created with a userId.
-     * Anonymous streams (no userId) may be aborted without supplying
-     * a userId.
-     */
-    userId: v.optional(v.string()),
   },
   returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const stream = await ctx.db.get(args.streamId);
-    if (!stream) {
-      throw new Error(`Stream not found: ${args.streamId}`);
-    }
-    assertOwner(stream.userId, args.userId, `Stream ${args.streamId}`);
-    return abortById(ctx, args);
-  },
+  handler: abortById,
 });
 
 async function abortById(

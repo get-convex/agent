@@ -327,32 +327,30 @@ If your application can have multiple writers per thread, either:
 - single-flight per-thread on your side (mutex / debounce), or
 - abort the previous stream before starting a new one (`abortStream` from `@convex-dev/agent`).
 
-### 8.3 `abortStream` enforces ownership at the component layer
+### 8.3 `abortStream` is unauthenticated — wrap it with auth
 
-The component-level `streams.abort` and `streams.abortByOrder` mutations now enforce ownership:
+`streams.abort`, `streams.abortByOrder`, and the `abortStream` client helper do **not** authenticate the caller. Components in Convex have no access to `ctx.auth`; the only args we could require (`userId`, `streamId`, `threadId`) are not secret — they leak via `streams.list`, profile pages, URL hashes, and the `X-Stream-Id` response header. Adding an opt-in `userId` check at the component layer would be theatre, not a security boundary.
 
-- If the stream / thread has a `userId`, the caller MUST supply a matching `userId`. Otherwise the mutation throws.
-- If the stream / thread is anonymous (no `userId`), the check is skipped — anonymous streams are public.
-
-This means a consumer who re-exposes `abortStream` as a public mutation without auth can only kill anonymous streams. For any tenant-bound stream, the caller must prove ownership by supplying the userId.
+Auth is the **consumer's** responsibility. Always wrap `abortStream` in a public mutation that runs `ctx.auth.getUserIdentity()` (or your project's equivalent) and validates the caller owns the stream BEFORE calling it:
 
 ```ts
 export const stopStream = mutation({
   args: { streamId: v.string() },
   handler: async (ctx, { streamId }) => {
-    const userId = await getUserIdFromAuth(ctx);
+    const userId = await getAuthUserIdOrThrow(ctx);
+    // Look up the stream's thread, assert this user owns it.
+    await assertStreamOwnedBy(ctx, streamId, userId);
     return abortStream(ctx, components.agent, {
       streamId,
       reason: "user",
-      userId, // required when the stream was created with a userId
     });
   },
 });
 ```
 
-Internal abort paths inside the agent itself (e.g. DeltaStreamer's own cleanup) plumb the originating userId through automatically, so they don't regress.
+If you re-export `abortStream` (or a thin wrapper around it) as a public mutation without an auth + ownership check first, **any caller who can guess or enumerate `streamId` can kill any stream**. `streams.list` exposes streamIds for any thread the caller has read access to, and the HTTP path returns the requester's own streamId in the `X-Stream-Id` header — so streamIds should be treated as known-to-clients values, never as capabilities.
 
-The residual risk: an attacker who knows BOTH the streamId and the victim's userId can still abort. userId is typically not secret. If you need stronger isolation, add an additional capability check in your wrapper (e.g. require a per-stream signed token).
+If you need a true capability-style abort that doesn't depend on consumer-level auth (e.g. for unauthenticated streaming flows), that's a separate design — a per-stream secret token returned at create time and required at abort time. Not implemented here.
 
 ### 8.4 streamText / generateText reject mismatched (userId, threadId)
 

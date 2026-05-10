@@ -83,18 +83,18 @@ export async function syncStreams(
 /**
  * Abort an in-progress stream.
  *
- * Pass `userId` whenever the caller has authenticated a user — the
- * component will verify the stream's thread is owned by that user and
- * reject the mutation otherwise. This is defense-in-depth: it catches
- * a misconfigured wrapper mutation that forgets to validate ownership
- * before re-exposing this helper. Skip `userId` only when the calling
- * code has already validated ownership and is acting on its own state
- * (e.g. internal cleanup paths).
+ * IMPORTANT: This is an unauthenticated primitive. The component layer
+ * has no access to `ctx.auth` and cannot verify the caller. Consumers
+ * MUST authenticate and authorize the caller (e.g. via
+ * `ctx.auth.getUserIdentity()` and a thread-ownership check) BEFORE
+ * calling this helper from a public mutation. Re-exposing `abortStream`
+ * without an auth wrapper lets any caller kill any stream whose ID they
+ * can guess or enumerate.
  */
 export async function abortStream(
   ctx: MutationCtx | ActionCtx,
   component: AgentComponent,
-  args: { reason: string; userId?: string } & (
+  args: { reason: string } & (
     | { streamId: string }
     | { threadId: string; order: number }
   ),
@@ -103,14 +103,12 @@ export async function abortStream(
     return await ctx.runMutation(component.streams.abort, {
       reason: args.reason,
       streamId: args.streamId,
-      userId: args.userId,
     });
   } else {
     return await ctx.runMutation(component.streams.abortByOrder, {
       reason: args.reason,
       threadId: args.threadId,
       order: args.order,
-      userId: args.userId,
     });
   }
 }
@@ -271,7 +269,6 @@ export class DeltaStreamer<T> {
             await this.ctx.runMutation(this.component.streams.abort, {
               streamId: this.streamId,
               reason: "abortSignal",
-              userId: this.metadata.userId,
             });
           }
         } catch {
@@ -429,7 +426,6 @@ export class DeltaStreamer<T> {
     await this.ctx.runMutation(this.component.streams.abort, {
       streamId: this.streamId,
       reason,
-      userId: this.metadata.userId,
     });
   }
 }
