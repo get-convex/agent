@@ -477,8 +477,7 @@ export class Agent<
      * The arguments to the generateText function, similar to the ai sdk's
      * {@link generateText} function, along with Agent prompt options.
      */
-    generateTextArgs: AgentPrompt &
-      TextArgs<AgentTools, TOOLS, OUTPUT>,
+    generateTextArgs: AgentPrompt & TextArgs<AgentTools, TOOLS, OUTPUT>,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
@@ -536,8 +535,7 @@ export class Agent<
      * The arguments to the streamText function, similar to the ai sdk's
      * {@link streamText} function, along with Agent prompt options.
      */
-    streamTextArgs: AgentPrompt &
-      StreamingTextArgs<AgentTools, TOOLS, OUTPUT>,
+    streamTextArgs: AgentPrompt & StreamingTextArgs<AgentTools, TOOLS, OUTPUT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -556,10 +554,7 @@ export class Agent<
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT
-    > &
+    StreamTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
       GenerationOutputMetadata
   > {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
@@ -1631,7 +1626,10 @@ export class Agent<
         } as GenerateObjectArgs<FlexibleSchema<T>>;
         const ctx = (
           options?.customCtx
-            ? { ...ctx_, ...options.customCtx(ctx_, targetArgs, llmArgs as any) }
+            ? {
+                ...ctx_,
+                ...options.customCtx(ctx_, targetArgs, llmArgs as any),
+              }
             : ctx_
         ) as GenericActionCtx<GenericDataModel> & CustomCtx;
         const value = await this.generateObject(ctx, targetArgs, llmArgs, {

@@ -331,7 +331,13 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   } else {
     messagesToSerialize = [{ role: "assistant" as const, content: [] }];
   }
-  return serializeStepMessages(ctx, component, step, model, messagesToSerialize);
+  return serializeStepMessages(
+    ctx,
+    component,
+    step,
+    model,
+    messagesToSerialize,
+  );
 }
 
 async function serializeStepMessages<TOOLS extends ToolSet>(
