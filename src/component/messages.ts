@@ -821,16 +821,18 @@ export const _fetchSearchMessages = internalQuery({
         ),
       )
     )
-      .filter(
-        (m): m is Doc<"messages"> =>
-          m !== undefined &&
-          m !== null &&
-          !m.tool &&
-          (!beforeMessage ||
-            m.order < beforeMessage.order ||
-            (m.order === beforeMessage.order &&
-              m.stepOrder < beforeMessage.stepOrder)),
-      )
+      .filter((m): m is Doc<"messages"> => {
+        if (m === undefined || m === null || m.tool) return false;
+        if (!beforeMessage) return true;
+        // Order is only comparable within a single thread; cross-thread
+        // results have independent order sequences and must pass through.
+        if (m.threadId !== beforeMessage.threadId) return true;
+        return (
+          m.order < beforeMessage.order ||
+          (m.order === beforeMessage.order &&
+            m.stepOrder < beforeMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
     messages.push(...(args.textSearchMessages ?? []));
     // TODO: prioritize more recent messages
@@ -928,20 +930,31 @@ export const textSearch = query({
       // Just in case tool messages slip through
       .filter((q) => {
         const qq = q.eq(q.field("tool"), false);
-        if (order) {
+        // Order is only comparable within a single thread, so when searching
+        // across threads for a user we skip the DB-level order filter and
+        // apply it per-thread below.
+        if (order && !args.searchAllMessagesForUserId) {
           return q.and(qq, q.lte(q.field("order"), order));
         }
         return qq;
       })
       .take(args.limit);
+    // Tradeoff for cross-thread search: in-thread matches with order >=
+    // targetMessage.order are dropped here rather than at the DB layer, so
+    // when there are many cross-thread matches they can edge out valid
+    // older in-thread matches. Acceptable for now; revisit with a merged
+    // per-thread + cross-thread query if it becomes an issue in practice.
     return messages
-      .filter(
-        (m) =>
-          !targetMessage ||
+      .filter((m) => {
+        if (!targetMessage) return true;
+        // Different threads have independent order sequences; don't compare across them.
+        if (m.threadId !== targetMessage.threadId) return true;
+        return (
           m.order < targetMessage.order ||
           (m.order === targetMessage.order &&
-            m.stepOrder < targetMessage.stepOrder),
-      )
+            m.stepOrder < targetMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
   },
   returns: v.array(vMessageDoc),
