@@ -821,16 +821,18 @@ export const _fetchSearchMessages = internalQuery({
         ),
       )
     )
-      .filter(
-        (m): m is Doc<"messages"> =>
-          m !== undefined &&
-          m !== null &&
-          !m.tool &&
-          (!beforeMessage ||
-            m.order < beforeMessage.order ||
-            (m.order === beforeMessage.order &&
-              m.stepOrder < beforeMessage.stepOrder)),
-      )
+      .filter((m): m is Doc<"messages"> => {
+        if (m === undefined || m === null || m.tool) return false;
+        if (!beforeMessage) return true;
+        // Order is only comparable within a single thread; cross-thread
+        // results have independent order sequences and must pass through.
+        if (m.threadId !== beforeMessage.threadId) return true;
+        return (
+          m.order < beforeMessage.order ||
+          (m.order === beforeMessage.order &&
+            m.stepOrder < beforeMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
     messages.push(...(args.textSearchMessages ?? []));
     // TODO: prioritize more recent messages
