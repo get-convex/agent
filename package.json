@@ -113,7 +113,7 @@
     "clsx": "2.1.1",
     "convex": "1.35.1",
     "convex-helpers": "0.1.114",
-    "convex-test": "0.0.44",
+    "convex-test": "0.0.52",
     "dayjs": "1.11.20",
     "dotenv": "16.6.1",
     "eslint": "9.39.4",
