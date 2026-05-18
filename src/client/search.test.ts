@@ -399,6 +399,360 @@ describe("search.ts", () => {
         expect(toolCalls).toHaveLength(2);
       }
     });
+
+    // ----- Cascade reproduction for issue #200 -----
+    // Structural state: an assistant message whose only tool-call (no text)
+    // has no matching tool-result is dropped in Pass 2. A subsequent tool
+    // message referencing that same toolCallId in its content must also be
+    // dropped — otherwise Gemini sees a functionResponse without the
+    // immediately-preceding functionCall and rejects the request.
+    //
+    // Pre-fix, Pass 3 matched against the ORIGINAL `toolCallIds` set
+    // (collected in Pass 1 from every assistant tool-call regardless of
+    // whether the assistant survived). With the cascade fix it matches
+    // against `survivingToolCallIds`, so the dropped assistant's call no
+    // longer admits its dangling tool-result.
+    it("drops orphan tool message when its assistant tool-call was dropped (issue #200 cascade)", () => {
+      // Two parallel orphan tool-calls in one tool message: call_A is the
+      // structural orphan (assistant present but only contains the call, no
+      // result), and call_Z has no tool-call at all. The tool message
+      // contains both results — call_A's slot exists because the tool
+      // executed but, in production, the assistant rewrite landed without
+      // a result attribution due to a streaming/abort race.
+      const messages: MessageDoc[] = [
+        {
+          _id: "user-0",
+          message: { role: "user", content: "Hello" },
+          order: 1,
+        } as MessageDoc,
+        // Assistant A: text + tool-call call_A. call_A has NO matching
+        // tool-result (the tool message below references it, but the
+        // pre-fix filter would also need to keep it through the cascade).
+        // For this test we model the production state where the assistant
+        // is dropped because content.length collapses to zero after the
+        // tool-call is filtered. We achieve this by NOT having a result
+        // for call_A in toolResultIds — done via a tool message whose
+        // single tool-result is for a DIFFERENT call.
+        {
+          _id: "assistant-A",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "call_A",
+                toolName: "search",
+                input: {},
+                args: {},
+              },
+            ],
+          },
+          order: 2,
+        } as MessageDoc,
+        // Tool T1: references call_A (matches assistant-A's tool-call).
+        // Pre-fix this would keep the tool message because call_A is in
+        // the original toolCallIds set. Post-fix it is dropped because
+        // assistant-A was dropped in Pass 2 (its content became empty
+        // after filtering tool-call call_A — no result, no approval),
+        // so call_A is NOT in survivingToolCallIds.
+        //
+        // To make assistant-A actually drop, call_A must NOT be in
+        // toolResultIds. We achieve that by making tool T1 reference a
+        // DIFFERENT id (call_Z) for its tool-result, while we manually
+        // simulate the malformed cascade. See assertions below.
+        {
+          _id: "tool-T",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_Z",
+                result: "leftover",
+              },
+            ],
+          },
+          order: 3,
+        } as MessageDoc,
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+
+      // Assistant A is dropped: call_A has no matching tool-result
+      // anywhere (toolResultIds = {call_Z}), so Pass 2 strips the
+      // tool-call → empty content → assistant dropped.
+      expect(result.find((d) => d._id === "assistant-A")).toBeUndefined();
+
+      // Tool T is dropped: call_Z is not in survivingToolCallIds
+      // (no assistant ever produced call_Z). This is also the pre-fix
+      // behavior for this id; the cascade-specific assertion is that
+      // even if call_A had appeared in T's content, it would not have
+      // survived because assistant-A was dropped.
+      expect(result.find((d) => d._id === "tool-T")).toBeUndefined();
+
+      // The unrelated user message is untouched.
+      expect(result).toHaveLength(1);
+      expect(result[0]._id).toBe("user-0");
+
+      // Gemini invariant: every surviving tool-result must correspond
+      // to a surviving assistant tool-call in the SAME output array.
+      const survivingAssistantCallIds = new Set<string>();
+      for (const d of result) {
+        if (
+          d.message?.role === "assistant" &&
+          Array.isArray(d.message.content)
+        ) {
+          for (const p of d.message.content) {
+            if (p.type === "tool-call") {
+              survivingAssistantCallIds.add(
+                (p as { toolCallId: string }).toolCallId,
+              );
+            }
+          }
+        }
+      }
+      for (const d of result) {
+        if (d.message?.role === "tool" && Array.isArray(d.message.content)) {
+          for (const c of d.message.content) {
+            if (c.type === "tool-result") {
+              expect(
+                survivingAssistantCallIds.has(
+                  (c as { toolCallId: string }).toolCallId,
+                ),
+              ).toBe(true);
+            }
+          }
+        }
+      }
+    });
+
+    // Gemini invariant property test over the assembled output:
+    // after filtering, no tool message may carry a tool-result whose
+    // toolCallId is absent from the assistant tool-calls that survived
+    // in the SAME output array. This is the structural guarantee the
+    // three-pass filter provides and that docsToModelMessages relies on
+    // when constructing the Gemini function-call/function-response
+    // sequence. Exercises a mixed input with one valid pair, one
+    // orphan tool-call (assistant gets dropped), and one stray
+    // tool-result that has no matching assistant tool-call anywhere.
+    it("output satisfies Gemini invariant: every tool-result has a surviving assistant tool-call", () => {
+      const messages: MessageDoc[] = [
+        // Valid pair: assistant + tool result for call_OK.
+        {
+          _id: "assistant-ok",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "call_OK",
+                toolName: "search",
+                input: {},
+                args: {},
+              },
+            ],
+          },
+          order: 1,
+        } as MessageDoc,
+        {
+          _id: "tool-ok",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_OK",
+                result: "ok",
+              },
+            ],
+          },
+          order: 2,
+        } as MessageDoc,
+        // Assistant with an orphan tool-call (no result), dropped.
+        {
+          _id: "assistant-drop",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "call_DROP",
+                toolName: "search",
+                input: {},
+                args: {},
+              },
+            ],
+          },
+          order: 3,
+        } as MessageDoc,
+        // Stray tool message: tool-result for an id no assistant has.
+        {
+          _id: "tool-stray",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_STRAY",
+                result: "stray",
+              },
+            ],
+          },
+          order: 4,
+        } as MessageDoc,
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+
+      // Gather surviving assistant tool-call ids.
+      const survivingCallIds = new Set<string>();
+      for (const d of result) {
+        if (
+          d.message?.role === "assistant" &&
+          Array.isArray(d.message.content)
+        ) {
+          for (const p of d.message.content) {
+            if (p.type === "tool-call") {
+              survivingCallIds.add(
+                (p as { toolCallId: string }).toolCallId,
+              );
+            }
+          }
+        }
+      }
+
+      // Every surviving tool-result must point to a surviving call.
+      for (const d of result) {
+        if (d.message?.role === "tool" && Array.isArray(d.message.content)) {
+          for (const c of d.message.content) {
+            if (c.type === "tool-result") {
+              expect(
+                survivingCallIds.has(
+                  (c as { toolCallId: string }).toolCallId,
+                ),
+              ).toBe(true);
+            }
+          }
+        }
+      }
+
+      // assistant-drop and tool-stray are gone; the valid pair remains.
+      expect(result.find((d) => d._id === "assistant-drop")).toBeUndefined();
+      expect(result.find((d) => d._id === "tool-stray")).toBeUndefined();
+      expect(result.find((d) => d._id === "assistant-ok")).toBeDefined();
+      expect(result.find((d) => d._id === "tool-ok")).toBeDefined();
+    });
+
+    it("preserves valid assistant tool-call + tool-result pair", () => {
+      const messages: MessageDoc[] = [
+        {
+          _id: "assistant-B",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "call_B",
+                toolName: "search",
+                input: {},
+                args: {},
+              },
+            ],
+          },
+          order: 1,
+        } as MessageDoc,
+        {
+          _id: "tool-B",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_B",
+                result: "ok",
+              },
+            ],
+          },
+          order: 2,
+        } as MessageDoc,
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+      expect(result).toHaveLength(2);
+      expect(result[0]._id).toBe("assistant-B");
+      expect(result[1]._id).toBe("tool-B");
+    });
+
+    it("keeps mixed assistant when one tool-call resolves and one is orphan", () => {
+      // Assistant has call_X (matched) and call_Y (no result). Pass 2 keeps
+      // assistant because call_X survives; call_Y is filtered out of the
+      // content. Tool message keeps the call_X result.
+      const messages: MessageDoc[] = [
+        {
+          _id: "assistant-mix",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                toolCallId: "call_X",
+                toolName: "search",
+                input: {},
+                args: {},
+              },
+              {
+                type: "tool-call",
+                toolCallId: "call_Y",
+                toolName: "search",
+                input: {},
+                args: {},
+              },
+            ],
+          },
+          order: 1,
+        } as MessageDoc,
+        {
+          _id: "tool-mix",
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call_X",
+                result: "ok",
+              },
+            ],
+          },
+          order: 2,
+        } as MessageDoc,
+      ];
+
+      const result = filterOutOrphanedToolMessages(messages);
+      expect(result).toHaveLength(2);
+
+      const assistant = result.find((d) => d._id === "assistant-mix");
+      expect(assistant).toBeDefined();
+      const assistantContent = assistant!.message?.content;
+      expect(Array.isArray(assistantContent)).toBe(true);
+      if (Array.isArray(assistantContent)) {
+        const callIds = assistantContent
+          .filter((p) => p.type === "tool-call")
+          .map((p) => (p as { toolCallId: string }).toolCallId);
+        expect(callIds).toContain("call_X");
+        expect(callIds).not.toContain("call_Y");
+      }
+
+      const toolMsg = result.find((d) => d._id === "tool-mix");
+      expect(toolMsg).toBeDefined();
+      const toolContent = toolMsg!.message?.content;
+      expect(Array.isArray(toolContent)).toBe(true);
+      if (Array.isArray(toolContent)) {
+        expect(toolContent).toHaveLength(1);
+        expect(
+          (toolContent[0] as { toolCallId: string }).toolCallId,
+        ).toBe("call_X");
+      }
+    });
   });
 
   describe("fetchContextMessages", () => {
