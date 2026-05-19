@@ -349,6 +349,13 @@ export class DeltaStreamer<T> {
         delta,
       );
       if (!success) {
+        // An in-flight #sendDelta started before markFinishedExternally()
+        // will get `success === false` because the stream row is already
+        // "finished". That's a benign late-write miss, not a failure —
+        // don't convert it into an abort.
+        if (this.#finishedExternally) {
+          return;
+        }
         await this.config.onAsyncAbort("async abort");
         this.abortController.abort();
         return;
