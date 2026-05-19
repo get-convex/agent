@@ -287,6 +287,13 @@ export class DeltaStreamer<T> {
     if (this.abortController.signal.aborted) {
       return;
     }
+    // Once the stream has been finished externally (e.g. by the inline
+    // save in streamText's onStepFinish for the returnImmediately path),
+    // the stream record is already "finished" in the DB. Late deltas
+    // would be silently dropped by streams.addDelta — skip the work.
+    if (this.#finishedExternally) {
+      return;
+    }
     await this.getStreamId();
     this.#nextParts.push(...parts);
     if (
