@@ -80,8 +80,20 @@ export async function streamText<
 
   const steps: StepResult<TOOLS>[] = [];
 
-  // Track the final step for atomic save with stream finish (issue #181)
+  // Track the final step for atomic save with stream finish (issue #181).
+  // Only used when streamText awaits stream consumption itself; the
+  // `returnImmediately` path saves inline instead (see onStepFinish below).
   let pendingFinalStep: StepResult<TOOLS> | undefined;
+
+  // Whether streamText will await stream consumption before returning.
+  // When false (saveStreamDeltas.returnImmediately === true), we cannot
+  // defer the final-step save to a post-await block — the function has
+  // already returned by the time onStepFinish fires. See issue #265.
+  const willAwaitStream =
+    Boolean(threadId) &&
+    (options.saveStreamDeltas === true ||
+      (typeof options.saveStreamDeltas === "object" &&
+        !options.saveStreamDeltas.returnImmediately));
 
   const streamer =
     threadId && options.saveStreamDeltas
@@ -142,10 +154,19 @@ export async function streamText<
       steps.push(step);
       const createPendingMessage = await willContinue(steps, args.stopWhen);
       if (!createPendingMessage && streamer) {
-        // This is the final step with streaming enabled.
-        // Defer saving until stream consumption completes for atomic finish (issue #181).
+        // Final step with streaming enabled.
         streamer.markFinishedExternally();
-        pendingFinalStep = step;
+        if (willAwaitStream) {
+          // We're about to `await stream` below — defer the save so it
+          // happens atomically with stream finish (issue #181).
+          pendingFinalStep = step;
+        } else {
+          // returnImmediately path: streamText is about to return without
+          // awaiting consumption, so the deferred-save block below won't
+          // see this step. Save inline now (issue #265).
+          const finishStreamId = await streamer.getOrCreateStreamId();
+          await call.save({ step }, false, finishStreamId);
+        }
       } else {
         await call.save({ step }, createPendingMessage);
       }
@@ -155,11 +176,7 @@ export async function streamText<
   const stream = streamer?.consumeStream(
     result.toUIMessageStream<AIUIMessage<TOOLS>>(),
   );
-  if (
-    (typeof options?.saveStreamDeltas === "object" &&
-      !options.saveStreamDeltas.returnImmediately) ||
-    options?.saveStreamDeltas === true
-  ) {
+  if (willAwaitStream) {
     try {
       await stream;
       await result.consumeStream();
