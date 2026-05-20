@@ -65,7 +65,8 @@ const renameFileTool = createTool({
     newName: z.string(),
   }),
   needsApproval: () => true,
-  execute: async (_ctx, input) => `Renamed: ${input.oldName} → ${input.newName}`,
+  execute: async (_ctx, input) =>
+    `Renamed: ${input.oldName} → ${input.newName}`,
 });
 
 // --- Agents (separate mock model instances to avoid shared callIndex) ---
@@ -291,7 +292,12 @@ const multiToolAgent = new Agent(components.agent, {
         },
       ],
       // Step 2: after both tools execute, model responds
-      [{ type: "text", text: "Done! Deleted old.txt and renamed a.txt to b.txt." }],
+      [
+        {
+          type: "text",
+          text: "Done! Deleted old.txt and renamed a.txt to b.txt.",
+        },
+      ],
     ],
   }),
   stopWhen: stepCountIs(5),
@@ -377,14 +383,22 @@ export const submitApprovalForMultiToolAgent = mutation({
 });
 
 export const submitApprovalForApprovalAgent = mutation({
-  args: { threadId: v.string(), approvalId: v.string(), reason: v.optional(v.string()) },
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, { threadId, approvalId, reason }) => {
     return approvalAgent.approveToolCall(ctx, { threadId, approvalId, reason });
   },
 });
 
 export const submitDenialForDenialAgent = mutation({
-  args: { threadId: v.string(), approvalId: v.string(), reason: v.optional(v.string()) },
+  args: {
+    threadId: v.string(),
+    approvalId: v.string(),
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, { threadId, approvalId, reason }) => {
     return denialAgent.denyToolCall(ctx, { threadId, approvalId, reason });
   },
@@ -485,10 +499,15 @@ describe("Tool Approval Workflow", () => {
   test("approve remains valid with an intervening thread message", async () => {
     usageCalls.length = 0;
     const t = initConvexTest(schema);
-    const result = await t.action(testApi.testApproveFlowWithInterveningMessage, {});
+    const result = await t.action(
+      testApi.testApproveFlowWithInterveningMessage,
+      {},
+    );
 
     expect(result.secondText).toBe("Done! I deleted test.txt.");
     expect(result.approvalResponseOrder).toBe(result.approvalRequestOrder);
-    expect(result.interveningOrder).toBeGreaterThan(result.approvalResponseOrder);
+    expect(result.interveningOrder).toBeGreaterThan(
+      result.approvalResponseOrder,
+    );
   });
 });

@@ -2,7 +2,11 @@
 import { describe, expect, test } from "vitest";
 import { Agent, createTool, stepCountIs, mockModel } from "@convex-dev/agent";
 import { anyApi, actionGeneric, mutationGeneric } from "convex/server";
-import type { ApiFromModules, ActionBuilder, MutationBuilder } from "convex/server";
+import type {
+  ApiFromModules,
+  ActionBuilder,
+  MutationBuilder,
+} from "convex/server";
 import { v } from "convex/values";
 import { components } from "./_generated/api.js";
 import { initConvexTest } from "./setup.test.js";
@@ -153,9 +157,7 @@ export const testApproveE2E = action({
     const approvalMsg = result1.savedMessages?.find(
       (m) =>
         Array.isArray(m.message?.content) &&
-        m.message!.content.some(
-          (p: any) => p.type === "tool-approval-request",
-        ),
+        m.message!.content.some((p: any) => p.type === "tool-approval-request"),
     );
     if (!approvalMsg)
       throw new Error("No approval request found in saved messages");
@@ -209,9 +211,7 @@ export const testDenyE2E = action({
     const approvalMsg = result1.savedMessages?.find(
       (m) =>
         Array.isArray(m.message?.content) &&
-        m.message!.content.some(
-          (p: any) => p.type === "tool-approval-request",
-        ),
+        m.message!.content.some((p: any) => p.type === "tool-approval-request"),
     );
     if (!approvalMsg) throw new Error("No approval request found");
     const approvalPart = (approvalMsg.message!.content as any[]).find(
@@ -323,7 +323,11 @@ export const submitApprovalForTestApprovalAgent = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { threadId, approvalId, reason }) => {
-    return testApprovalAgent.approveToolCall(ctx, { threadId, approvalId, reason });
+    return testApprovalAgent.approveToolCall(ctx, {
+      threadId,
+      approvalId,
+      reason,
+    });
   },
 });
 
@@ -403,9 +407,7 @@ describe("Example Approval E2E (exercises usageHandler + insertRawUsage)", () =>
     const t = initConvexTest();
     const result = await t.action(testApi.testDenyE2E, {});
 
-    expect(result.secondText).toBe(
-      "Understood, I won't delete that file.",
-    );
+    expect(result.secondText).toBe("Understood, I won't delete that file.");
     expect(result.totalThreadMessages).toBeGreaterThanOrEqual(4);
 
     const rawUsageDocs = await t.run(async (ctx) => {

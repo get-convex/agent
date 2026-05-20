@@ -34,7 +34,11 @@ export default function ChatApproval() {
 }
 
 function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
-  const { results: messages, status, loadMore } = useUIMessages(
+  const {
+    results: messages,
+    status,
+    loadMore,
+  } = useUIMessages(
     api.chat.approval.listThreadMessages,
     { threadId },
     { initialNumItems: 10, stream: true },
@@ -47,7 +51,9 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
   );
 
   const submitApproval = useMutation(api.chat.approval.submitApproval);
-  const triggerContinuation = useMutation(api.chat.approval.triggerContinuation);
+  const triggerContinuation = useMutation(
+    api.chat.approval.triggerContinuation,
+  );
 
   // Track the last approval messageId so we can use it for continuation.
   const lastApprovalMessageIdRef = useRef<string | null>(null);
@@ -56,7 +62,9 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
 
   const hasPendingApprovals = messages.some((m) =>
     m.parts.some(
-      (p) => p.type.startsWith("tool-") && (p as ToolUIPart).state === "approval-requested",
+      (p) =>
+        p.type.startsWith("tool-") &&
+        (p as ToolUIPart).state === "approval-requested",
     ),
   );
 
@@ -90,7 +98,9 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
     lastApprovalMessageIdRef.current = messageId;
   }
 
-  const [prompt, setPrompt] = useState("Delete the file important.txt and transfer $500 to account savings-123");
+  const [prompt, setPrompt] = useState(
+    "Delete the file important.txt and transfer $500 to account savings-123",
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -142,7 +152,11 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            placeholder={hasPendingApprovals ? "Respond to pending approvals first..." : "Ask the agent to do something..."}
+            placeholder={
+              hasPendingApprovals
+                ? "Respond to pending approvals first..."
+                : "Ask the agent to do something..."
+            }
             disabled={hasPendingApprovals}
           />
           <button
@@ -159,7 +173,9 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
                 reset();
                 lastApprovalMessageIdRef.current = null;
                 continuationTriggeredRef.current = false;
-                setPrompt("Delete the file important.txt and transfer $500 to account savings-123");
+                setPrompt(
+                  "Delete the file important.txt and transfer $500 to account savings-123",
+                );
               }}
               type="button"
             >
@@ -189,8 +205,8 @@ function Message({
   const isUser = message.role === "user";
 
   // Find tool parts that need approval
-  const toolParts = message.parts.filter(
-    (p): p is ToolUIPart => p.type.startsWith("tool-"),
+  const toolParts = message.parts.filter((p): p is ToolUIPart =>
+    p.type.startsWith("tool-"),
   );
 
   return (
@@ -330,7 +346,8 @@ function ToolCallDisplay({
         </div>
       )}
 
-      {(tool.state === "input-available" || tool.state === "input-streaming") && (
+      {(tool.state === "input-available" ||
+        tool.state === "input-streaming") && (
         <div className="text-gray-500 text-xs">Processing...</div>
       )}
     </div>

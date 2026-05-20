@@ -130,7 +130,7 @@ export type ToolInputProperties<INPUT> = {
  * @param tool The tool. See https://sdk.vercel.ai/docs/ai-sdk-core/tools-and-tool-calling
  * Currently contains deprecated parameters `args` and `handler` to maintain backwards compatibility
  * but these will be removed in the future. Use `inputSchema` and `execute` instead, respectively.
- * 
+ *
  * @returns A tool to be used with the AI SDK.
  */
 export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
