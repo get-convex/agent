@@ -57,6 +57,9 @@ export async function updateFromUIMessageChunks(
   uiMessage: UIMessage,
   parts: UIMessageChunk[],
 ) {
+  if (parts.length === 0) {
+    return uiMessage;
+  }
   const partsStream = new ReadableStream<UIMessageChunk>({
     start(controller) {
       for (const part of parts) {
@@ -72,11 +75,7 @@ export async function updateFromUIMessageChunks(
     stream: partsStream,
     onError: (e) => {
       const errorMessage = e instanceof Error ? e.message : String(e);
-      // Tool invocation errors can be safely ignored when streaming continuation
-      // after tool approval - the stored messages have the complete tool context
       if (errorMessage.toLowerCase().includes("no tool invocation found")) {
-        // Silently suppress - this is expected after tool approval when the
-        // continuation stream has tool-result without the original tool-call
         suppressError = true;
         return;
       }
@@ -95,8 +94,6 @@ export async function updateFromUIMessageChunks(
       message = messagePart;
     }
   } catch (e) {
-    // If we've already handled this error in onError and marked it as suppressed,
-    // don't rethrow - the stored messages provide the fallback
     if (!suppressError) {
       throw e;
     }
@@ -104,6 +101,256 @@ export async function updateFromUIMessageChunks(
   if (failed) {
     message.status = "failed";
   }
+  message.text = joinText(message.parts);
+  return message;
+}
+
+type ToolPart = ToolUIPart | DynamicToolUIPart;
+
+function transitionToolPart<S extends ToolPart["state"]>(
+  part: ToolPart,
+  updates: { state: S } & Partial<Extract<ToolPart, { state: S }>>,
+): void {
+  Object.assign(part, updates);
+}
+
+export function applyUIMessageChunksIncremental(
+  uiMessage: UIMessage,
+  newParts: UIMessageChunk[],
+): UIMessage {
+  const message: UIMessage = structuredClone(uiMessage);
+
+  const toolPartsById = new Map<string, ToolPart>(
+    message.parts
+      .filter(
+        (p): p is ToolPart =>
+          p.type.startsWith("tool-") || p.type === "dynamic-tool",
+      )
+      .map((p) => [p.toolCallId, p]),
+  );
+
+  let activeTextPart: TextUIPart | undefined = message.parts
+    .filter((p): p is TextUIPart => p.type === "text" && p.state === "streaming")
+    .at(-1);
+  let activeReasoningPart: ReasoningUIPart | undefined = message.parts
+    .filter(
+      (p): p is ReasoningUIPart =>
+        p.type === "reasoning" && p.state === "streaming",
+    )
+    .at(-1);
+
+  for (const part of newParts) {
+    switch (part.type) {
+      case "text-start": {
+        const newPart: TextUIPart = {
+          type: "text",
+          text: "",
+          state: "streaming",
+          providerMetadata: part.providerMetadata,
+        };
+        activeTextPart = newPart;
+        message.parts.push(newPart);
+        break;
+      }
+      case "text-delta": {
+        if (activeTextPart) {
+          activeTextPart.text += part.delta;
+          activeTextPart.providerMetadata = mergeProviderMetadata(
+            activeTextPart.providerMetadata,
+            part.providerMetadata,
+          );
+        }
+        break;
+      }
+      case "text-end": {
+        if (activeTextPart) {
+          activeTextPart.state = "done";
+          activeTextPart.providerMetadata = mergeProviderMetadata(
+            activeTextPart.providerMetadata,
+            part.providerMetadata,
+          );
+          activeTextPart = undefined;
+        }
+        break;
+      }
+      case "reasoning-start": {
+        const newPart: ReasoningUIPart = {
+          type: "reasoning",
+          text: "",
+          state: "streaming",
+          providerMetadata: part.providerMetadata,
+        };
+        activeReasoningPart = newPart;
+        message.parts.push(newPart);
+        break;
+      }
+      case "reasoning-delta": {
+        if (activeReasoningPart) {
+          activeReasoningPart.text += part.delta;
+          activeReasoningPart.providerMetadata = mergeProviderMetadata(
+            activeReasoningPart.providerMetadata,
+            part.providerMetadata,
+          );
+        }
+        break;
+      }
+      case "reasoning-end": {
+        if (activeReasoningPart) {
+          activeReasoningPart.state = "done";
+          activeReasoningPart.providerMetadata = mergeProviderMetadata(
+            activeReasoningPart.providerMetadata,
+            part.providerMetadata,
+          );
+          activeReasoningPart = undefined;
+        }
+        break;
+      }
+      case "tool-input-start": {
+        const newToolPart: ToolUIPart | DynamicToolUIPart = part.dynamic
+          ? ({
+              type: "dynamic-tool",
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              state: "input-streaming",
+              input: "",
+            } satisfies DynamicToolUIPart)
+          : ({
+              type: `tool-${part.toolName}`,
+              toolCallId: part.toolCallId,
+              state: "input-streaming",
+              input: "",
+              providerExecuted: part.providerExecuted,
+            } satisfies ToolUIPart);
+        toolPartsById.set(part.toolCallId, newToolPart);
+        message.parts.push(newToolPart);
+        break;
+      }
+      case "tool-input-delta": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (!toolPart) {
+          console.warn(`tool-input-delta for unknown toolCallId ${part.toolCallId}`);
+          break;
+        }
+        const raw = typeof toolPart.input === "string" ? toolPart.input : "";
+        const accumulated = raw + part.inputTextDelta;
+        try {
+          toolPart.input = JSON.parse(accumulated);
+        } catch {
+          toolPart.input = accumulated;
+        }
+        break;
+      }
+      case "tool-input-available": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "input-available",
+            input: part.input,
+            callProviderMetadata: mergeProviderMetadata(
+              (toolPart as { callProviderMetadata?: ProviderMetadata }).callProviderMetadata,
+              part.providerMetadata,
+            ),
+          });
+        }
+        break;
+      }
+      case "tool-input-error": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "output-error",
+            errorText: part.errorText,
+            providerExecuted: part.providerExecuted,
+            ...(toolPart.type === "dynamic-tool"
+              ? { input: part.input }
+              : { input: undefined, rawInput: part.input }),
+            callProviderMetadata: mergeProviderMetadata(
+              (toolPart as { callProviderMetadata?: ProviderMetadata }).callProviderMetadata,
+              part.providerMetadata,
+            ),
+          });
+        }
+        break;
+      }
+      case "tool-output-available": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "output-available",
+            output: part.output,
+            preliminary: part.preliminary,
+            providerExecuted: part.providerExecuted,
+          });
+        }
+        break;
+      }
+      case "tool-output-error": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "output-error",
+            errorText: part.errorText,
+            providerExecuted: part.providerExecuted,
+          });
+        }
+        break;
+      }
+      case "tool-output-denied": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, { state: "output-denied" });
+        }
+        break;
+      }
+      case "tool-approval-request": {
+        const toolPart = toolPartsById.get(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "approval-requested",
+            approval: { id: part.approvalId },
+          });
+        }
+        break;
+      }
+      case "source-url":
+        message.parts.push({
+          type: "source-url",
+          url: part.url,
+          sourceId: part.sourceId,
+          title: part.title,
+          providerMetadata: part.providerMetadata,
+        });
+        break;
+      case "source-document":
+        message.parts.push({
+          type: "source-document",
+          mediaType: part.mediaType,
+          sourceId: part.sourceId,
+          title: part.title,
+          filename: part.filename,
+          providerMetadata: part.providerMetadata,
+        });
+        break;
+      case "start-step":
+        message.parts.push({ type: "step-start" });
+        break;
+      case "finish-step":
+        if (activeTextPart) { activeTextPart.state = "done"; activeTextPart = undefined; }
+        if (activeReasoningPart) { activeReasoningPart.state = "done"; activeReasoningPart = undefined; }
+        break;
+      case "abort":
+      case "error":
+        message.status = "failed";
+        break;
+      case "start":
+      case "finish":
+      case "file":
+        break;
+      default:
+        break;
+    }
+  }
+
   message.text = joinText(message.parts);
   return message;
 }
@@ -138,10 +385,6 @@ export async function deriveUIMessagesFromDeltas(
   return sorted(messages);
 }
 
-/**
- *
- */
-
 export function deriveUIMessagesFromTextStreamParts(
   threadId: string,
   streamMessages: StreamMessage[],
@@ -161,7 +404,6 @@ export function deriveUIMessagesFromTextStreamParts(
     cursor: number;
     message: UIMessage;
   }> = [];
-  // Seed the existing chunks
   let changed = false;
   for (const streamMessage of streamMessages) {
     const deltas = allDeltas.filter(
@@ -220,12 +462,6 @@ export function getParts<T extends StreamDelta["parts"][number]>(
   return { parts, cursor };
 }
 
-/**
- * This is historically from when we would use the onChunk callback instead of
- * consuming the full UIMessageStream.
- */
-
-// exported for testing
 export function updateFromTextStreamParts(
   threadId: string,
   streamMessage: StreamMessage,
@@ -515,19 +751,13 @@ export function updateFromTextStreamParts(
       case "raw":
       case "start-step":
       case "start":
-        // ignore
         break;
       default: {
-        // Exhaustiveness check disabled intentionally for forwards compatibility.
-        // New TextStreamPart types from future AI SDK versions will trigger a
-        // runtime warning rather than a compile error, allowing graceful degradation.
-        // const _: never = part;
         console.warn(`Received unexpected part: ${JSON.stringify(part)}`);
         break;
       }
     }
   }
-  // Consider reasoning done once something else happens
   for (let i = 0; i < message.parts.length - 1; i++) {
     const part = message.parts[i];
     if (part.type === "reasoning") {

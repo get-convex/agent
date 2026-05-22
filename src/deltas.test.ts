@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyUIMessageChunksIncremental,
   blankUIMessage,
   deriveUIMessagesFromTextStreamParts,
+  getParts,
   updateFromTextStreamParts,
   updateFromUIMessageChunks,
 } from "./deltas.js";
 import type { StreamMessage, StreamDelta } from "./validators.js";
 import { omit } from "convex-helpers";
-import type { Tool, ToolUIPart, TypedToolResult } from "ai";
+import type { Tool, ToolUIPart, TypedToolResult, UIMessageChunk } from "ai";
 
 describe("UIMessageChunks", () => {
   it("updates a UIMessage with a tool call and follow up", async () => {
@@ -575,6 +577,189 @@ describe("mergeDeltas", () => {
         parts: [{ type: "text-delta", id: "2", text: " World!" }],
       },
     ]);
+  });
+
+  it("incremental processing of tool-input-delta chunks is O(N) not O(N²)", async () => {
+    const N = 500;
+    const streamId = "s-perf";
+    const toolCallId = "tool-0";
+    const streamMessage = {
+      streamId,
+      status: "streaming" as const,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk" as const,
+      agentName: "agent1",
+    };
+
+    // One StreamDelta with preamble, then N deltas each with one tool-input-delta
+    const allDeltas: StreamDelta[] = [
+      {
+        streamId,
+        start: 0,
+        end: 1,
+        parts: [
+          { type: "start" },
+          { type: "start-step" },
+          { type: "tool-input-start", toolCallId, toolName: "myTool" },
+        ] as UIMessageChunk[],
+      },
+      ...Array.from({ length: N }, (_, i) => ({
+        streamId,
+        start: i + 1,
+        end: i + 2,
+        parts: [
+          {
+            type: "tool-input-delta",
+            toolCallId,
+            inputTextDelta: "x",
+          } as UIMessageChunk,
+        ],
+      })),
+    ];
+
+    // Simulate the hook: process one delta at a time, tracking cursor + prior message
+    let cursor = 0;
+    let uiMessage = blankUIMessage(streamMessage, "thread-perf");
+    let totalPartsProcessed = 0;
+
+    for (let i = 0; i <= N; i++) {
+      const available = allDeltas.slice(0, i + 1);
+      const { parts: newParts, cursor: newCursor } = getParts<UIMessageChunk>(
+        available,
+        cursor,
+      );
+      if (newParts.length > 0) {
+        totalPartsProcessed += newParts.length;
+        const base = structuredClone(uiMessage);
+        uiMessage =
+          cursor === 0
+            ? await updateFromUIMessageChunks(base, newParts)
+            : applyUIMessageChunksIncremental(base, newParts);
+        cursor = newCursor;
+      }
+    }
+
+    // O(N): each delta part processed exactly once (N tool-input-deltas + 3 preamble parts)
+    expect(totalPartsProcessed).toBe(N + 3);
+
+    // Correctness: accumulated tool input should be "x" repeated N times
+    const toolPart = uiMessage.parts.find(
+      (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === toolCallId,
+    );
+    expect(toolPart).toBeDefined();
+    const inputStr =
+      typeof toolPart!.input === "string"
+        ? toolPart!.input
+        : JSON.stringify(toolPart!.input);
+    expect(inputStr.length).toBe(N);
+  });
+
+  it("applyUIMessageChunksIncremental: text-delta accumulation across calls", async () => {
+    const streamMessage = {
+      streamId: "s-text",
+      status: "streaming" as const,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk" as const,
+      agentName: "a",
+    };
+    let msg = blankUIMessage(streamMessage, "thread-text");
+    msg = await updateFromUIMessageChunks(msg, [
+      { type: "start" },
+      { type: "start-step" },
+      { type: "text-start", id: "t0" },
+      { type: "text-delta", id: "t0", delta: "Hello " },
+    ] as UIMessageChunk[]);
+    msg = applyUIMessageChunksIncremental(msg, [
+      { type: "text-delta", id: "t0", delta: "world" },
+    ] as UIMessageChunk[]);
+    msg = applyUIMessageChunksIncremental(msg, [
+      { type: "text-delta", id: "t0", delta: "!" },
+      { type: "text-end", id: "t0" },
+    ] as UIMessageChunk[]);
+
+    const textPart = msg.parts.find((p) => p.type === "text") as
+      | { text: string; state: string }
+      | undefined;
+    expect(textPart?.text).toBe("Hello world!");
+    expect(textPart?.state).toBe("done");
+    expect(msg.text).toBe("Hello world!");
+  });
+
+  it("applyUIMessageChunksIncremental: tool-output-available preserves input and sets fields", async () => {
+    const streamMessage = {
+      streamId: "s-tool-out",
+      status: "streaming" as const,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk" as const,
+      agentName: "a",
+    };
+    let msg = blankUIMessage(streamMessage, "thread-tool-out");
+    msg = await updateFromUIMessageChunks(msg, [
+      { type: "start" },
+      { type: "start-step" },
+      { type: "tool-input-start", toolCallId: "c1", toolName: "myTool" },
+      {
+        type: "tool-input-available",
+        toolCallId: "c1",
+        toolName: "myTool",
+        input: { q: "hi" },
+      },
+    ] as UIMessageChunk[]);
+    msg = applyUIMessageChunksIncremental(msg, [
+      {
+        type: "tool-output-available",
+        toolCallId: "c1",
+        output: { result: "ok" },
+        preliminary: true,
+        providerExecuted: true,
+      },
+    ] as UIMessageChunk[]);
+
+    const toolPart = msg.parts.find(
+      (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === "c1",
+    );
+    expect(toolPart?.state).toBe("output-available");
+    expect(toolPart?.input).toEqual({ q: "hi" });
+    expect((toolPart as { output?: unknown }).output).toEqual({ result: "ok" });
+    expect((toolPart as { preliminary?: boolean }).preliminary).toBe(true);
+    expect((toolPart as { providerExecuted?: boolean }).providerExecuted).toBe(true);
+  });
+
+  it("applyUIMessageChunksIncremental: tool-input-error sets rawInput and clears input for static tools", async () => {
+    const streamMessage = {
+      streamId: "s-tool-err",
+      status: "streaming" as const,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk" as const,
+      agentName: "a",
+    };
+    let msg = blankUIMessage(streamMessage, "thread-tool-err");
+    msg = await updateFromUIMessageChunks(msg, [
+      { type: "start" },
+      { type: "start-step" },
+      { type: "tool-input-start", toolCallId: "c2", toolName: "myTool" },
+    ] as UIMessageChunk[]);
+    msg = applyUIMessageChunksIncremental(msg, [
+      {
+        type: "tool-input-error",
+        toolCallId: "c2",
+        toolName: "myTool",
+        input: { bad: "args" },
+        errorText: "validation failed",
+      },
+    ] as UIMessageChunk[]);
+
+    const toolPart = msg.parts.find(
+      (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === "c2",
+    );
+    expect(toolPart?.state).toBe("output-error");
+    expect((toolPart as { errorText?: string }).errorText).toBe("validation failed");
+    expect(toolPart?.input).toBeUndefined();
+    expect((toolPart as { rawInput?: unknown }).rawInput).toEqual({ bad: "args" });
   });
 
   it("handles streaming tool-approval-request and updates tool state", () => {

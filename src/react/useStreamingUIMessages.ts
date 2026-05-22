@@ -4,8 +4,10 @@ import { type UIDataTypes, type UIMessageChunk, type UITools } from "ai";
 import type { StreamQuery, StreamQueryArgs } from "./types.js";
 import { type UIMessage } from "../UIMessages.js";
 import {
+  applyUIMessageChunksIncremental,
   blankUIMessage,
   getParts,
+  statusFromStreamStatus,
   updateFromUIMessageChunks,
   deriveUIMessagesFromTextStreamParts,
 } from "../deltas.js";
@@ -63,16 +65,24 @@ export function useStreamingUIMessages<
 
   useEffect(() => {
     if (!streams) return;
-    // return if there are no new deltas beyond the cursors
     let noNewDeltas = true;
     for (const stream of streams) {
+      const existingStreamState = messageState[stream.streamMessage.streamId];
       const lastDelta = stream.deltas.at(-1);
-      const cursor = messageState[stream.streamMessage.streamId]?.cursor;
+      const cursor = existingStreamState?.cursor;
       if (!cursor) {
         noNewDeltas = false;
         break;
       }
       if (lastDelta && lastDelta.start >= cursor) {
+        noNewDeltas = false;
+        break;
+      }
+      if (
+        existingStreamState &&
+        existingStreamState.uiMessage.status !==
+          statusFromStreamStatus(stream.streamMessage.status)
+      ) {
         noNewDeltas = false;
         break;
       }
@@ -91,36 +101,42 @@ export function useStreamingUIMessages<
       > = Object.fromEntries(
         await Promise.all(
           streams.map(async ({ deltas, streamMessage }) => {
-            const { parts, cursor } = getParts<UIMessageChunk>(deltas, 0);
-            if (streamMessage.format === "UIMessageChunk") {
-              // Unfortunately this can't handle resuming from a UIMessage and
-              // adding more chunks, so we re-create it from scratch each time.
-              const uiMessage = await updateFromUIMessageChunks(
-                blankUIMessage(streamMessage, threadId),
-                parts,
-              );
-              return [
-                streamMessage.streamId,
-                {
-                  uiMessage,
-                  cursor,
-                },
-              ];
-            } else {
-              const [uiMessages] = deriveUIMessagesFromTextStreamParts(
-                threadId,
+            const streamId = streamMessage.streamId;
+            const existing = messageState[streamId];
+            const fromCursor = existing?.cursor ?? 0;
+            const status = statusFromStreamStatus(streamMessage.status);
+
+            if (streamMessage.format !== "UIMessageChunk") {
+              const existingStreams = existing
+                ? [{ streamId, cursor: existing.cursor, message: existing.uiMessage as UIMessage }]
+                : [];
+              const [uiMessages, newStreams] = deriveUIMessagesFromTextStreamParts(
+                threadId as string,
                 [streamMessage],
-                [],
+                existingStreams,
                 deltas,
               );
-              return [
-                streamMessage.streamId,
-                {
-                  uiMessage: uiMessages[0],
-                  cursor,
-                },
-              ];
+              return [streamId, {
+                uiMessage: (uiMessages[0] ?? existing?.uiMessage) as UIMessage<METADATA, DATA_PARTS, TOOLS>,
+                cursor: newStreams[0]?.cursor ?? fromCursor,
+              }];
             }
+
+            const { parts: newParts, cursor } = getParts<UIMessageChunk>(deltas, fromCursor);
+
+            if (newParts.length === 0) {
+              if (existing && existing.uiMessage.status !== status) {
+                return [streamId, { uiMessage: { ...existing.uiMessage, status }, cursor: existing.cursor }];
+              }
+              return [streamId, existing ?? { uiMessage: blankUIMessage(streamMessage, threadId as string), cursor: 0 }];
+            }
+
+            const base = existing?.uiMessage ?? blankUIMessage(streamMessage, threadId as string);
+            const uiMessage = fromCursor === 0
+              ? await updateFromUIMessageChunks(base as UIMessage, newParts)
+              : applyUIMessageChunksIncremental(base as UIMessage, newParts);
+            uiMessage.status = status;
+            return [streamId, { uiMessage: uiMessage as UIMessage<METADATA, DATA_PARTS, TOOLS>, cursor }];
           }),
         ),
       );
