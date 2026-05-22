@@ -4,6 +4,7 @@ import {
   serializeDataOrUrl,
   toModelMessageDataOrUrl,
   serializeMessage,
+  serializeNewMessagesInStep,
   toModelMessage,
   serializeContent,
   toModelMessageContent,
@@ -16,7 +17,7 @@ import fs from "fs";
 import path from "path";
 import type { SerializedContent } from "./mapping.js";
 import { validate } from "convex-helpers/validators";
-import type { ToolResultPart } from "ai";
+import type { ModelMessage, StepResult, ToolResultPart, ToolSet } from "ai";
 import type { Infer } from "convex/values";
 
 const testAssetsDir = path.join(__dirname, "../test-assets");
@@ -257,6 +258,213 @@ describe("mapping", () => {
     );
     expect(content).toHaveLength(1);
     expect((content as unknown[])[0]).toMatchObject(approvalResponse);
+  });
+
+  describe("serializeNewMessagesInStep", () => {
+    const ctx = {
+      runAction: async () => undefined,
+      runMutation: async () => undefined,
+      storage: {
+        store: async () => "storageId",
+        getUrl: async () => "https://example.com/file",
+        delete: async () => undefined,
+      },
+    } as unknown as ActionCtx;
+    const component = api as unknown as AgentComponent;
+
+    const step0Messages: ModelMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "c1", toolName: "search", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "search",
+            output: { type: "text", value: "ok" },
+          },
+        ],
+      },
+    ];
+    const step1Messages: ModelMessage[] = [
+      ...step0Messages,
+      { role: "assistant", content: [{ type: "text", text: "thinking" }] },
+    ];
+    const step2Messages: ModelMessage[] = [
+      ...step1Messages,
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "c2", toolName: "search", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c2",
+            toolName: "search",
+            output: { type: "text", value: "done" },
+          },
+        ],
+      },
+    ];
+
+    const makeStep = (messages: ModelMessage[]): StepResult<ToolSet> =>
+      ({
+        content: [],
+        text: "",
+        reasoning: [],
+        reasoningText: undefined,
+        files: [],
+        sources: [],
+        toolCalls: [],
+        staticToolCalls: [],
+        dynamicToolCalls: [],
+        toolResults: [],
+        staticToolResults: [],
+        dynamicToolResults: [],
+        finishReason: "stop",
+        rawFinishReason: undefined,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        warnings: undefined,
+        request: {},
+        response: {
+          id: "resp",
+          timestamp: new Date(),
+          modelId: "test",
+          messages,
+        },
+        providerMetadata: undefined,
+      }) as unknown as StepResult<ToolSet>;
+
+    const contentTypes = (msg: { content: unknown }): string[] => {
+      const c = msg.content;
+      if (!Array.isArray(c)) return ["text"];
+      return c.map((p: { type?: string }) => p.type ?? "?");
+    };
+
+    test("first step (count=0) serializes all response messages", async () => {
+      const res = await serializeNewMessagesInStep(
+        ctx,
+        component,
+        makeStep(step0Messages),
+        undefined,
+        0,
+      );
+      expect(res.messages).toHaveLength(2);
+      expect(res.messages[0].message.role).toBe("assistant");
+      expect(contentTypes(res.messages[0].message)).toEqual(["tool-call"]);
+      expect(res.messages[1].message.role).toBe("tool");
+      expect(contentTypes(res.messages[1].message)).toEqual(["tool-result"]);
+    });
+
+    test("middle step (count=2) serializes only the new text message", async () => {
+      const res = await serializeNewMessagesInStep(
+        ctx,
+        component,
+        makeStep(step1Messages),
+        undefined,
+        2,
+      );
+      expect(res.messages).toHaveLength(1);
+      expect(res.messages[0].message.role).toBe("assistant");
+      expect(contentTypes(res.messages[0].message)).toEqual(["text"]);
+    });
+
+    test("multi-message step (count=3) serializes the new tool-call + tool-result pair", async () => {
+      const res = await serializeNewMessagesInStep(
+        ctx,
+        component,
+        makeStep(step2Messages),
+        undefined,
+        3,
+      );
+      expect(res.messages).toHaveLength(2);
+      expect(res.messages[0].message.role).toBe("assistant");
+      expect(contentTypes(res.messages[0].message)).toEqual(["tool-call"]);
+      expect(res.messages[1].message.role).toBe("tool");
+      expect(contentTypes(res.messages[1].message)).toEqual(["tool-result"]);
+    });
+
+    // Regression test for the actually-broken shape: a single step appended
+    // assistant(text) + assistant(tool-call) + tool(tool-result), so the new
+    // tail has length 3 and the last message is a tool message. The old
+    // heuristic took `slice(-2)` whenever the last role was "tool" and would
+    // have dropped the leading text. The watermark returns all three.
+    test("returns all three messages when a step adds text + tool-call + tool-result", async () => {
+      const stepMessages: ModelMessage[] = [
+        ...step0Messages, // length 2
+        { role: "assistant", content: [{ type: "text", text: "Let me check..." }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool-call", toolCallId: "c3", toolName: "search", input: {} },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "c3",
+              toolName: "search",
+              output: { type: "text", value: "done" },
+            },
+          ],
+        },
+      ];
+      const res = await serializeNewMessagesInStep(
+        ctx,
+        component,
+        makeStep(stepMessages),
+        undefined,
+        step0Messages.length,
+      );
+      expect(res.messages).toHaveLength(3);
+      expect(res.messages[0].message.role).toBe("assistant");
+      expect(contentTypes(res.messages[0].message)).toEqual(["text"]);
+      expect(res.messages[1].message.role).toBe("assistant");
+      expect(contentTypes(res.messages[1].message)).toEqual(["tool-call"]);
+      expect(res.messages[2].message.role).toBe("tool");
+      expect(contentTypes(res.messages[2].message)).toEqual(["tool-result"]);
+    });
+
+    test("empty response messages slice falls back to synthetic empty assistant", async () => {
+      const res = await serializeNewMessagesInStep(
+        ctx,
+        component,
+        makeStep(step1Messages),
+        undefined,
+        step1Messages.length,
+      );
+      expect(res.messages).toHaveLength(1);
+      expect(res.messages[0].message.role).toBe("assistant");
+      expect(res.messages[0].message.content).toEqual([]);
+    });
+
+    // Pin the caller-drift behavior: if the watermark is past the end of
+    // response.messages (e.g. the caller mistracked), the slice is empty and
+    // we fall through to the synthetic anchor. Future "fixes" should not
+    // accidentally change this without intent.
+    test("watermark beyond response.messages.length returns the synthetic fallback", async () => {
+      const res = await serializeNewMessagesInStep(
+        ctx,
+        component,
+        makeStep(step1Messages),
+        undefined,
+        step1Messages.length + 5,
+      );
+      expect(res.messages).toHaveLength(1);
+      expect(res.messages[0].message.role).toBe("assistant");
+      expect(res.messages[0].message.content).toEqual([]);
+    });
   });
 
   describe("autoDenyUnresolvedApprovals", () => {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   Agent,
   createThread,
+  createTool,
   filterOutOrphanedToolMessages,
   type MessageDoc,
 } from "./index.js";
@@ -59,6 +60,74 @@ export const createThreadManually = mutation({
   handler: async (ctx) => {
     const { threadId } = await agent.createThread(ctx, { userId: "1" });
     return { threadId };
+  },
+});
+
+const saveStepAgent = new Agent(components.agent, {
+  name: "save-step-test",
+  instructions: "test",
+  tools: {
+    echo: createTool({
+      description: "Echo a value",
+      inputSchema: z.object({ value: z.string() }),
+      execute: async (_ctx, input) => `echo:${input.value}`,
+    }),
+  },
+  languageModel: mockModel({
+    contentSteps: [
+      [
+        {
+          type: "tool-call",
+          toolCallId: "ss-1",
+          toolName: "echo",
+          input: JSON.stringify({ value: "hi" }),
+        },
+      ],
+      [{ type: "text", text: "done" }],
+    ],
+  }),
+  stopWhen: stepCountIs(5),
+});
+
+export const replayStepsViaSaveStep = action({
+  args: { withWatermark: v.boolean() },
+  handler: async (ctx, args) => {
+    const { thread } = await saveStepAgent.createThread(ctx, {
+      userId: "ss-gen",
+    });
+    const genResult = await thread.generateText({ prompt: "echo hi" });
+    const steps = genResult.steps;
+
+    const { threadId } = await saveStepAgent.createThread(ctx, {
+      userId: "ss-replay",
+    });
+    const { messageId: promptMessageId } = await saveStepAgent.saveMessage(ctx, {
+      threadId,
+      message: { role: "user", content: "echo hi" },
+      skipEmbeddings: true,
+    });
+    let previousStep: (typeof steps)[number] | undefined;
+    for (const step of steps) {
+      await saveStepAgent.saveStep(ctx, {
+        threadId,
+        promptMessageId,
+        step,
+        previousStep: args.withWatermark ? previousStep : undefined,
+      });
+      previousStep = step;
+    }
+
+    const replayed = await saveStepAgent.listMessages(ctx, {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 50 },
+      statuses: ["success", "pending", "failed"],
+    });
+    const contentTypes = replayed.page.flatMap((m) =>
+      Array.isArray(m.message?.content)
+        ? m.message!.content.map((c: { type?: string }) => c.type ?? "text")
+        : ["text"],
+    );
+    return { stepCount: steps.length, contentTypes };
   },
 });
 
@@ -162,6 +231,7 @@ const testApi: ApiFromModules<{
     generateTextAction: typeof generateTextAction;
     generateObjectAction: typeof generateObjectAction;
     saveMessageMutation: typeof saveMessageMutation;
+    replayStepsViaSaveStep: typeof replayStepsViaSaveStep;
   };
 }>["fns"] = anyApi["index.test"] as any;
 
@@ -176,6 +246,27 @@ describe("Agent thick client", () => {
     const result = await t.action(testApi.createAndGenerate, {});
     expect(result).toBeDefined();
     expect(result).toMatch(TEST_TEXT);
+  });
+  test("saveStep with previousStep saves each step's new messages exactly once", async () => {
+    const t = initConvexTest(schema);
+    const res = await t.action(testApi.replayStepsViaSaveStep, {
+      withWatermark: true,
+    });
+    expect(res.stepCount).toBe(2);
+    const toolCalls = res.contentTypes.filter((t) => t === "tool-call").length;
+    const toolResults = res.contentTypes.filter(
+      (t) => t === "tool-result",
+    ).length;
+    expect(toolCalls).toBe(1);
+    expect(toolResults).toBe(1);
+  });
+  test("saveStep without previousStep duplicates prior messages", async () => {
+    const t = initConvexTest(schema);
+    const res = await t.action(testApi.replayStepsViaSaveStep, {
+      withWatermark: false,
+    });
+    const toolCalls = res.contentTypes.filter((t) => t === "tool-call").length;
+    expect(toolCalls).toBeGreaterThan(1);
   });
 });
 
