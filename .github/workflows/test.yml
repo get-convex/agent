@@ -9,6 +9,8 @@ on:
   pull_request:
     branches: ["**"]
 
+permissions: {}
+
 jobs:
   check:
     name: Test and lint
@@ -16,7 +18,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Node setup
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -30,7 +34,9 @@ jobs:
           npm i
           npm run build
       - name: Publish package for testing branch
-        run: npx pkg-pr-new publish || echo "Have you set up pkg-pr-new for this repo?"
+        run:
+          npx pkg-pr-new publish || echo "Have you set up pkg-pr-new for this
+          repo?"
       - name: Test
         run: |
           npm run test
