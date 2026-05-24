@@ -1,4 +1,5 @@
 import {
+  parsePartialJson,
   readUIMessageStream,
   type DynamicToolUIPart,
   type ProviderMetadata,
@@ -114,30 +115,58 @@ function transitionToolPart<S extends ToolPart["state"]>(
   Object.assign(part, updates);
 }
 
-export function applyUIMessageChunksIncremental(
+export type IncrementalStreamState = {
+  // chunk id -> index of the streaming text part in message.parts
+  activeText: Record<string, number>;
+  // chunk id -> index of the streaming reasoning part in message.parts
+  activeReasoning: Record<string, number>;
+  // toolCallId -> raw accumulated input JSON text (kept separate from the
+  // parsed `input` so partial JSON can be repair-parsed each batch)
+  toolInputText: Record<string, string>;
+};
+
+export function emptyIncrementalStreamState(): IncrementalStreamState {
+  return { activeText: {}, activeReasoning: {}, toolInputText: {} };
+}
+
+/**
+ * Apply a batch of new UIMessageChunks to an existing UIMessage without
+ * replaying prior chunks. `prev` carries the ephemeral stream state that the
+ * UIMessage itself can't hold (which text/reasoning parts are still streaming,
+ * and the raw accumulated tool input text). Parts are append-only, so part
+ * indices stay stable across the structuredClone between batches. Behavior
+ * mirrors the AI SDK's processUIMessageStream.
+ */
+export async function applyUIMessageChunksIncremental(
   uiMessage: UIMessage,
   newParts: UIMessageChunk[],
-): UIMessage {
+  prev: IncrementalStreamState,
+): Promise<{ message: UIMessage; streamState: IncrementalStreamState }> {
   const message: UIMessage = structuredClone(uiMessage);
+  const activeText: Record<string, number> = { ...prev.activeText };
+  const activeReasoning: Record<string, number> = { ...prev.activeReasoning };
+  const toolInputText: Record<string, string> = { ...prev.toolInputText };
+  const touchedTools = new Set<string>();
 
-  const toolPartsById = new Map<string, ToolPart>(
-    message.parts
-      .filter(
-        (p): p is ToolPart =>
-          p.type.startsWith("tool-") || p.type === "dynamic-tool",
-      )
-      .map((p) => [p.toolCallId, p]),
-  );
-
-  let activeTextPart: TextUIPart | undefined = message.parts
-    .filter((p): p is TextUIPart => p.type === "text" && p.state === "streaming")
-    .at(-1);
-  let activeReasoningPart: ReasoningUIPart | undefined = message.parts
-    .filter(
-      (p): p is ReasoningUIPart =>
-        p.type === "reasoning" && p.state === "streaming",
-    )
-    .at(-1);
+  const toolIndexById = new Map<string, number>();
+  message.parts.forEach((p, i) => {
+    if ("toolCallId" in p && (p.type.startsWith("tool-") || p.type === "dynamic-tool")) {
+      toolIndexById.set((p as ToolPart).toolCallId, i);
+    }
+  });
+  const toolPartAt = (toolCallId: string): ToolPart | undefined => {
+    const idx = toolIndexById.get(toolCallId);
+    return idx === undefined ? undefined : (message.parts[idx] as ToolPart);
+  };
+  const mergeMetadata = (metadata: unknown) => {
+    if (metadata == null) {
+      return;
+    }
+    message.metadata = {
+      ...(message.metadata as Record<string, unknown> | undefined),
+      ...(metadata as Record<string, unknown>),
+    } as typeof message.metadata;
+  };
 
   for (const part of newParts) {
     switch (part.type) {
@@ -148,28 +177,32 @@ export function applyUIMessageChunksIncremental(
           state: "streaming",
           providerMetadata: part.providerMetadata,
         };
-        activeTextPart = newPart;
         message.parts.push(newPart);
+        activeText[part.id] = message.parts.length - 1;
         break;
       }
       case "text-delta": {
-        if (activeTextPart) {
-          activeTextPart.text += part.delta;
-          activeTextPart.providerMetadata = mergeProviderMetadata(
-            activeTextPart.providerMetadata,
+        const idx = activeText[part.id];
+        if (idx !== undefined) {
+          const textPart = message.parts[idx] as TextUIPart;
+          textPart.text += part.delta;
+          textPart.providerMetadata = mergeProviderMetadata(
+            textPart.providerMetadata,
             part.providerMetadata,
           );
         }
         break;
       }
       case "text-end": {
-        if (activeTextPart) {
-          activeTextPart.state = "done";
-          activeTextPart.providerMetadata = mergeProviderMetadata(
-            activeTextPart.providerMetadata,
+        const idx = activeText[part.id];
+        if (idx !== undefined) {
+          const textPart = message.parts[idx] as TextUIPart;
+          textPart.state = "done";
+          textPart.providerMetadata = mergeProviderMetadata(
+            textPart.providerMetadata,
             part.providerMetadata,
           );
-          activeTextPart = undefined;
+          delete activeText[part.id];
         }
         break;
       }
@@ -180,28 +213,32 @@ export function applyUIMessageChunksIncremental(
           state: "streaming",
           providerMetadata: part.providerMetadata,
         };
-        activeReasoningPart = newPart;
         message.parts.push(newPart);
+        activeReasoning[part.id] = message.parts.length - 1;
         break;
       }
       case "reasoning-delta": {
-        if (activeReasoningPart) {
-          activeReasoningPart.text += part.delta;
-          activeReasoningPart.providerMetadata = mergeProviderMetadata(
-            activeReasoningPart.providerMetadata,
+        const idx = activeReasoning[part.id];
+        if (idx !== undefined) {
+          const reasoningPart = message.parts[idx] as ReasoningUIPart;
+          reasoningPart.text += part.delta;
+          reasoningPart.providerMetadata = mergeProviderMetadata(
+            reasoningPart.providerMetadata,
             part.providerMetadata,
           );
         }
         break;
       }
       case "reasoning-end": {
-        if (activeReasoningPart) {
-          activeReasoningPart.state = "done";
-          activeReasoningPart.providerMetadata = mergeProviderMetadata(
-            activeReasoningPart.providerMetadata,
+        const idx = activeReasoning[part.id];
+        if (idx !== undefined) {
+          const reasoningPart = message.parts[idx] as ReasoningUIPart;
+          reasoningPart.state = "done";
+          reasoningPart.providerMetadata = mergeProviderMetadata(
+            reasoningPart.providerMetadata,
             part.providerMetadata,
           );
-          activeReasoningPart = undefined;
+          delete activeReasoning[part.id];
         }
         break;
       }
@@ -212,50 +249,50 @@ export function applyUIMessageChunksIncremental(
               toolCallId: part.toolCallId,
               toolName: part.toolName,
               state: "input-streaming",
-              input: "",
+              input: undefined,
             } satisfies DynamicToolUIPart)
           : ({
               type: `tool-${part.toolName}`,
               toolCallId: part.toolCallId,
               state: "input-streaming",
-              input: "",
+              input: undefined,
               providerExecuted: part.providerExecuted,
             } satisfies ToolUIPart);
-        toolPartsById.set(part.toolCallId, newToolPart);
         message.parts.push(newToolPart);
+        toolIndexById.set(part.toolCallId, message.parts.length - 1);
+        toolInputText[part.toolCallId] = "";
         break;
       }
       case "tool-input-delta": {
-        const toolPart = toolPartsById.get(part.toolCallId);
-        if (!toolPart) {
-          console.warn(`tool-input-delta for unknown toolCallId ${part.toolCallId}`);
-          break;
-        }
-        const raw = typeof toolPart.input === "string" ? toolPart.input : "";
-        const accumulated = raw + part.inputTextDelta;
-        try {
-          toolPart.input = JSON.parse(accumulated);
-        } catch {
-          toolPart.input = accumulated;
+        if (toolIndexById.has(part.toolCallId)) {
+          toolInputText[part.toolCallId] =
+            (toolInputText[part.toolCallId] ?? "") + part.inputTextDelta;
+          touchedTools.add(part.toolCallId);
+        } else {
+          console.warn(
+            `tool-input-delta for unknown toolCallId ${part.toolCallId}`,
+          );
         }
         break;
       }
       case "tool-input-available": {
-        const toolPart = toolPartsById.get(part.toolCallId);
+        const toolPart = toolPartAt(part.toolCallId);
         if (toolPart) {
           transitionToolPart(toolPart, {
             state: "input-available",
             input: part.input,
             callProviderMetadata: mergeProviderMetadata(
-              (toolPart as { callProviderMetadata?: ProviderMetadata }).callProviderMetadata,
+              (toolPart as { callProviderMetadata?: ProviderMetadata })
+                .callProviderMetadata,
               part.providerMetadata,
             ),
           });
         }
+        touchedTools.delete(part.toolCallId);
         break;
       }
       case "tool-input-error": {
-        const toolPart = toolPartsById.get(part.toolCallId);
+        const toolPart = toolPartAt(part.toolCallId);
         if (toolPart) {
           transitionToolPart(toolPart, {
             state: "output-error",
@@ -265,15 +302,17 @@ export function applyUIMessageChunksIncremental(
               ? { input: part.input }
               : { input: undefined, rawInput: part.input }),
             callProviderMetadata: mergeProviderMetadata(
-              (toolPart as { callProviderMetadata?: ProviderMetadata }).callProviderMetadata,
+              (toolPart as { callProviderMetadata?: ProviderMetadata })
+                .callProviderMetadata,
               part.providerMetadata,
             ),
           });
         }
+        touchedTools.delete(part.toolCallId);
         break;
       }
       case "tool-output-available": {
-        const toolPart = toolPartsById.get(part.toolCallId);
+        const toolPart = toolPartAt(part.toolCallId);
         if (toolPart) {
           transitionToolPart(toolPart, {
             state: "output-available",
@@ -285,7 +324,7 @@ export function applyUIMessageChunksIncremental(
         break;
       }
       case "tool-output-error": {
-        const toolPart = toolPartsById.get(part.toolCallId);
+        const toolPart = toolPartAt(part.toolCallId);
         if (toolPart) {
           transitionToolPart(toolPart, {
             state: "output-error",
@@ -296,14 +335,14 @@ export function applyUIMessageChunksIncremental(
         break;
       }
       case "tool-output-denied": {
-        const toolPart = toolPartsById.get(part.toolCallId);
+        const toolPart = toolPartAt(part.toolCallId);
         if (toolPart) {
           transitionToolPart(toolPart, { state: "output-denied" });
         }
         break;
       }
       case "tool-approval-request": {
-        const toolPart = toolPartsById.get(part.toolCallId);
+        const toolPart = toolPartAt(part.toolCallId);
         if (toolPart) {
           transitionToolPart(toolPart, {
             state: "approval-requested",
@@ -331,28 +370,76 @@ export function applyUIMessageChunksIncremental(
           providerMetadata: part.providerMetadata,
         });
         break;
+      case "file":
+        message.parts.push({
+          type: "file",
+          mediaType: part.mediaType,
+          url: part.url,
+        });
+        break;
       case "start-step":
         message.parts.push({ type: "step-start" });
         break;
       case "finish-step":
-        if (activeTextPart) { activeTextPart.state = "done"; activeTextPart = undefined; }
-        if (activeReasoningPart) { activeReasoningPart.state = "done"; activeReasoningPart = undefined; }
-        break;
-      case "abort":
-      case "error":
-        message.status = "failed";
+        // Match the SDK: a new step starts fresh streaming parts; the prior
+        // parts keep their state rather than being forced to "done".
+        for (const id of Object.keys(activeText)) delete activeText[id];
+        for (const id of Object.keys(activeReasoning)) delete activeReasoning[id];
         break;
       case "start":
       case "finish":
-      case "file":
+      case "message-metadata":
+        mergeMetadata(part.messageMetadata);
         break;
-      default:
+      case "abort":
+      case "error":
+        // The stream-level status (statusFromStreamStatus) is authoritative and
+        // is applied by the caller; nothing to mutate on the message here.
         break;
+      default: {
+        if (typeof part.type === "string" && part.type.startsWith("data-")) {
+          const dataPart = part as Extract<
+            UIMessageChunk,
+            { type: `data-${string}` }
+          >;
+          const existingIdx =
+            dataPart.id != null
+              ? message.parts.findIndex(
+                  (p) =>
+                    p.type === dataPart.type &&
+                    (p as { id?: string }).id === dataPart.id,
+                )
+              : -1;
+          if (existingIdx >= 0) {
+            (message.parts[existingIdx] as { data?: unknown }).data =
+              dataPart.data;
+          } else {
+            message.parts.push(
+              dataPart as unknown as UIMessage["parts"][number],
+            );
+          }
+        } else {
+          console.warn(
+            `applyUIMessageChunksIncremental: unhandled chunk type ${String(part.type)}`,
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  // Repair-parse the accumulated input once per touched, still-streaming tool
+  // so `input` is a partial structured object during streaming, like the SDK.
+  for (const toolCallId of touchedTools) {
+    const toolPart = toolPartAt(toolCallId);
+    if (toolPart && toolPart.state === "input-streaming") {
+      const { value } = await parsePartialJson(toolInputText[toolCallId] ?? "");
+      toolPart.input = value;
     }
   }
 
   message.text = joinText(message.parts);
-  return message;
+  return { message, streamState: { activeText, activeReasoning, toolInputText } };
 }
 
 export async function deriveUIMessagesFromDeltas(

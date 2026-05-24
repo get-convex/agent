@@ -6,10 +6,11 @@ import { type UIMessage } from "../UIMessages.js";
 import {
   applyUIMessageChunksIncremental,
   blankUIMessage,
+  emptyIncrementalStreamState,
   getParts,
   statusFromStreamStatus,
-  updateFromUIMessageChunks,
   deriveUIMessagesFromTextStreamParts,
+  type IncrementalStreamState,
 } from "../deltas.js";
 import { useDeltaStreams } from "./useDeltaStreams.js";
 
@@ -55,6 +56,7 @@ export function useStreamingUIMessages<
       {
         uiMessage: UIMessage<METADATA, DATA_PARTS, TOOLS>;
         cursor: number;
+        streamState: IncrementalStreamState;
       }
     >
   >({});
@@ -70,7 +72,7 @@ export function useStreamingUIMessages<
       const existingStreamState = messageState[stream.streamMessage.streamId];
       const lastDelta = stream.deltas.at(-1);
       const cursor = existingStreamState?.cursor;
-      if (!cursor) {
+      if (existingStreamState === undefined || cursor === undefined) {
         noNewDeltas = false;
         break;
       }
@@ -97,6 +99,7 @@ export function useStreamingUIMessages<
         {
           uiMessage: UIMessage<METADATA, DATA_PARTS, TOOLS>;
           cursor: number;
+          streamState: IncrementalStreamState;
         }
       > = Object.fromEntries(
         await Promise.all(
@@ -105,38 +108,80 @@ export function useStreamingUIMessages<
             const existing = messageState[streamId];
             const fromCursor = existing?.cursor ?? 0;
             const status = statusFromStreamStatus(streamMessage.status);
+            const prevState =
+              existing?.streamState ?? emptyIncrementalStreamState();
 
             if (streamMessage.format !== "UIMessageChunk") {
               const existingStreams = existing
-                ? [{ streamId, cursor: existing.cursor, message: existing.uiMessage as UIMessage }]
+                ? [
+                    {
+                      streamId,
+                      cursor: existing.cursor,
+                      message: existing.uiMessage as UIMessage,
+                    },
+                  ]
                 : [];
-              const [uiMessages, newStreams] = deriveUIMessagesFromTextStreamParts(
-                threadId as string,
-                [streamMessage],
-                existingStreams,
-                deltas,
-              );
-              return [streamId, {
-                uiMessage: (uiMessages[0] ?? existing?.uiMessage) as UIMessage<METADATA, DATA_PARTS, TOOLS>,
-                cursor: newStreams[0]?.cursor ?? fromCursor,
-              }];
+              const [uiMessages, newStreams] =
+                deriveUIMessagesFromTextStreamParts(
+                  threadId as string,
+                  [streamMessage],
+                  existingStreams,
+                  deltas,
+                );
+              return [
+                streamId,
+                {
+                  uiMessage: (uiMessages[0] ?? existing?.uiMessage) as UIMessage<
+                    METADATA,
+                    DATA_PARTS,
+                    TOOLS
+                  >,
+                  cursor: newStreams[0]?.cursor ?? fromCursor,
+                  streamState: prevState,
+                },
+              ];
             }
 
-            const { parts: newParts, cursor } = getParts<UIMessageChunk>(deltas, fromCursor);
+            const { parts: newParts, cursor } = getParts<UIMessageChunk>(
+              deltas,
+              fromCursor,
+            );
+
+            const base =
+              existing?.uiMessage ??
+              blankUIMessage(streamMessage, threadId as string);
 
             if (newParts.length === 0) {
               if (existing && existing.uiMessage.status !== status) {
-                return [streamId, { uiMessage: { ...existing.uiMessage, status }, cursor: existing.cursor }];
+                return [
+                  streamId,
+                  {
+                    uiMessage: { ...existing.uiMessage, status },
+                    cursor: existing.cursor,
+                    streamState: prevState,
+                  },
+                ];
               }
-              return [streamId, existing ?? { uiMessage: blankUIMessage(streamMessage, threadId as string), cursor: 0 }];
+              return [
+                streamId,
+                existing ?? { uiMessage: base, cursor: 0, streamState: prevState },
+              ];
             }
 
-            const base = existing?.uiMessage ?? blankUIMessage(streamMessage, threadId as string);
-            const uiMessage = fromCursor === 0
-              ? await updateFromUIMessageChunks(base as UIMessage, newParts)
-              : applyUIMessageChunksIncremental(base as UIMessage, newParts);
-            uiMessage.status = status;
-            return [streamId, { uiMessage: uiMessage as UIMessage<METADATA, DATA_PARTS, TOOLS>, cursor }];
+            const { message, streamState } = await applyUIMessageChunksIncremental(
+              base as UIMessage,
+              newParts,
+              prevState,
+            );
+            message.status = status;
+            return [
+              streamId,
+              {
+                uiMessage: message as UIMessage<METADATA, DATA_PARTS, TOOLS>,
+                cursor,
+                streamState,
+              },
+            ];
           }),
         ),
       );
