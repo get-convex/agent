@@ -12,7 +12,6 @@ import {
 import {
   getParts,
   deriveUIMessagesFromDeltas,
-  deriveUIMessagesFromTextStreamParts,
 } from "../deltas.js";
 import type { TestConvex } from "convex-test";
 import type { StreamDelta, StreamMessage } from "../validators.js";
@@ -676,77 +675,6 @@ describe("Delta Stream Consumption", () => {
     expect(parts).toHaveLength(1);
     expect((parts[0] as { type: string }).type).toBe("new");
     expect(cursor).toBe(6);
-  });
-
-  test("TextStreamPart format delta reconstruction with tool calls", () => {
-    const streamId = "s1";
-    const streamMessage: StreamMessage = {
-      streamId,
-      order: 1,
-      stepOrder: 0,
-      status: "streaming",
-    };
-    const deltas: StreamDelta[] = [
-      {
-        streamId,
-        start: 0,
-        end: 1,
-        parts: [{ type: "text-delta", id: "txt-0", text: "Let me call a tool. " }],
-      },
-      {
-        streamId,
-        start: 1,
-        end: 2,
-        parts: [
-          {
-            type: "tool-call",
-            toolCallId: "tc1",
-            toolName: "search",
-            input: { query: "hello" },
-          },
-        ],
-      },
-      {
-        streamId,
-        start: 2,
-        end: 3,
-        parts: [
-          {
-            type: "tool-result",
-            toolCallId: "tc1",
-            toolName: "search",
-            output: "Found 3 results",
-          },
-        ],
-      },
-      {
-        streamId,
-        start: 3,
-        end: 4,
-        parts: [
-          { type: "text-delta", id: "txt-1", text: "Here are the results." },
-        ],
-      },
-    ];
-
-    const [messages, , changed] = deriveUIMessagesFromTextStreamParts(
-      "thread1",
-      [streamMessage],
-      [],
-      deltas,
-    );
-
-    expect(messages).toHaveLength(1);
-    expect(changed).toBe(true);
-
-    const msg = messages[0];
-    expect(msg.text).toContain("Let me call a tool.");
-    expect(msg.text).toContain("Here are the results.");
-
-    const toolParts = msg.parts.filter((p: any) =>
-      p.type.startsWith("tool-"),
-    );
-    expect(toolParts.length).toBeGreaterThan(0);
   });
 });
 

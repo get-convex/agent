@@ -9,7 +9,6 @@ import {
   emptyIncrementalStreamState,
   getParts,
   statusFromStreamStatus,
-  deriveUIMessagesFromTextStreamParts,
   type IncrementalStreamState,
 } from "../deltas.js";
 import { useDeltaStreams } from "./useDeltaStreams.js";
@@ -110,37 +109,6 @@ export function useStreamingUIMessages<
             const status = statusFromStreamStatus(streamMessage.status);
             const prevState =
               existing?.streamState ?? emptyIncrementalStreamState();
-
-            if (streamMessage.format !== "UIMessageChunk") {
-              const existingStreams = existing
-                ? [
-                    {
-                      streamId,
-                      cursor: existing.cursor,
-                      message: existing.uiMessage as UIMessage,
-                    },
-                  ]
-                : [];
-              const [uiMessages, newStreams] =
-                deriveUIMessagesFromTextStreamParts(
-                  threadId as string,
-                  [streamMessage],
-                  existingStreams,
-                  deltas,
-                );
-              return [
-                streamId,
-                {
-                  uiMessage: (uiMessages[0] ?? existing?.uiMessage) as UIMessage<
-                    METADATA,
-                    DATA_PARTS,
-                    TOOLS
-                  >,
-                  cursor: newStreams[0]?.cursor ?? fromCursor,
-                  streamState: prevState,
-                },
-              ];
-            }
 
             const { parts: newParts, cursor } = getParts<UIMessageChunk>(
               deltas,
