@@ -1,5 +1,4 @@
 import {
-  parsePartialJson,
   readUIMessageStream,
   type DynamicToolUIPart,
   type ProviderMetadata,
@@ -137,11 +136,11 @@ export function emptyIncrementalStreamState(): IncrementalStreamState {
  * indices stay stable across the structuredClone between batches. Behavior
  * mirrors the AI SDK's processUIMessageStream.
  */
-export async function applyUIMessageChunksIncremental(
+export function applyUIMessageChunksIncremental(
   uiMessage: UIMessage,
   newParts: UIMessageChunk[],
   prev: IncrementalStreamState,
-): Promise<{ message: UIMessage; streamState: IncrementalStreamState }> {
+): { message: UIMessage; streamState: IncrementalStreamState } {
   const message: UIMessage = structuredClone(uiMessage);
   const activeText: Record<string, number> = { ...prev.activeText };
   const activeReasoning: Record<string, number> = { ...prev.activeReasoning };
@@ -432,13 +431,14 @@ export async function applyUIMessageChunksIncremental(
     }
   }
 
-  // Repair-parse the accumulated input once per touched, still-streaming tool
-  // so `input` is a partial structured object during streaming, like the SDK.
   for (const toolCallId of touchedTools) {
     const toolPart = toolPartAt(toolCallId);
     if (toolPart && toolPart.state === "input-streaming") {
-      const { value } = await parsePartialJson(toolInputText[toolCallId] ?? "");
-      toolPart.input = value;
+      try {
+        toolPart.input = JSON.parse(toolInputText[toolCallId] ?? "");
+      } catch {
+        // partial JSON — leave input unset until complete
+      }
     }
   }
 

@@ -634,7 +634,7 @@ describe("mergeDeltas", () => {
       if (newParts.length > 0) {
         totalPartsProcessed += newParts.length;
         ({ message: uiMessage, streamState } =
-          await applyUIMessageChunksIncremental(
+          applyUIMessageChunksIncremental(
             structuredClone(uiMessage),
             newParts,
             streamState,
@@ -669,7 +669,7 @@ describe("mergeDeltas", () => {
     };
     let msg = blankUIMessage(streamMessage, "thread-text");
     let state = emptyIncrementalStreamState();
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "start" },
@@ -679,12 +679,12 @@ describe("mergeDeltas", () => {
       ] as UIMessageChunk[],
       state,
     ));
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [{ type: "text-delta", id: "t0", delta: "world" }] as UIMessageChunk[],
       state,
     ));
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "text-delta", id: "t0", delta: "!" },
@@ -712,7 +712,7 @@ describe("mergeDeltas", () => {
     };
     let msg = blankUIMessage(streamMessage, "thread-tool-out");
     let state = emptyIncrementalStreamState();
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "start" },
@@ -727,7 +727,7 @@ describe("mergeDeltas", () => {
       ] as UIMessageChunk[],
       state,
     ));
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         {
@@ -762,7 +762,7 @@ describe("mergeDeltas", () => {
     };
     let msg = blankUIMessage(streamMessage, "thread-tool-err");
     let state = emptyIncrementalStreamState();
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "start" },
@@ -771,7 +771,7 @@ describe("mergeDeltas", () => {
       ] as UIMessageChunk[],
       state,
     ));
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         {
@@ -798,7 +798,7 @@ describe("mergeDeltas", () => {
     });
   });
 
-  it("accumulates tool input across a batch boundary (parsePartialJson)", async () => {
+  it("accumulates tool input across a batch boundary", async () => {
     const streamMessage = {
       streamId: "s-tool-split",
       status: "streaming" as const,
@@ -811,7 +811,7 @@ describe("mergeDeltas", () => {
     let state = emptyIncrementalStreamState();
 
     // Batch A: preamble + the first half of the JSON input.
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "start" },
@@ -824,11 +824,11 @@ describe("mergeDeltas", () => {
     const afterA = msg.parts.find(
       (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === "c1",
     );
-    // Mid-stream input is a partial structured object, not a raw string.
-    expect(afterA?.input).toEqual({ a: 1 });
+    // Mid-stream: JSON is incomplete, input stays unset.
+    expect(afterA?.input).toBeUndefined();
 
     // Batch B: the remainder of the JSON input.
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "tool-input-delta", toolCallId: "c1", inputTextDelta: ',"b":2}' },
@@ -838,7 +838,7 @@ describe("mergeDeltas", () => {
     const afterB = msg.parts.find(
       (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === "c1",
     );
-    // The batch-A accumulation is preserved, not dropped.
+    // Complete JSON is parsed once the accumulator is valid.
     expect(afterB?.input).toEqual({ a: 1, b: 2 });
     expect(state.toolInputText["c1"]).toBe('{"a":1,"b":2}');
   });
@@ -854,7 +854,7 @@ describe("mergeDeltas", () => {
     };
     let msg = blankUIMessage(streamMessage, "thread-file-meta");
     let state = emptyIncrementalStreamState();
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "start" },
@@ -862,7 +862,7 @@ describe("mergeDeltas", () => {
       ] as UIMessageChunk[],
       state,
     ));
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         {
@@ -894,7 +894,7 @@ describe("mergeDeltas", () => {
     };
     let msg = blankUIMessage(streamMessage, "thread-multi-text");
     let state = emptyIncrementalStreamState();
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "start" },
@@ -906,7 +906,7 @@ describe("mergeDeltas", () => {
       state,
     ));
     // Deltas in a later batch must land on the part matching their id.
-    ({ message: msg, streamState: state } = await applyUIMessageChunksIncremental(
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
         { type: "text-delta", id: "t1", delta: "B" },
@@ -972,7 +972,7 @@ describe("mergeDeltas", () => {
     let state = emptyIncrementalStreamState();
     for (const batch of batches) {
       ({ message: incMsg, streamState: state } =
-        await applyUIMessageChunksIncremental(incMsg, batch, state));
+        applyUIMessageChunksIncremental(incMsg, batch, state));
     }
 
     expect(incMsg.parts).toEqual(sdkMsg.parts);

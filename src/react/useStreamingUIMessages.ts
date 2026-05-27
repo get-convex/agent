@@ -168,7 +168,7 @@ export function useStreamingUIMessages<
               ];
             }
 
-            const { message, streamState } = await applyUIMessageChunksIncremental(
+            const { message, streamState } = applyUIMessageChunksIncremental(
               base as UIMessage,
               newParts,
               prevState,
