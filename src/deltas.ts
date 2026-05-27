@@ -289,6 +289,9 @@ export async function applyUIMessageChunksIncremental(
           });
         }
         touchedTools.delete(part.toolCallId);
+        // The raw JSON buffer is no longer needed; drop it so it doesn't get
+        // carried through every later batch on the hot path.
+        delete toolInputText[part.toolCallId];
         break;
       }
       case "tool-input-error": {
@@ -309,6 +312,7 @@ export async function applyUIMessageChunksIncremental(
           });
         }
         touchedTools.delete(part.toolCallId);
+        delete toolInputText[part.toolCallId];
         break;
       }
       case "tool-output-available": {

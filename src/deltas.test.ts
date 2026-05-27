@@ -580,7 +580,7 @@ describe("mergeDeltas", () => {
     ]);
   });
 
-  it("incremental processing of tool-input-delta chunks is O(N) not O(N²)", async () => {
+  it("incremental apply only consumes parts past the cursor (no re-processing)", async () => {
     const N = 500;
     const streamId = "s-perf";
     const toolCallId = "tool-0";
@@ -643,7 +643,11 @@ describe("mergeDeltas", () => {
       }
     }
 
-    // O(N): each delta part processed exactly once (N tool-input-deltas + 3 preamble parts)
+    // Each delta part is handed to applyUIMessageChunksIncremental exactly
+    // once across all batches (cursor slicing — no re-processing of prior
+    // parts). N tool-input-deltas + 3 preamble parts. The end-to-end O(N)
+    // claim is proven by the PR's 21,000 ms → 73 ms benchmark, not by this
+    // unit test.
     expect(totalPartsProcessed).toBe(N + 3);
 
     // Correctness: the raw accumulator holds "x" repeated N times across batches
