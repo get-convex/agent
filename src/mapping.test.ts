@@ -465,6 +465,38 @@ describe("mapping", () => {
       expect(res.messages[0].message.role).toBe("assistant");
       expect(res.messages[0].message.content).toEqual([]);
     });
+
+    // AI SDK v6 makes step.response.messages cumulative across steps:
+    // step N's array contains all messages from steps 0..N. Without the
+    // previousResponseMessageCount watermark, every multi-step save duplicates
+    // all prior messages. These tests demonstrate the bug and the fix.
+    describe("multi-step loop — previousStep watermark", () => {
+      test("without watermark, step 2 re-saves all cumulative messages (demonstrates the bug)", async () => {
+        // step2Messages = step0 (2 msgs) + step1 (1 msg) + step2 new (2 msgs) = 5 total
+        const res = await serializeNewMessagesInStep(
+          ctx,
+          component,
+          makeStep(step2Messages),
+          undefined,
+          0,
+        );
+        expect(res.messages).toHaveLength(5);
+      });
+
+      test("with watermark, step 2 saves only its 2 new messages", async () => {
+        const step1 = makeStep(step1Messages);
+        const res = await serializeNewMessagesInStep(
+          ctx,
+          component,
+          makeStep(step2Messages),
+          undefined,
+          step1.response.messages.length,
+        );
+        expect(res.messages).toHaveLength(2);
+        expect(contentTypes(res.messages[0].message)).toEqual(["tool-call"]);
+        expect(contentTypes(res.messages[1].message)).toEqual(["tool-result"]);
+      });
+    });
   });
 
   describe("autoDenyUnresolvedApprovals", () => {

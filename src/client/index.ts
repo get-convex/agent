@@ -1229,6 +1229,16 @@ export class Agent<
   ): Promise<{ messages: MessageDoc[] }> {
     const previousResponseMessageCount =
       args.previousStep?.response.messages.length ?? 0;
+    if (
+      args.previousStep !== undefined &&
+      args.step.response.messages.length < previousResponseMessageCount
+    ) {
+      throw new Error(
+        `saveStep: step.response.messages length (${args.step.response.messages.length}) is less than ` +
+          `previousStep.response.messages length (${previousResponseMessageCount}). ` +
+          `Ensure previousStep is from the immediately preceding step in the same generation loop.`,
+      );
+    }
     const { messages } = await serializeNewMessagesInStep(
       ctx,
       this.component,
