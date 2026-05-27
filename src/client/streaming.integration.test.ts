@@ -807,18 +807,21 @@ describe("Fallback Behavior", () => {
       order: 0,
       stepOrder: 0,
       status: "streaming",
+      format: "UIMessageChunk",
     };
     const finishedMsg: StreamMessage = {
       streamId: "s2",
       order: 1,
       stepOrder: 0,
       status: "finished",
+      format: "UIMessageChunk",
     };
     const abortedMsg: StreamMessage = {
       streamId: "s3",
       order: 2,
       stepOrder: 0,
       status: "aborted",
+      format: "UIMessageChunk",
     };
 
     const msgs = await deriveUIMessagesFromDeltas(

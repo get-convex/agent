@@ -451,6 +451,11 @@ export async function deriveUIMessagesFromDeltas(
 ): Promise<UIMessage[]> {
   const messages: UIMessage[] = [];
   for (const streamMessage of streamMessages) {
+    if (streamMessage.format !== "UIMessageChunk") {
+      throw new Error(
+        `deriveUIMessagesFromDeltas: unsupported stream format "${streamMessage.format ?? "text"}" for stream ${streamMessage.streamId}`,
+      );
+    }
     const { parts } = getParts<UIMessageChunk>(
       allDeltas.filter((d) => d.streamId === streamMessage.streamId),
       0,

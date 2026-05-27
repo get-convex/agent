@@ -69,13 +69,12 @@ export function useStreamingUIMessages<
     let noNewDeltas = true;
     for (const stream of streams) {
       const existingStreamState = messageState[stream.streamMessage.streamId];
-      const lastDelta = stream.deltas.at(-1);
       const cursor = existingStreamState?.cursor;
       if (existingStreamState === undefined || cursor === undefined) {
         noNewDeltas = false;
         break;
       }
-      if (lastDelta && lastDelta.start >= cursor) {
+      if (stream.deltas.some((d) => d.parts.length > 0 && d.end > cursor)) {
         noNewDeltas = false;
         break;
       }

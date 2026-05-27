@@ -200,7 +200,7 @@ describe("UIMessageChunks - continuation stream", () => {
 });
 
 describe("mergeDeltas", () => {
-  it("incremental apply only consumes parts past the cursor (no re-processing)", async () => {
+  it("incremental apply only consumes parts past the cursor (no re-processing)", () => {
     const N = 500;
     const streamId = "s-perf";
     const toolCallId = "tool-0";
@@ -278,7 +278,7 @@ describe("mergeDeltas", () => {
     expect(toolPart).toBeDefined();
   });
 
-  it("applyUIMessageChunksIncremental: text-delta accumulation across calls", async () => {
+  it("applyUIMessageChunksIncremental: text-delta accumulation across calls", () => {
     const streamMessage = {
       streamId: "s-text",
       status: "streaming" as const,
