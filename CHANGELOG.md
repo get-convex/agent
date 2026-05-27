@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+
+- fix: persist final step when saveStreamDeltas.returnImmediately is true (#266)
+- fix: handle tool validation errors in stopWhen and willContinue (#241)
+
 ## 0.6.1
 
 - Fix bundled package
