@@ -19,6 +19,7 @@ import type {
   ActionCtx,
 } from "./types.js";
 import { parse } from "convex-helpers/validators";
+import { runMutation } from "./run.js";
 
 /**
  * List messages from a thread.
@@ -131,7 +132,7 @@ export async function saveMessages(
       };
     }
   }
-  const result = await ctx.runMutation(component.messages.addMessages, {
+  const result = await runMutation(ctx, component.messages.addMessages, {
     threadId: args.threadId,
     userId: args.userId ?? undefined,
     agentName: args.agentName,
