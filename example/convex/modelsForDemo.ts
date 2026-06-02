@@ -8,13 +8,13 @@ import { mockModel } from "@convex-dev/agent";
 let languageModel: LanguageModelV3;
 // Note: This is only defined when OPENAI_API_KEY is set. Consumers should
 // handle the undefined case at runtime when using non-OpenAI providers.
-let textEmbeddingModel: EmbeddingModel;
+let embeddingModel: EmbeddingModel;
 
 if (process.env.ANTHROPIC_API_KEY) {
   languageModel = anthropic.chat("claude-opus-4-20250514");
 } else if (process.env.OPENAI_API_KEY) {
   languageModel = openai.chat("gpt-4o-mini");
-  textEmbeddingModel = openai.embedding("text-embedding-3-small");
+  embeddingModel = openai.embedding("text-embedding-3-small");
 } else if (process.env.GROQ_API_KEY) {
   languageModel = groq.languageModel(
     "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -27,4 +27,4 @@ if (process.env.ANTHROPIC_API_KEY) {
 }
 
 // If you want to use different models for examples, you can change them here.
-export { languageModel, textEmbeddingModel };
+export { languageModel, embeddingModel };
