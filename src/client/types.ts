@@ -32,6 +32,8 @@ export interface Output<_T = any, _P = any, _E = any> {
 import type {
   GenericActionCtx,
   GenericDataModel,
+  GenericMutationCtx,
+  GenericQueryCtx,
   WithoutSystemFields,
 } from "convex/server";
 import type {
@@ -615,9 +617,9 @@ export type SyncStreamsReturnValue =
   | undefined;
 
 /* Type utils follow */
-export type QueryCtx = Pick<GenericActionCtx<GenericDataModel>, "runQuery">;
+export type QueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
 export type MutationCtx =
-  | Pick<GenericActionCtx<GenericDataModel>, "runQuery" | "runMutation">
+  | Pick<GenericMutationCtx<GenericDataModel>, "runQuery" | "runMutation">
   | WorkflowCtx;
 export type ActionCtx = Pick<
   GenericActionCtx<GenericDataModel>,
