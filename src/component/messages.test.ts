@@ -623,6 +623,65 @@ describe("agent", () => {
     expect(result.lastStepOrder).toBe(1);
   });
 
+  test("textSearch returns cross-thread matches even when target order is lower (#256)", async () => {
+    const t = initConvexTest();
+    const userId = "search-user-1";
+
+    // Old thread: matching message lives at order 5.
+    const threadA = await t.mutation(api.threads.createThread, { userId });
+    for (let i = 0; i < 5; i++) {
+      await t.mutation(api.messages.addMessages, {
+        threadId: threadA._id as Id<"threads">,
+        messages: [{ message: { role: "user", content: `padding ${i}` } }],
+      });
+    }
+    await t.mutation(api.messages.addMessages, {
+      threadId: threadA._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "high-ticket coaches are great" } },
+      ],
+    });
+
+    // New thread: target lives at order 2 — non-zero so the buggy DB-level
+    // `lte(order)` filter actually engages and drops threadA's order-5 match.
+    const threadB = await t.mutation(api.threads.createThread, { userId });
+    await t.mutation(api.messages.addMessages, {
+      threadId: threadB._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "intro one" } }],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: threadB._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "intro two" } }],
+    });
+    const { messages: targetMsgs } = await t.mutation(
+      api.messages.addMessages,
+      {
+        threadId: threadB._id as Id<"threads">,
+        messages: [
+          { message: { role: "user", content: "high-ticket coaches" } },
+        ],
+      },
+    );
+    const targetMessageId = targetMsgs[0]._id as Id<"messages">;
+
+    const results = await t.query(api.messages.textSearch, {
+      searchAllMessagesForUserId: userId,
+      text: "high-ticket coaches",
+      targetMessageId,
+      limit: 10,
+    });
+
+    // Pre-fix, threadA's match (order 5) was dropped because the DB-level
+    // `lte(order, 2)` filter was applied to all threads using threadB's
+    // target order. Post-fix, cross-thread results bypass that filter.
+    const fromThreadA = results.filter((m) => m.threadId === threadA._id);
+    expect(fromThreadA.length).toBeGreaterThan(0);
+
+    // The target message itself must still be excluded from its own thread's results.
+    const targetInResults = results.find((m) => m._id === targetMessageId);
+    expect(targetInResults).toBeUndefined();
+  });
+
   test("deleteByOrder handles empty result set", async () => {
     const t = convexTest(schema, modules);
     const thread = await t.mutation(api.threads.createThread, {
