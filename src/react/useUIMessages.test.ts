@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { dedupeMessages } from "./useUIMessages.js";
+import {
+  dedupeMessages,
+  mergeUIMessages,
+  type UIMessageLike,
+} from "./useUIMessages.js";
 
 type TestMessage = {
   order: number;
@@ -7,6 +11,39 @@ type TestMessage = {
   status: "pending" | "success" | "failed" | "streaming";
   id: string;
 };
+
+type TestUIMessage = UIMessageLike & {
+  id: string;
+  key: string;
+  text: string;
+  _creationTime: number;
+};
+
+function testUIMessage({
+  id,
+  order,
+  stepOrder,
+  status,
+  text,
+}: {
+  id: string;
+  order: number;
+  stepOrder: number;
+  status: TestUIMessage["status"];
+  text: string;
+}): TestUIMessage {
+  return {
+    id,
+    key: `thread-${order}-${stepOrder}`,
+    order,
+    stepOrder,
+    status,
+    role: "assistant",
+    parts: [{ type: "text", text }],
+    text,
+    _creationTime: 0,
+  };
+}
 
 describe("dedupeMessages", () => {
   it("should prefer messages from messages list when streaming messages are absent", () => {
@@ -251,5 +288,47 @@ describe("dedupeMessages", () => {
     // The result depends on which array comes first in messages.concat(streamMessages)
     // Since messages comes first, it should win when both have same status
     expect(result[0].id).toBe("messages-success");
+  });
+});
+
+describe("mergeUIMessages", () => {
+  it("dedupes streaming steps before combining assistant messages", () => {
+    const messages = [
+      testUIMessage({
+        id: "persisted-step-1",
+        order: 1,
+        stepOrder: 1,
+        status: "success",
+        text: "7",
+      }),
+      testUIMessage({
+        id: "persisted-step-2",
+        order: 1,
+        stepOrder: 2,
+        status: "success",
+        text: "8",
+      }),
+    ];
+    const streamMessages = [
+      testUIMessage({
+        id: "stream-step-2",
+        order: 1,
+        stepOrder: 2,
+        status: "streaming",
+        text: "8",
+      }),
+    ];
+
+    const result = mergeUIMessages(messages, streamMessages);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("persisted-step-1");
+    expect(result[0].stepOrder).toBe(1);
+    expect(result[0].status).toBe("success");
+    expect(result[0].text).toBe("7 8");
+    expect(result[0].parts).toEqual([
+      { type: "text", text: "7" },
+      { type: "text", text: "8" },
+    ]);
   });
 });
