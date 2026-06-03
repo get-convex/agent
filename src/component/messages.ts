@@ -821,16 +821,18 @@ export const _fetchSearchMessages = internalQuery({
         ),
       )
     )
-      .filter(
-        (m): m is Doc<"messages"> =>
-          m !== undefined &&
-          m !== null &&
-          !m.tool &&
-          (!beforeMessage ||
-            m.order < beforeMessage.order ||
-            (m.order === beforeMessage.order &&
-              m.stepOrder < beforeMessage.stepOrder)),
-      )
+      .filter((m): m is Doc<"messages"> => {
+        if (m === undefined || m === null || m.tool) return false;
+        if (!beforeMessage) return true;
+        // The order filter is only meaningful within the same thread.
+        // Messages from other threads have independent order sequences.
+        if (m.threadId !== beforeMessage.threadId) return true;
+        return (
+          m.order < beforeMessage.order ||
+          (m.order === beforeMessage.order &&
+            m.stepOrder < beforeMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
     messages.push(...(args.textSearchMessages ?? []));
     // TODO: prioritize more recent messages
@@ -912,12 +914,17 @@ export const textSearch = query({
     );
     const targetMessage =
       args.targetMessageId && (await ctx.db.get(args.targetMessageId));
-    const order = targetMessage?.order;
     const text = args.text || targetMessage?.text;
     if (!text) {
       console.warn("No text to search", targetMessage, args.text);
       return [];
     }
+    // When searching across threads (searchAllMessagesForUserId), the
+    // targetMessage's order is only meaningful within its own thread, so we
+    // can't apply it as a database-level filter. We still apply it post-fetch
+    // for same-thread results below.
+    const restrictOrderInDb =
+      !args.searchAllMessagesForUserId && targetMessage;
     const messages = await ctx.db
       .query("messages")
       .withSearchIndex("text_search", (q) =>
@@ -928,20 +935,24 @@ export const textSearch = query({
       // Just in case tool messages slip through
       .filter((q) => {
         const qq = q.eq(q.field("tool"), false);
-        if (order) {
-          return q.and(qq, q.lte(q.field("order"), order));
+        if (restrictOrderInDb) {
+          return q.and(qq, q.lte(q.field("order"), targetMessage.order));
         }
         return qq;
       })
       .take(args.limit);
     return messages
-      .filter(
-        (m) =>
-          !targetMessage ||
+      .filter((m) => {
+        if (!targetMessage) return true;
+        // Order is only meaningful within the same thread; cross-thread
+        // results have independent order sequences and should pass through.
+        if (m.threadId !== targetMessage.threadId) return true;
+        return (
           m.order < targetMessage.order ||
           (m.order === targetMessage.order &&
-            m.stepOrder < targetMessage.stepOrder),
-      )
+            m.stepOrder < targetMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
   },
   returns: v.array(vMessageDoc),
