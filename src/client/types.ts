@@ -32,6 +32,8 @@ export interface Output<_T = any, _P = any, _E = any> {
 import type {
   GenericActionCtx,
   GenericDataModel,
+  GenericMutationCtx,
+  GenericQueryCtx,
   WithoutSystemFields,
 } from "convex/server";
 import type {
@@ -43,6 +45,7 @@ import type {
 } from "../validators.js";
 import type { StreamingOptions } from "./streaming.js";
 import type { ComponentApi } from "../component/_generated/component.js";
+import type { WorkflowCtx } from "@convex-dev/workflow";
 
 /**
  * Type-level check that ensures models are from AI SDK v6.
@@ -354,10 +357,7 @@ export type TextArgs<
   OUTPUT extends Output<any, any, any> = never,
 > = Omit<
   Parameters<
-    typeof generateText<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT
-    >
+    typeof generateText<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT>
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -374,10 +374,7 @@ export type StreamingTextArgs<
   OUTPUT extends Output<any, any, any> = never,
 > = Omit<
   Parameters<
-    typeof streamText<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT
-    >
+    typeof streamText<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT>
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -494,11 +491,7 @@ export interface Thread<DefaultTools extends ToolSet> {
     OUTPUT extends Output<any, any, any> = never,
   >(
     generateTextArgs: AgentPrompt &
-      TextArgs<
-        TOOLS extends undefined ? DefaultTools : TOOLS,
-        TOOLS,
-        OUTPUT
-      >,
+      TextArgs<TOOLS extends undefined ? DefaultTools : TOOLS, TOOLS, OUTPUT>,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
@@ -539,10 +532,7 @@ export interface Thread<DefaultTools extends ToolSet> {
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<
-      TOOLS extends undefined ? DefaultTools : TOOLS,
-      OUTPUT
-    > &
+    StreamTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
       ThreadOutputMetadata
   >;
   /**
@@ -627,11 +617,10 @@ export type SyncStreamsReturnValue =
   | undefined;
 
 /* Type utils follow */
-export type QueryCtx = Pick<GenericActionCtx<GenericDataModel>, "runQuery">;
-export type MutationCtx = Pick<
-  GenericActionCtx<GenericDataModel>,
-  "runQuery" | "runMutation"
->;
+export type QueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
+export type MutationCtx =
+  | Pick<GenericMutationCtx<GenericDataModel>, "runQuery" | "runMutation">
+  | WorkflowCtx;
 export type ActionCtx = Pick<
   GenericActionCtx<GenericDataModel>,
   "runQuery" | "runMutation" | "runAction" | "storage" | "auth"
