@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.3
+
+- Update types for `ctx` args to be more compatible with convex 1.41
+
 ## 0.6.2
 
 - fix: persist final step when saveStreamDeltas.returnImmediately is true (#266)
