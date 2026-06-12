@@ -64,7 +64,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     }
   }
 
-  async function validateApiKey(ctx: RunQueryCtx, apiKey: string) {
+  async function validateApiKey(ctx: QueryCtx, apiKey: string) {
     await ctx.runQuery(component.apiKeys.validate, { apiKey });
   }
 
@@ -371,4 +371,4 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
   };
 }
 
-type RunQueryCtx = { runQuery: GenericQueryCtx<GenericDataModel>["runQuery"] };
+type QueryCtx = Pick<GenericQueryCtx<GenericDataModel>, "runQuery">;
