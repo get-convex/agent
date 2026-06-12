@@ -57,6 +57,9 @@ export async function updateFromUIMessageChunks(
   uiMessage: UIMessage,
   parts: UIMessageChunk[],
 ) {
+  if (parts.length === 0) {
+    return uiMessage;
+  }
   const partsStream = new ReadableStream<UIMessageChunk>({
     start(controller) {
       for (const part of parts) {
@@ -72,11 +75,7 @@ export async function updateFromUIMessageChunks(
     stream: partsStream,
     onError: (e) => {
       const errorMessage = e instanceof Error ? e.message : String(e);
-      // Tool invocation errors can be safely ignored when streaming continuation
-      // after tool approval - the stored messages have the complete tool context
       if (errorMessage.toLowerCase().includes("no tool invocation found")) {
-        // Silently suppress - this is expected after tool approval when the
-        // continuation stream has tool-result without the original tool-call
         suppressError = true;
         return;
       }
@@ -95,8 +94,6 @@ export async function updateFromUIMessageChunks(
       message = messagePart;
     }
   } catch (e) {
-    // If we've already handled this error in onError and marked it as suppressed,
-    // don't rethrow - the stored messages provide the fallback
     if (!suppressError) {
       throw e;
     }
@@ -106,6 +103,347 @@ export async function updateFromUIMessageChunks(
   }
   message.text = joinText(message.parts);
   return message;
+}
+
+type ToolPart = ToolUIPart | DynamicToolUIPart;
+
+function transitionToolPart<S extends ToolPart["state"]>(
+  part: ToolPart,
+  updates: { state: S } & Partial<Extract<ToolPart, { state: S }>>,
+): void {
+  Object.assign(part, updates);
+}
+
+export type IncrementalStreamState = {
+  // chunk id -> index of the streaming text part in message.parts
+  activeText: Record<string, number>;
+  // chunk id -> index of the streaming reasoning part in message.parts
+  activeReasoning: Record<string, number>;
+  // toolCallId -> raw accumulated input JSON text (kept separate from the
+  // parsed `input` so partial JSON can be repair-parsed each batch)
+  toolInputText: Record<string, string>;
+};
+
+export function emptyIncrementalStreamState(): IncrementalStreamState {
+  return { activeText: {}, activeReasoning: {}, toolInputText: {} };
+}
+
+/**
+ * Apply a batch of new UIMessageChunks to an existing UIMessage without
+ * replaying prior chunks. `prev` carries the ephemeral stream state that the
+ * UIMessage itself can't hold (which text/reasoning parts are still streaming,
+ * and the raw accumulated tool input text). Parts are append-only, so part
+ * indices stay stable across the structuredClone between batches. Behavior
+ * mirrors the AI SDK's processUIMessageStream.
+ */
+export function applyUIMessageChunksIncremental(
+  uiMessage: UIMessage,
+  newParts: UIMessageChunk[],
+  prev: IncrementalStreamState,
+): { message: UIMessage; streamState: IncrementalStreamState } {
+  const message: UIMessage = structuredClone(uiMessage);
+  const activeText: Record<string, number> = { ...prev.activeText };
+  const activeReasoning: Record<string, number> = { ...prev.activeReasoning };
+  const toolInputText: Record<string, string> = { ...prev.toolInputText };
+  const touchedTools = new Set<string>();
+
+  const toolIndexById = new Map<string, number>();
+  message.parts.forEach((p, i) => {
+    if ("toolCallId" in p && (p.type.startsWith("tool-") || p.type === "dynamic-tool")) {
+      toolIndexById.set((p as ToolPart).toolCallId, i);
+    }
+  });
+  const toolPartAt = (toolCallId: string): ToolPart | undefined => {
+    const idx = toolIndexById.get(toolCallId);
+    return idx === undefined ? undefined : (message.parts[idx] as ToolPart);
+  };
+  const mergeMetadata = (metadata: unknown) => {
+    if (metadata == null) {
+      return;
+    }
+    message.metadata = {
+      ...(message.metadata as Record<string, unknown> | undefined),
+      ...(metadata as Record<string, unknown>),
+    } as typeof message.metadata;
+  };
+
+  for (const part of newParts) {
+    switch (part.type) {
+      case "text-start": {
+        const newPart: TextUIPart = {
+          type: "text",
+          text: "",
+          state: "streaming",
+          providerMetadata: part.providerMetadata,
+        };
+        message.parts.push(newPart);
+        activeText[part.id] = message.parts.length - 1;
+        break;
+      }
+      case "text-delta": {
+        const idx = activeText[part.id];
+        if (idx !== undefined) {
+          const textPart = message.parts[idx] as TextUIPart;
+          textPart.text += part.delta;
+          textPart.providerMetadata = mergeProviderMetadata(
+            textPart.providerMetadata,
+            part.providerMetadata,
+          );
+        }
+        break;
+      }
+      case "text-end": {
+        const idx = activeText[part.id];
+        if (idx !== undefined) {
+          const textPart = message.parts[idx] as TextUIPart;
+          textPart.state = "done";
+          textPart.providerMetadata = mergeProviderMetadata(
+            textPart.providerMetadata,
+            part.providerMetadata,
+          );
+          delete activeText[part.id];
+        }
+        break;
+      }
+      case "reasoning-start": {
+        const newPart: ReasoningUIPart = {
+          type: "reasoning",
+          text: "",
+          state: "streaming",
+          providerMetadata: part.providerMetadata,
+        };
+        message.parts.push(newPart);
+        activeReasoning[part.id] = message.parts.length - 1;
+        break;
+      }
+      case "reasoning-delta": {
+        const idx = activeReasoning[part.id];
+        if (idx !== undefined) {
+          const reasoningPart = message.parts[idx] as ReasoningUIPart;
+          reasoningPart.text += part.delta;
+          reasoningPart.providerMetadata = mergeProviderMetadata(
+            reasoningPart.providerMetadata,
+            part.providerMetadata,
+          );
+        }
+        break;
+      }
+      case "reasoning-end": {
+        const idx = activeReasoning[part.id];
+        if (idx !== undefined) {
+          const reasoningPart = message.parts[idx] as ReasoningUIPart;
+          reasoningPart.state = "done";
+          reasoningPart.providerMetadata = mergeProviderMetadata(
+            reasoningPart.providerMetadata,
+            part.providerMetadata,
+          );
+          delete activeReasoning[part.id];
+        }
+        break;
+      }
+      case "tool-input-start": {
+        const newToolPart: ToolUIPart | DynamicToolUIPart = part.dynamic
+          ? ({
+              type: "dynamic-tool",
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              state: "input-streaming",
+              input: undefined,
+            } satisfies DynamicToolUIPart)
+          : ({
+              type: `tool-${part.toolName}`,
+              toolCallId: part.toolCallId,
+              state: "input-streaming",
+              input: undefined,
+              providerExecuted: part.providerExecuted,
+            } satisfies ToolUIPart);
+        message.parts.push(newToolPart);
+        toolIndexById.set(part.toolCallId, message.parts.length - 1);
+        toolInputText[part.toolCallId] = "";
+        break;
+      }
+      case "tool-input-delta": {
+        if (toolIndexById.has(part.toolCallId)) {
+          toolInputText[part.toolCallId] =
+            (toolInputText[part.toolCallId] ?? "") + part.inputTextDelta;
+          touchedTools.add(part.toolCallId);
+        } else {
+          console.warn(
+            `tool-input-delta for unknown toolCallId ${part.toolCallId}`,
+          );
+        }
+        break;
+      }
+      case "tool-input-available": {
+        const toolPart = toolPartAt(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "input-available",
+            input: part.input,
+            callProviderMetadata: mergeProviderMetadata(
+              (toolPart as { callProviderMetadata?: ProviderMetadata })
+                .callProviderMetadata,
+              part.providerMetadata,
+            ),
+          });
+        }
+        touchedTools.delete(part.toolCallId);
+        // The raw JSON buffer is no longer needed; drop it so it doesn't get
+        // carried through every later batch on the hot path.
+        delete toolInputText[part.toolCallId];
+        break;
+      }
+      case "tool-input-error": {
+        const toolPart = toolPartAt(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "output-error",
+            errorText: part.errorText,
+            providerExecuted: part.providerExecuted,
+            ...(toolPart.type === "dynamic-tool"
+              ? { input: part.input }
+              : { input: undefined, rawInput: part.input }),
+            callProviderMetadata: mergeProviderMetadata(
+              (toolPart as { callProviderMetadata?: ProviderMetadata })
+                .callProviderMetadata,
+              part.providerMetadata,
+            ),
+          });
+        }
+        touchedTools.delete(part.toolCallId);
+        delete toolInputText[part.toolCallId];
+        break;
+      }
+      case "tool-output-available": {
+        const toolPart = toolPartAt(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "output-available",
+            output: part.output,
+            preliminary: part.preliminary,
+            providerExecuted: part.providerExecuted,
+          });
+        }
+        break;
+      }
+      case "tool-output-error": {
+        const toolPart = toolPartAt(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "output-error",
+            errorText: part.errorText,
+            providerExecuted: part.providerExecuted,
+          });
+        }
+        break;
+      }
+      case "tool-output-denied": {
+        const toolPart = toolPartAt(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, { state: "output-denied" });
+        }
+        break;
+      }
+      case "tool-approval-request": {
+        const toolPart = toolPartAt(part.toolCallId);
+        if (toolPart) {
+          transitionToolPart(toolPart, {
+            state: "approval-requested",
+            approval: { id: part.approvalId },
+          });
+        }
+        break;
+      }
+      case "source-url":
+        message.parts.push({
+          type: "source-url",
+          url: part.url,
+          sourceId: part.sourceId,
+          title: part.title,
+          providerMetadata: part.providerMetadata,
+        });
+        break;
+      case "source-document":
+        message.parts.push({
+          type: "source-document",
+          mediaType: part.mediaType,
+          sourceId: part.sourceId,
+          title: part.title,
+          filename: part.filename,
+          providerMetadata: part.providerMetadata,
+        });
+        break;
+      case "file":
+        message.parts.push({
+          type: "file",
+          mediaType: part.mediaType,
+          url: part.url,
+        });
+        break;
+      case "start-step":
+        message.parts.push({ type: "step-start" });
+        break;
+      case "finish-step":
+        // Match the SDK: a new step starts fresh streaming parts; the prior
+        // parts keep their state rather than being forced to "done".
+        for (const id of Object.keys(activeText)) delete activeText[id];
+        for (const id of Object.keys(activeReasoning)) delete activeReasoning[id];
+        break;
+      case "start":
+      case "finish":
+      case "message-metadata":
+        mergeMetadata(part.messageMetadata);
+        break;
+      case "abort":
+      case "error":
+        // The stream-level status (statusFromStreamStatus) is authoritative and
+        // is applied by the caller; nothing to mutate on the message here.
+        break;
+      default: {
+        if (typeof part.type === "string" && part.type.startsWith("data-")) {
+          const dataPart = part as Extract<
+            UIMessageChunk,
+            { type: `data-${string}` }
+          >;
+          const existingIdx =
+            dataPart.id != null
+              ? message.parts.findIndex(
+                  (p) =>
+                    p.type === dataPart.type &&
+                    (p as { id?: string }).id === dataPart.id,
+                )
+              : -1;
+          if (existingIdx >= 0) {
+            (message.parts[existingIdx] as { data?: unknown }).data =
+              dataPart.data;
+          } else {
+            message.parts.push(
+              dataPart as unknown as UIMessage["parts"][number],
+            );
+          }
+        } else {
+          console.warn(
+            `applyUIMessageChunksIncremental: unhandled chunk type ${String(part.type)}`,
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  for (const toolCallId of touchedTools) {
+    const toolPart = toolPartAt(toolCallId);
+    if (toolPart && toolPart.state === "input-streaming") {
+      try {
+        toolPart.input = JSON.parse(toolInputText[toolCallId] ?? "");
+      } catch {
+        // partial JSON — leave input unset until complete
+      }
+    }
+  }
+
+  message.text = joinText(message.parts);
+  return { message, streamState: { activeText, activeReasoning, toolInputText } };
 }
 
 export async function deriveUIMessagesFromDeltas(
@@ -138,10 +476,6 @@ export async function deriveUIMessagesFromDeltas(
   return sorted(messages);
 }
 
-/**
- *
- */
-
 export function deriveUIMessagesFromTextStreamParts(
   threadId: string,
   streamMessages: StreamMessage[],
@@ -161,7 +495,6 @@ export function deriveUIMessagesFromTextStreamParts(
     cursor: number;
     message: UIMessage;
   }> = [];
-  // Seed the existing chunks
   let changed = false;
   for (const streamMessage of streamMessages) {
     const deltas = allDeltas.filter(
@@ -220,12 +553,6 @@ export function getParts<T extends StreamDelta["parts"][number]>(
   return { parts, cursor };
 }
 
-/**
- * This is historically from when we would use the onChunk callback instead of
- * consuming the full UIMessageStream.
- */
-
-// exported for testing
 export function updateFromTextStreamParts(
   threadId: string,
   streamMessage: StreamMessage,
@@ -515,19 +842,13 @@ export function updateFromTextStreamParts(
       case "raw":
       case "start-step":
       case "start":
-        // ignore
         break;
       default: {
-        // Exhaustiveness check disabled intentionally for forwards compatibility.
-        // New TextStreamPart types from future AI SDK versions will trigger a
-        // runtime warning rather than a compile error, allowing graceful degradation.
-        // const _: never = part;
         console.warn(`Received unexpected part: ${JSON.stringify(part)}`);
         break;
       }
     }
   }
-  // Consider reasoning done once something else happens
   for (let i = 0; i < message.parts.length - 1; i++) {
     const part = message.parts[i];
     if (part.type === "reasoning") {
