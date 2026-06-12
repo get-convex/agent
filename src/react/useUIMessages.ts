@@ -155,15 +155,23 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   );
 
   const merged = useMemo(() => {
-    // Messages may have been split by pagination. Re-combine them here.
-    const combined = combineUIMessages(sorted(paginated.results));
     return {
       ...paginated,
-      results: dedupeMessages(combined, streamMessages ?? []),
+      results: mergeUIMessages(paginated.results, streamMessages ?? []),
     };
   }, [paginated, streamMessages]);
 
   return merged as UIMessagesQueryResult<Query>;
+}
+
+export function mergeUIMessages<M extends UIMessageLike>(
+  messages: M[],
+  streamMessages: M[],
+): M[] {
+  const deduped = dedupeMessages(messages, streamMessages);
+  // Messages may have been split by pagination. Re-combine them here
+  // after dedupe has had access to each message's original stepOrder.
+  return combineUIMessages(deduped as unknown as UIMessage[]) as unknown as M[];
 }
 
 export function dedupeMessages<
