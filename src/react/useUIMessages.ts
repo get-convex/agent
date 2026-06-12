@@ -168,7 +168,7 @@ export function mergeUIMessages<M extends UIMessageLike>(
   messages: M[],
   streamMessages: M[],
 ): M[] {
-  const deduped = dedupeMessages(sorted(messages), streamMessages);
+  const deduped = dedupeMessages(messages, streamMessages);
   // Messages may have been split by pagination. Re-combine them here
   // after dedupe has had access to each message's original stepOrder.
   return combineUIMessages(deduped as unknown as UIMessage[]) as unknown as M[];
