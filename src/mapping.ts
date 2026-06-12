@@ -313,24 +313,30 @@ export async function serializeResponseMessages<TOOLS extends ToolSet>(
 }
 
 /**
- * Serialize the new messages from a step using a heuristic to determine
- * which response messages are new (last 1-2 messages).
+ * Serialize the new response messages produced by this step.
+ *
+ * `step.response.messages` is cumulative across steps in AI SDK v6 — each
+ * step's array contains all messages from prior steps too. Pass
+ * `previousResponseMessageCount` (the prior step's `response.messages.length`,
+ * or `0` for the first step) so we slice only the new tail. The parameter is
+ * required: defaulting it would silently duplicate every prior message on
+ * every multi-step save.
  */
 export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   ctx: ActionCtx,
   component: AgentComponent,
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
+  previousResponseMessageCount: number,
 ): Promise<{ messages: MessageWithMetadata[] }> {
-  const hasToolMessage = step.response.messages.at(-1)?.role === "tool";
-  let messagesToSerialize: ModelMessage[];
-  if (hasToolMessage) {
-    messagesToSerialize = step.response.messages.slice(-2);
-  } else if (step.content.length) {
-    messagesToSerialize = step.response.messages.slice(-1);
-  } else {
-    messagesToSerialize = [{ role: "assistant" as const, content: [] }];
-  }
+  const newMessages = step.response.messages.slice(previousResponseMessageCount);
+  // Keep at least one message in the output so the step still anchors an
+  // order slot — downstream `addMessages` relies on each step contributing a
+  // row even when AI SDK produced no response messages.
+  const messagesToSerialize: ModelMessage[] =
+    newMessages.length > 0
+      ? newMessages
+      : [{ role: "assistant" as const, content: [] }];
   return serializeStepMessages(ctx, component, step, model, messagesToSerialize);
 }
 

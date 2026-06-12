@@ -276,18 +276,22 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         },
         { contextOptions, storageOptions, saveStreamDeltas: true },
       );
-      const outputMessages = await Promise.all(
-        (await steps).map(async (step) => {
-          const { messages } = await serializeNewMessagesInStep(
-            ctx,
-            component,
-            step,
-            {
-              model: getModelName(agent.options.languageModel),
-              provider: getProviderName(agent.options.languageModel),
-            },
-          );
-          return messages.map((messageWithMetadata, i) => {
+      const outputMessages: MessageDoc[][] = [];
+      let previousResponseMessageCount = 0;
+      for (const step of await steps) {
+        const { messages } = await serializeNewMessagesInStep(
+          ctx,
+          component,
+          step,
+          {
+            model: getModelName(agent.options.languageModel),
+            provider: getProviderName(agent.options.languageModel),
+          },
+          previousResponseMessageCount,
+        );
+        previousResponseMessageCount = step.response.messages.length;
+        outputMessages.push(
+          messages.map((messageWithMetadata, i) => {
             return {
               ...messageWithMetadata,
               tool: isTool(messageWithMetadata.message),
@@ -300,9 +304,9 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
               order: 0,
               stepOrder: i + 1,
             } satisfies MessageDoc;
-          });
-        }),
-      );
+          }),
+        );
+      }
       return { text: await text, messages: outputMessages.flat() };
     },
     returns: v.object({ text: v.string(), messages: v.array(vMessageDoc) }),
