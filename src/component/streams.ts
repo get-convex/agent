@@ -344,7 +344,13 @@ async function deletePageForStreamId(
     if (stream) {
       await cleanupTimeoutFn(ctx, stream);
       if (stream.state.kind === "finished" && stream.state.cleanupFnId) {
-        await ctx.scheduler.cancel(stream.state.cleanupFnId);
+        const scheduledFunction = await ctx.db.system.get(
+          "_scheduled_functions",
+          stream.state.cleanupFnId,
+        );
+        if (scheduledFunction?.state.kind === "pending") {
+          await ctx.scheduler.cancel(stream.state.cleanupFnId);
+        }
       }
       await ctx.db.delete(args.streamId);
     }
