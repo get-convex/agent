@@ -7,7 +7,6 @@
 - fix(react): Fix O(n²) lag streaming long tool-input deltas (#190) (#270)
 - fix(mapping): preserve tool messages in multi-step history (#200) (#272)
 - fix: Stops a cleanup task from canceling itself (#285)
-- refactor ctx types: `RunMutationCtx` to `MutationCtx | ActionCtx` etc. (#284)
 
 ## 0.6.3
 
