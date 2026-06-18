@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.4
+
+- Fix streaming UI message dedupe (#281)
+- chore(deltas): delete legacy TextStreamPart streaming path (#275)
+- fix(react): Fix O(n²) lag streaming long tool-input deltas (#190) (#270)
+- fix(mapping): preserve tool messages in multi-step history (#200) (#272)
+- fix: Stops a cleanup task from canceling itself (#285)
+- refactor ctx types: `RunMutationCtx` to `MutationCtx | ActionCtx` etc. (#284)
+
 ## 0.6.3
 
 - Update types for `ctx` args to be more compatible with convex 1.41
