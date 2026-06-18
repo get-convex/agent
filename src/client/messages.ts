@@ -1,5 +1,9 @@
 import type { ModelMessage } from "ai";
-import type { PaginationOptions, PaginationResult } from "convex/server";
+import {
+  createFunctionHandle,
+  type PaginationOptions,
+  type PaginationResult,
+} from "convex/server";
 import type { MessageDoc } from "../validators.js";
 import { validateVectorDimension } from "../component/vector/tables.js";
 import {
@@ -17,6 +21,7 @@ import type {
   MutationCtx,
   QueryCtx,
   ActionCtx,
+  SaveMessagesHandler,
 } from "./types.js";
 import { parse } from "convex-helpers/validators";
 
@@ -104,6 +109,11 @@ export type SaveMessagesArgs = {
    * A pending message ID to replace when adding messages.
    */
   pendingMessageId?: string;
+  /**
+   * Optional callback mutation to invoke after messages are saved.
+   * Called within the same transaction as the message save.
+   */
+  onSaveMessages?: SaveMessagesHandler;
 };
 
 /**
@@ -131,6 +141,11 @@ export async function saveMessages(
       };
     }
   }
+  // Convert function reference to handle string for passing to component
+  const onSaveMessagesHandle = args.onSaveMessages
+    ? await createFunctionHandle(args.onSaveMessages)
+    : undefined;
+
   const result = await ctx.runMutation(component.messages.addMessages, {
     threadId: args.threadId,
     userId: args.userId ?? undefined,
@@ -153,6 +168,7 @@ export async function saveMessages(
       }),
     ),
     failPendingSteps: args.failPendingSteps ?? false,
+    onSaveMessages: onSaveMessagesHandle,
   });
   return { messages: result.messages };
 }
