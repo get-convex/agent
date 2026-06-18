@@ -6,7 +6,7 @@ import {
   getParts,
   updateFromUIMessageChunks,
 } from "./deltas.js";
-import type { StreamMessage, StreamDelta } from "./validators.js";
+import type { StreamDelta } from "./validators.js";
 import type { ToolUIPart, UIMessageChunk } from "ai";
 
 describe("UIMessageChunks", () => {
@@ -253,12 +253,11 @@ describe("mergeDeltas", () => {
       );
       if (newParts.length > 0) {
         totalPartsProcessed += newParts.length;
-        ({ message: uiMessage, streamState } =
-          applyUIMessageChunksIncremental(
-            structuredClone(uiMessage),
-            newParts,
-            streamState,
-          ));
+        ({ message: uiMessage, streamState } = applyUIMessageChunksIncremental(
+          structuredClone(uiMessage),
+          newParts,
+          streamState,
+        ));
         cursor = newCursor;
       }
     }
@@ -368,7 +367,9 @@ describe("mergeDeltas", () => {
     expect(toolPart?.input).toEqual({ q: "hi" });
     expect((toolPart as { output?: unknown }).output).toEqual({ result: "ok" });
     expect((toolPart as { preliminary?: boolean }).preliminary).toBe(true);
-    expect((toolPart as { providerExecuted?: boolean }).providerExecuted).toBe(true);
+    expect((toolPart as { providerExecuted?: boolean }).providerExecuted).toBe(
+      true,
+    );
   });
 
   it("applyUIMessageChunksIncremental: tool-input-error sets rawInput and clears input for static tools", async () => {
@@ -437,7 +438,11 @@ describe("mergeDeltas", () => {
         { type: "start" },
         { type: "start-step" },
         { type: "tool-input-start", toolCallId: "c1", toolName: "myTool" },
-        { type: "tool-input-delta", toolCallId: "c1", inputTextDelta: '{"a":1' },
+        {
+          type: "tool-input-delta",
+          toolCallId: "c1",
+          inputTextDelta: '{"a":1',
+        },
       ] as UIMessageChunk[],
       state,
     ));
@@ -451,7 +456,11 @@ describe("mergeDeltas", () => {
     ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
       [
-        { type: "tool-input-delta", toolCallId: "c1", inputTextDelta: ',"b":2}' },
+        {
+          type: "tool-input-delta",
+          toolCallId: "c1",
+          inputTextDelta: ',"b":2}',
+        },
       ] as UIMessageChunk[],
       state,
     ));
@@ -476,10 +485,7 @@ describe("mergeDeltas", () => {
     let state = emptyIncrementalStreamState();
     ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
       msg,
-      [
-        { type: "start" },
-        { type: "start-step" },
-      ] as UIMessageChunk[],
+      [{ type: "start" }, { type: "start-step" }] as UIMessageChunk[],
       state,
     ));
     ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(

@@ -29,15 +29,16 @@ export async function addFileHandler(
 ) {
   // Support both mediaType (preferred) and mimeType (deprecated)
   const mediaType = args.mediaType ?? args.mimeType;
-  
+
   const existingFile = await ctx.db
     .query("files")
     .withIndex("hash", (q) => q.eq("hash", args.hash))
+    // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
     .filter((q) => q.eq(q.field("filename"), args.filename))
     .first();
   if (existingFile) {
     // increment the refcount
-    await ctx.db.patch(existingFile._id, {
+    await ctx.db.patch("files", existingFile._id, {
       refcount: existingFile.refcount + 1,
       lastTouchedAt: Date.now(),
     });
@@ -68,7 +69,7 @@ export const get = query({
   },
   returns: v.union(v.null(), v.doc("files")),
   handler: async (ctx, args) => {
-    return ctx.db.get(args.fileId);
+    return ctx.db.get("files", args.fileId);
   },
 });
 
@@ -87,12 +88,13 @@ export const useExistingFile = mutation({
     const file = await ctx.db
       .query("files")
       .withIndex("hash", (q) => q.eq("hash", args.hash))
+      // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
       .filter((q) => q.eq(q.field("filename"), args.filename))
       .first();
     if (!file) {
       return null;
     }
-    await ctx.db.patch(file._id, {
+    await ctx.db.patch("files", file._id, {
       lastTouchedAt: Date.now(),
     });
     return { fileId: file._id, storageId: file.storageId };
@@ -115,9 +117,9 @@ export async function changeRefcount(
   const nextSet = new Set(next);
   for (const fileId of prevSet) {
     if (!nextSet.has(fileId)) {
-      const file = await ctx.db.get(fileId);
+      const file = await ctx.db.get("files", fileId);
       if (file) {
-        await ctx.db.patch(fileId, {
+        await ctx.db.patch("files", fileId, {
           refcount: file.refcount - 1,
         });
       } else {
@@ -127,9 +129,9 @@ export async function changeRefcount(
   }
   for (const fileId of nextSet) {
     if (!prevSet.has(fileId)) {
-      const file = await ctx.db.get(fileId);
+      const file = await ctx.db.get("files", fileId);
       if (file) {
-        await ctx.db.patch(fileId, {
+        await ctx.db.patch("files", fileId, {
           refcount: file.refcount + 1,
         });
       } else {
@@ -151,11 +153,11 @@ export async function copyFileHandler(
   ctx: MutationCtx,
   args: { fileId: Id<"files"> },
 ) {
-  const file = await ctx.db.get(args.fileId);
+  const file = await ctx.db.get("files", args.fileId);
   if (!file) {
     throw new Error("File not found");
   }
-  await ctx.db.patch(args.fileId, {
+  await ctx.db.patch("files", args.fileId, {
     refcount: file.refcount + 1,
     lastTouchedAt: Date.now(),
   });
@@ -195,7 +197,7 @@ export const deleteFiles = mutation({
   handler: async (ctx, args) => {
     const deletedFileIds = await Promise.all(
       args.fileIds.map(async (fileId) => {
-        const file = await ctx.db.get(fileId);
+        const file = await ctx.db.get("files", fileId);
         if (!file) {
           console.error(`File ${fileId} not found when deleting, skipping...`);
           return null;
@@ -208,7 +210,7 @@ export const deleteFiles = mutation({
             return null;
           }
         }
-        await ctx.db.delete(fileId);
+        await ctx.db.delete("files", fileId);
         return fileId;
       }),
     );

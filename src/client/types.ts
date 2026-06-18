@@ -354,10 +354,7 @@ export type TextArgs<
   OUTPUT extends Output<any, any, any> = never,
 > = Omit<
   Parameters<
-    typeof generateText<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT
-    >
+    typeof generateText<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT>
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -374,10 +371,7 @@ export type StreamingTextArgs<
   OUTPUT extends Output<any, any, any> = never,
 > = Omit<
   Parameters<
-    typeof streamText<
-      TOOLS extends undefined ? AgentTools : TOOLS,
-      OUTPUT
-    >
+    typeof streamText<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT>
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -494,11 +488,7 @@ export interface Thread<DefaultTools extends ToolSet> {
     OUTPUT extends Output<any, any, any> = never,
   >(
     generateTextArgs: AgentPrompt &
-      TextArgs<
-        TOOLS extends undefined ? DefaultTools : TOOLS,
-        TOOLS,
-        OUTPUT
-      >,
+      TextArgs<TOOLS extends undefined ? DefaultTools : TOOLS, TOOLS, OUTPUT>,
     options?: Options,
   ): Promise<
     GenerateTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
@@ -539,10 +529,7 @@ export interface Thread<DefaultTools extends ToolSet> {
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<
-      TOOLS extends undefined ? DefaultTools : TOOLS,
-      OUTPUT
-    > &
+    StreamTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
       ThreadOutputMetadata
   >;
   /**

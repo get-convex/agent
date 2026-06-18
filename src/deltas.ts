@@ -7,7 +7,7 @@ import {
   type ToolUIPart,
   type UIMessageChunk,
 } from "ai";
-import { assert, pick } from "convex-helpers";
+import { assert } from "convex-helpers";
 import { type UIMessage } from "./UIMessages.js";
 import { joinText, sorted } from "./shared.js";
 import {
@@ -15,7 +15,6 @@ import {
   type StreamDelta,
   type StreamMessage,
 } from "./validators.js";
-import { getErrorMessage } from "@ai-sdk/provider-utils";
 
 export function blankUIMessage<METADATA = unknown>(
   streamMessage: StreamMessage & { metadata?: METADATA },
@@ -147,7 +146,10 @@ export function applyUIMessageChunksIncremental(
 
   const toolIndexById = new Map<string, number>();
   message.parts.forEach((p, i) => {
-    if ("toolCallId" in p && (p.type.startsWith("tool-") || p.type === "dynamic-tool")) {
+    if (
+      "toolCallId" in p &&
+      (p.type.startsWith("tool-") || p.type === "dynamic-tool")
+    ) {
       toolIndexById.set((p as ToolPart).toolCallId, i);
     }
   });
@@ -385,7 +387,8 @@ export function applyUIMessageChunksIncremental(
         // Match the SDK: a new step starts fresh streaming parts; the prior
         // parts keep their state rather than being forced to "done".
         for (const id of Object.keys(activeText)) delete activeText[id];
-        for (const id of Object.keys(activeReasoning)) delete activeReasoning[id];
+        for (const id of Object.keys(activeReasoning))
+          delete activeReasoning[id];
         break;
       case "start":
       case "finish":
@@ -441,7 +444,10 @@ export function applyUIMessageChunksIncremental(
   }
 
   message.text = joinText(message.parts);
-  return { message, streamState: { activeText, activeReasoning, toolInputText } };
+  return {
+    message,
+    streamState: { activeText, activeReasoning, toolInputText },
+  };
 }
 
 export async function deriveUIMessagesFromDeltas(
