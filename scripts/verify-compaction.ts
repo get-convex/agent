@@ -131,7 +131,12 @@ async function main() {
 
   const before = JSON.stringify(compactionPart);
   const after = JSON.stringify(restoredCompaction);
-  console.log(`[round-trip] byte-identical before/after: ${before === after ? "YES" : "NO (inspect above)"}`);
+  const byteIdentical = before === after;
+  console.log(`[round-trip] byte-identical before/after: ${byteIdentical ? "YES" : "NO"}`);
+  if (!byteIdentical) {
+    console.error("\n[FAIL] Compaction block changed during the storage round-trip (expected byte-identical).");
+    process.exit(4);
+  }
 
   // ---- Turn 2: resend full history + round-tripped compaction block ----
   // If the block is honored, Anthropic replaces the compacted span with the
@@ -155,7 +160,7 @@ async function main() {
   // Tell: turn-2 has NO fresh compaction iteration over the big (~115k) history.
   const t1msgIn = iterations(r1.providerMetadata).find((i) => i.type === "message")?.inputTokens ?? Number.NaN;
   const bigRecompaction = t2iters.find(
-    (i) => i.type === "compaction" && (i.inputTokens ?? 0) > 50_000,
+    (i) => i.type === "compaction" && (i.inputTokens ?? 0) >= TRIGGER_TOKENS,
   );
   const t2msgIn = t2iters.find((i) => i.type === "message")?.inputTokens ?? (r2.usage.inputTokens ?? Number.NaN);
   console.log(`\n[verdict] turn-1 message input=${t1msgIn}, turn-2 message input=${t2msgIn}`);

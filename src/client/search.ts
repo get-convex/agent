@@ -10,7 +10,6 @@ import {
   type VectorDimension,
 } from "../component/vector/tables.js";
 import {
-  DEFAULT_COMPACTION_RECENT_MESSAGES,
   DEFAULT_MESSAGE_RANGE,
   DEFAULT_RECENT_MESSAGES,
   extractText,
@@ -143,11 +142,7 @@ export async function fetchRecentAndSearchMessages(
         threadId: args.threadId,
         excludeToolMessages: opts.excludeToolMessages,
         paginationOpts: {
-          numItems:
-            opts.recentMessages ??
-            (opts.compaction
-              ? DEFAULT_COMPACTION_RECENT_MESSAGES
-              : DEFAULT_RECENT_MESSAGES),
+          numItems: opts.recentMessages ?? DEFAULT_RECENT_MESSAGES,
           cursor: null,
         },
         upToAndIncludingMessageId: targetMessageId,

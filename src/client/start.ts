@@ -27,6 +27,7 @@ import type {
   ProviderOptions,
 } from "../validators.js";
 import {
+  DEFAULT_COMPACTION_RECENT_MESSAGES,
   DEFAULT_COMPACTION_TRIGGER_TOKENS,
   getModelName,
   getProviderName,
@@ -47,6 +48,17 @@ export function withCompaction(
   providerOptions: ProviderOptions | undefined,
   compaction: CompactionOptions,
 ): NonNullable<ProviderOptions> {
+  const triggerTokens =
+    compaction.triggerTokens ?? DEFAULT_COMPACTION_TRIGGER_TOKENS;
+  // compact_20260112 requires an integer trigger of at least 50_000.
+  if (
+    !Number.isInteger(triggerTokens) ||
+    triggerTokens < DEFAULT_COMPACTION_TRIGGER_TOKENS
+  ) {
+    throw new Error(
+      `compaction.triggerTokens must be an integer >= ${DEFAULT_COMPACTION_TRIGGER_TOKENS}, got ${triggerTokens}`,
+    );
+  }
   const anthropic = { ...((providerOptions?.anthropic ?? {}) as Record<string, unknown>) };
   const contextManagement = {
     ...((anthropic.contextManagement ?? {}) as { edits?: unknown[] }),
@@ -63,10 +75,7 @@ export function withCompaction(
         ...existingEdits,
         {
           type: "compact_20260112",
-          trigger: {
-            type: "input_tokens",
-            value: compaction.triggerTokens ?? DEFAULT_COMPACTION_TRIGGER_TOKENS,
-          },
+          trigger: { type: "input_tokens", value: triggerTokens },
           ...(compaction.instructions
             ? { instructions: compaction.instructions }
             : {}),
@@ -175,8 +184,25 @@ export async function startGeneration<
         ?.userId) ??
     undefined;
 
+  // Compaction widens the recent-message window so history can reach the
+  // trigger — but only for Anthropic models, since the feature is Anthropic-only
+  // and a non-Anthropic run shouldn't pay for the larger reads.
+  const resolvedModel = args.model ?? opts.languageModel;
+  const providerName =
+    typeof resolvedModel === "string"
+      ? resolvedModel.split("/").at(0)
+      : resolvedModel?.provider;
+  const useCompactionWindow =
+    !!opts.contextOptions?.compaction &&
+    !!providerName?.startsWith("anthropic") &&
+    opts.contextOptions?.recentMessages === undefined;
+  const contextOptions = useCompactionWindow
+    ? { ...opts.contextOptions, recentMessages: DEFAULT_COMPACTION_RECENT_MESSAGES }
+    : opts.contextOptions;
+
   const context = await fetchContextWithPrompt(ctx, component, {
     ...opts,
+    contextOptions,
     userId,
     threadId,
     messages: args.messages,

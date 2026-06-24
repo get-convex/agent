@@ -65,6 +65,18 @@ describe("withCompaction", () => {
     });
   });
 
+  test("rejects a triggerTokens below the 50k minimum", () => {
+    expect(() => withCompaction(undefined, { triggerTokens: 1000 })).toThrow(
+      /at least|>= 50000|integer/i,
+    );
+  });
+
+  test("rejects a non-integer triggerTokens", () => {
+    expect(() => withCompaction(undefined, { triggerTokens: 50_000.5 })).toThrow(
+      /integer/i,
+    );
+  });
+
   test("appends alongside a different existing edit (e.g. clear_tool_uses)", () => {
     const existing = {
       anthropic: {
