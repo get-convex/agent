@@ -66,14 +66,15 @@ describe("withCompaction", () => {
   });
 
   test("rejects a triggerTokens below the 50k minimum", () => {
+    // 1000 is a valid integer, so this must fail on the lower-bound check only.
     expect(() => withCompaction(undefined, { triggerTokens: 1000 })).toThrow(
-      /at least|>= 50000|integer/i,
+      /at least 50000/,
     );
   });
 
   test("rejects a non-integer triggerTokens", () => {
     expect(() => withCompaction(undefined, { triggerTokens: 50_000.5 })).toThrow(
-      /integer/i,
+      /must be an integer/,
     );
   });
 

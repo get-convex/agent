@@ -51,12 +51,14 @@ export function withCompaction(
   const triggerTokens =
     compaction.triggerTokens ?? DEFAULT_COMPACTION_TRIGGER_TOKENS;
   // compact_20260112 requires an integer trigger of at least 50_000.
-  if (
-    !Number.isInteger(triggerTokens) ||
-    triggerTokens < DEFAULT_COMPACTION_TRIGGER_TOKENS
-  ) {
+  if (!Number.isInteger(triggerTokens)) {
     throw new Error(
-      `compaction.triggerTokens must be an integer >= ${DEFAULT_COMPACTION_TRIGGER_TOKENS}, got ${triggerTokens}`,
+      `compaction.triggerTokens must be an integer, got ${triggerTokens}`,
+    );
+  }
+  if (triggerTokens < DEFAULT_COMPACTION_TRIGGER_TOKENS) {
+    throw new Error(
+      `compaction.triggerTokens must be at least ${DEFAULT_COMPACTION_TRIGGER_TOKENS}, got ${triggerTokens}`,
     );
   }
   const anthropic = { ...((providerOptions?.anthropic ?? {}) as Record<string, unknown>) };
