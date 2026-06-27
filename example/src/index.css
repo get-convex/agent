@@ -1,0 +1,143 @@
+@font-face {
+  font-family: "GT America";
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://docs.convex.dev/fonts/GT-America-Standard-Regular.woff2");
+}
+
+@font-face {
+  font-family: "GT America";
+  font-weight: 600;
+  font-display: swap;
+  src: url("https://docs.convex.dev/fonts/GT-America-Standard-Bold.woff2");
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --red-200: rgb(255, 202, 193);
+    --red-500: rgb(238, 52, 47);
+    --green-200: rgb(180, 236, 146);
+    --green-900: rgb(44, 83, 20);
+    --yellow-200: rgb(230, 226, 168);
+    --yellow-900: rgb(109, 82, 23);
+    --blue-200: rgb(173, 210, 255);
+    --background-primary: rgb(30, 28, 26);
+    --background-secondary: rgb(42, 40, 37);
+    --background-tertiary: rgb(60, 58, 55);
+    --background-deep: rgb(22, 20, 18);
+    --background-error: rgb(107, 33, 31);
+    --background-success: rgb(36, 61, 28);
+    --content-primary: rgb(255, 255, 255);
+    --content-secondary: rgb(185, 177, 170);
+    --content-tertiary: rgb(151, 144, 138);
+    --content-accent: rgb(99, 168, 248);
+    --content-success: var(--green-200);
+    --content-error: var(--red-200);
+    --border-transparent: rgba(163, 156, 148, 0.3);
+    --border-soft: rgba(255, 255, 255, 0.08);
+    --border-selected: rgb(225, 215, 205);
+    --util-accent: rgb(63, 82, 149);
+    --font-sans:
+      "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+      "Segoe UI", sans-serif;
+    --font-display:
+      "GT America", "Inter", ui-sans-serif, system-ui, -apple-system,
+      BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono:
+      "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--background-primary);
+    color: var(--content-primary);
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    font-variant-ligatures: no-contextual;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scrollbar-color: rgba(202, 204, 204, 0.58) transparent;
+    scrollbar-width: thin;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  code,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  a {
+    color: var(--blue-200);
+    text-decoration-color: rgba(173, 210, 255, 0.45);
+    text-underline-offset: 2px;
+  }
+
+  .resizingActivity {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  .app-scroll {
+    scrollbar-color: rgba(202, 204, 204, 0.6) transparent;
+    scrollbar-width: thin;
+  }
+
+  .app-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .app-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .app-scroll::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: rgba(202, 204, 204, 0.55);
+    background-clip: content-box;
+  }
+
+  @media (max-width: 760px) {
+    html,
+    body,
+    #root {
+      overflow: hidden;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

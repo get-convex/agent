@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { TestConvex } from "convex-test";
 import type { GenericSchema, SchemaDefinition } from "convex/server";
+import { streamTest } from "@convex-dev/stream/test";
 import schema from "./component/schema.js";
 const modules = import.meta.glob("./component/**/*.ts");
 
@@ -13,5 +14,6 @@ export function register<
   Schema extends SchemaDefinition<GenericSchema, boolean>,
 >(t: TestConvex<Schema>, name: string = "agent") {
   t.registerComponent(name, schema, modules);
+  streamTest.use(t, { name: `${name}/stream` });
 }
 export default { register, schema, modules };

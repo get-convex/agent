@@ -1,20 +1,31 @@
 import { httpRouter } from "convex/server";
-import { streamOverHttp } from "./chat/streaming";
+import { serve as serveCoreRun } from "./support/http";
 import { corsRouter } from "convex-helpers/server/cors";
+import { registerStaticRoutes } from "@convex-dev/static-hosting";
+import { components } from "./_generated/api";
 
 const http = httpRouter();
 
 const cors = corsRouter(http, {
   allowCredentials: true,
-  allowedHeaders: ["Authorization", "Content-Type"],
-  exposedHeaders: ["Content-Type", "Content-Length", "X-Message-Id"],
+  allowedHeaders: ["Content-Type", "Last-Event-ID"],
+  exposedHeaders: [
+    "Content-Type",
+    "Content-Length",
+    "X-Agent-Run-Id",
+    "X-Agent-Thread-Id",
+    "X-Agent-Message-Id",
+    "X-Stream-Id",
+    "X-Request-Id",
+  ],
 });
 
 cors.route({
-  path: "/streamText",
-  method: "POST",
-  handler: streamOverHttp,
+  path: "/agent/run",
+  method: "GET",
+  handler: serveCoreRun,
 });
 
-// Convex expects the router to be the default export of `convex/http.js`.
+registerStaticRoutes(http, components.staticHosting);
+
 export default http;

@@ -1,64 +1,25 @@
-import type {
-  FilePart,
-  ImagePart,
-  ReasoningPart,
-  ToolCallPart,
-  ToolResultPart,
-  ToolApprovalRequest,
-} from "@ai-sdk/provider-utils";
-import type {
-  ModelMessage,
-  TextPart,
-  UIDataTypes,
-  UIMessagePart,
-  UITools,
-} from "ai";
-import type { Message, MessageContentParts } from "./validators.js";
+import { convexToJson, type Value } from "convex/values";
+import type { AgentMessage, AgentMessagePart } from "./validators.js";
 
 export const DEFAULT_RECENT_MESSAGES = 100;
 
-export function isTool(message: Message | ModelMessage) {
+export function isTool(message: AgentMessage) {
   return (
-    message.role === "tool" ||
-    (message.role === "assistant" &&
-      Array.isArray(message.content) &&
-      message.content.some((c) => c.type === "tool-call"))
+    message.author.type === "tool" ||
+    message.content.some(
+      (part) => part.type === "tool-call" || part.type === "tool-result",
+    )
   );
 }
 
-export function extractText(message: Message | ModelMessage) {
-  switch (message.role) {
-    case "user":
-      if (typeof message.content === "string") {
-        return message.content;
-      }
-      return joinText(message.content);
-    case "assistant":
-      if (typeof message.content === "string") {
-        return message.content;
-      } else {
-        return joinText(message.content) || undefined;
-      }
-    case "system":
-      return message.content;
-    // we don't extract text from tool messages
+export function extractText(message: AgentMessage) {
+  if (message.author.type === "tool") {
+    return undefined;
   }
-  return undefined;
+  return joinText(message.content) || undefined;
 }
 
-export function joinText(
-  parts: (
-    | UIMessagePart<UIDataTypes, UITools>
-    | TextPart
-    | ImagePart
-    | FilePart
-    | ReasoningPart
-    | ToolCallPart
-    | ToolResultPart
-    | MessageContentParts
-    | ToolApprovalRequest
-  )[],
-) {
+export function joinText(parts: AgentMessagePart[]) {
   return parts
     .filter((p) => p.type === "text")
     .map((p) => p.text)
@@ -66,10 +27,7 @@ export function joinText(
     .join(" ");
 }
 
-export function extractReasoning(message: Message | ModelMessage) {
-  if (typeof message.content === "string") {
-    return undefined;
-  }
+export function extractReasoning(message: AgentMessage) {
   return message.content
     .filter((c) => c.type === "reasoning")
     .map((c) => c.text)
@@ -89,25 +47,34 @@ export function sorted<T extends { order: number; stepOrder: number }>(
   );
 }
 
-export type ModelOrMetadata =
-  | string
-  | ({ provider: string } & ({ modelId: string } | { model: string }));
-
-export function getModelName(embeddingModel: ModelOrMetadata): string {
-  if (typeof embeddingModel === "string") {
-    if (embeddingModel.includes("/")) {
-      return embeddingModel.split("/").slice(1).join("/");
-    }
-    return embeddingModel;
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJson);
   }
-  return "modelId" in embeddingModel
-    ? embeddingModel.modelId
-    : embeddingModel.model;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, sortJson(nested)]),
+    );
+  }
+  return value;
 }
 
-export function getProviderName(embeddingModel: ModelOrMetadata): string {
-  if (typeof embeddingModel === "string") {
-    return embeddingModel.split("/").at(0)!;
+export function canonicalJson(value: Value): string {
+  return JSON.stringify(sortJson(convexToJson(value)));
+}
+
+export function valuesEqual(left: Value, right: Value): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+export function stableHash(value: Value): string {
+  let hash = 0xcbf29ce484222325n;
+  const input = canonicalJson(value);
+  for (let i = 0; i < input.length; i++) {
+    hash ^= BigInt(input.charCodeAt(i));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
-  return embeddingModel.provider;
+  return `fnv1a64:${hash.toString(16).padStart(16, "0")}`;
 }

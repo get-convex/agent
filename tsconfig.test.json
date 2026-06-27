@@ -3,6 +3,8 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
     "example/src/**/*.ts",
     "example/src/**/*.tsx",
     "example/convex/**/*.ts"
