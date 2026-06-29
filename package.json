@@ -60,6 +60,14 @@
       "types": "./dist/react/index.d.ts",
       "default": "./dist/react/index.js"
     },
+    "./vercel": {
+      "types": "./dist/vercel/index.d.ts",
+      "default": "./dist/vercel/index.js"
+    },
+    "./vercel/react": {
+      "types": "./dist/vercel/react.d.ts",
+      "default": "./dist/vercel/react.js"
+    },
     "./validators": {
       "types": "./dist/validators.d.ts",
       "default": "./dist/validators.js"
@@ -78,16 +86,25 @@
     }
   },
   "peerDependencies": {
+    "@ai-sdk/react": "^4.0.0-beta.187",
+    "ai": "^7.0.0",
     "convex": "^1.42.0",
     "convex-helpers": "^0.1.103",
     "react": "^18.3.1 || ^19.0.0"
   },
   "peerDependenciesMeta": {
+    "@ai-sdk/react": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
     "react": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@ai-sdk/react": "^4.0.0-beta.187",
     "@convex-dev/eslint-plugin": "^2.0.0",
     "@convex-dev/rag": "0.7.5",
     "@convex-dev/rate-limiter": "0.3.2",
@@ -109,6 +126,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
+    "ai": "^7.0.4",
     "autoprefixer": "10.4.27",
     "chokidar-cli": "3.0.0",
     "class-variance-authority": "0.7.1",

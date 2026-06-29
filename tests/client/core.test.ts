@@ -58,6 +58,8 @@ const toolAgent = new Agent(components.agent, {
   },
   tools: {
     echo: defineTool({
+      input: v.object({ text: v.string() }),
+      output: v.object({ text: v.string() }),
       async execute(input) {
         return input;
       },
@@ -82,6 +84,30 @@ const approvalAgent = new Agent(components.agent, {
       needsApproval: true,
       async execute() {
         return { refunded: true };
+      },
+    }),
+  },
+});
+
+const invalidToolOutputAgent = new Agent(components.agent, {
+  name: "invalid-tool-output-test",
+  model: defineAgentModel({
+    async *execute() {
+      yield {
+        type: "tool.call",
+        toolCallId: "call-invalid-output",
+        name: "invalidOutput",
+        input: { ok: true },
+      };
+      yield { type: "text.delta", text: "should not persist" };
+    },
+  }),
+  tools: {
+    invalidOutput: defineTool({
+      input: v.object({ ok: v.boolean() }),
+      output: v.object({ ok: v.boolean() }),
+      async execute() {
+        return { ok: "no" };
       },
     }),
   },
@@ -559,17 +585,32 @@ export const executeApprovalRun = action({
       userId: "approval-user",
       prompt: "refund",
     });
-    const approved = await approvalAgent.tool.approve(ctx, {
+    const approved = await approvalAgent.tools.approve(ctx, {
       runId: run.runId,
       toolCallId: "call-approval",
     });
     const resumed = await approvalAgent.runs.execute(ctx, {
       runId: run.runId,
     });
-    const toolCalls = await approvalAgent.tool.list(ctx, {
+    const toolCalls = await approvalAgent.tools.list(ctx, {
       runId: run.runId,
     });
     return { run, approved, resumed, toolCalls };
+  },
+});
+
+export const executeInvalidToolOutputRun = action({
+  args: {},
+  handler: async (ctx) => {
+    const thread = await invalidToolOutputAgent.threads.create(ctx, {
+      userId: "invalid-tool-output-user",
+      title: "Invalid tool output",
+    });
+    return await invalidToolOutputAgent.runs.send(ctx, {
+      threadId: thread._id,
+      userId: "invalid-tool-output-user",
+      prompt: "invalid output",
+    });
   },
 });
 
@@ -778,7 +819,7 @@ export const executeCancelingToolRun = action({
       runId: run.runId,
       numItems: 10,
     });
-    const toolCalls = await cancelingToolAgent.tool.list(ctx, {
+    const toolCalls = await cancelingToolAgent.tools.list(ctx, {
       runId: run.runId,
     });
     return { run, events, toolCalls };
@@ -995,7 +1036,7 @@ export const approvalBeforeWaiting = action({
         },
       ],
     });
-    return await approvalAgent.tool.approve(ctx, {
+    return await approvalAgent.tools.approve(ctx, {
       runId: run.runId,
       toolCallId: "race",
     });
@@ -1017,7 +1058,7 @@ export const executeWaitingRunBeforeApproval = action({
     const attempted = await approvalAgent.runs.execute(ctx, {
       runId: run.runId,
     });
-    const toolCalls = await approvalAgent.tool.list(ctx, {
+    const toolCalls = await approvalAgent.tools.list(ctx, {
       runId: run.runId,
     });
     return { run, attempted, toolCalls };
@@ -1071,7 +1112,7 @@ export const listToolCallAfterLongRun = action({
       ],
       toolCallIds: ["late-tool"],
     });
-    return await rawAgent.tool.list(ctx, { runId: run.runId });
+    return await rawAgent.tools.list(ctx, { runId: run.runId });
   },
 });
 
@@ -1120,11 +1161,11 @@ export const approveToolCallAfterLongRun = action({
       ],
       toolCallIds: ["late-approval-tool"],
     });
-    const approved = await rawAgent.tool.approve(ctx, {
+    const approved = await rawAgent.tools.approve(ctx, {
       runId: run.runId,
       toolCallId: "late-approval-tool",
     });
-    const toolCalls = await rawAgent.tool.list(ctx, { runId: run.runId });
+    const toolCalls = await rawAgent.tools.list(ctx, { runId: run.runId });
     return { approved, toolCalls };
   },
 });
@@ -1321,6 +1362,16 @@ describe("core Agent runs", () => {
 
     expect(run.status).toBe("success");
     expect(run.resultMessageIds).toHaveLength(1);
+  });
+
+  test("validates Agent-native tool output", async () => {
+    const t = initConvexTest();
+
+    const run = await testAction(t, executeInvalidToolOutputRun);
+
+    expect(run.status).toBe("failed");
+    expect(run.error?.message).toContain("Expected `boolean`");
+    expect(run.resultMessageIds).toBeUndefined();
   });
 
   test("persists approval waiting state and resumes from projected tool state", async () => {

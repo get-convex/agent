@@ -56,6 +56,10 @@ function parseToolInput(tool: AgentTool, input: Value) {
   return tool.input ? (parse(tool.input, input) as Value) : input;
 }
 
+function parseToolOutput(tool: AgentTool, output: Value) {
+  return tool.output ? (parse(tool.output, output) as Value) : output;
+}
+
 function contextLoaders(
   loaders: AgentContextLoader | AgentContextLoader[] | undefined,
 ) {
@@ -78,6 +82,8 @@ type LoadedExecutionContext = {
   toolCalls: Map<string, AgentToolCall>;
 };
 
+const MAX_MODEL_STEPS = 20;
+
 export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   private readonly executionId = newExecutionId();
   private run: AgentRun | undefined;
@@ -87,6 +93,8 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   private usage: AgentUsage | undefined;
   private emittedDone = false;
   private stoppedRun: AgentRun | undefined;
+  private shouldContinueAfterTool = false;
+  private stepHasAnswerContent = false;
 
   constructor(
     private readonly input: {
@@ -204,23 +212,37 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
 
   private async executeModel(loaded: LoadedExecutionContext) {
     const run = this.currentRun();
-    for await (const event of this.input.model.execute({
-      run,
-      messages: loaded.contextMessages,
-      context: loaded.context,
-      tools: this.tools(),
-      signal: this.input.args.signal,
-    })) {
+    let current = loaded;
+    for (let step = 0; step < MAX_MODEL_STEPS; step++) {
+      this.shouldContinueAfterTool = false;
+      this.stepHasAnswerContent = false;
+      for await (const event of this.input.model.execute({
+        run,
+        messages: current.contextMessages,
+        context: current.context,
+        tools: this.tools(),
+        signal: this.input.args.signal,
+      })) {
+        const stopped = await this.stopIfNeeded();
+        if (stopped) {
+          return stopped;
+        }
+        const result = await this.handleEvent(event, current.toolCalls);
+        if (result) {
+          return result;
+        }
+      }
+      await this.saveBufferedMessage();
       const stopped = await this.stopIfNeeded();
       if (stopped) {
         return stopped;
       }
-      const result = await this.handleEvent(event, loaded.toolCalls);
-      if (result) {
-        return result;
+      if (!this.shouldContinueAfterTool || this.stepHasAnswerContent) {
+        return await this.finish();
       }
+      current = await this.loadContext();
     }
-    return await this.finish();
+    throw new Error(`Agent model exceeded ${MAX_MODEL_STEPS} tool steps`);
   }
 
   private tools() {
@@ -365,6 +387,7 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   private async handleTextDelta(
     event: Extract<AgentRunEvent, { type: "text.delta" }>,
   ) {
+    this.stepHasAnswerContent = true;
     return await this.recordAndMaterialize(event, () => {
       const last = this.contentParts.at(-1);
       if (last?.type === "text") {
@@ -391,12 +414,14 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   private async handleSource(
     event: Extract<AgentRunEvent, { type: "source" }>,
   ) {
+    this.stepHasAnswerContent = true;
     return await this.recordAndMaterialize(event, () => {
       this.contentParts.push({ ...event.source, type: "source" });
     });
   }
 
   private async handleFile(event: Extract<AgentRunEvent, { type: "file" }>) {
+    this.stepHasAnswerContent = true;
     return await this.recordAndMaterialize(event, () => {
       this.contentParts.push({ ...event.file, type: "file" });
     });
@@ -464,7 +489,7 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
     }
     const stoppedBeforeTool = await this.stopIfNeeded();
     if (stoppedBeforeTool) return stoppedBeforeTool;
-    const output = await tool.execute(input, toolContext);
+    const output = parseToolOutput(tool, await tool.execute(input, toolContext));
     const stoppedAfterTool = await this.stopIfNeeded();
     if (stoppedAfterTool) return stoppedAfterTool;
     return await this.recordToolResult(
@@ -544,6 +569,7 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
         output,
       });
     }
+    this.shouldContinueAfterTool = true;
     return undefined;
   }
 
@@ -596,6 +622,9 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   }
 
   private async recordOnly(event: AgentRunEvent) {
+    if (event.type === "output") {
+      this.stepHasAnswerContent = true;
+    }
     await this.recordEvent(event);
     return await this.stopIfNeeded();
   }
@@ -618,6 +647,7 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   private async handleMessage(
     event: Extract<AgentRunEvent, { type: "message" }>,
   ) {
+    this.stepHasAnswerContent = true;
     const run = this.currentRun();
     const recorded = await this.recordEvent(event);
     let stopped = await this.stopIfNeeded();
@@ -643,6 +673,7 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
   }
 
   private async handleDone(event: Extract<AgentRunEvent, { type: "done" }>) {
+    this.stepHasAnswerContent = true;
     const stopped = await this.recordAndMaterialize(event, () => {
       this.usage = event.usage ?? this.usage;
     });
@@ -687,4 +718,3 @@ export class AgentRunExecution<Tools extends AnyAgentTools = AnyAgentTools> {
     });
   }
 }
-

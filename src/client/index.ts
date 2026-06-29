@@ -93,16 +93,22 @@ export type AgentRun = {
  *
  * @typeParam Input - Convex value accepted by the tool. Supplying `input`
  * validates model-provided input before approval or execution.
+ * @typeParam Output - Convex value returned by the tool. Supplying `output`
+ * validates app-produced output before it is persisted or sent back to the
+ * model.
  *
  * @public
  */
-export type AgentTool<Input extends Value = Value> = {
+type AnyRequiredValidator = Validator<any, "required", any>;
+
+export type AgentTool<Input extends Value = Value, Output extends Value = Value> = {
   description?: string;
   input?: Validator<Input, "required", string>;
+  output?: Validator<Output, "required", string>;
   needsApproval?:
     | boolean
     | ((input: Input, context: AgentToolContext) => boolean | Promise<boolean>);
-  execute: (input: Input, context: AgentToolContext) => Promise<Value>;
+  execute: (input: Input, context: AgentToolContext) => Promise<Output>;
 };
 
 /**
@@ -351,10 +357,29 @@ export type ApprovalArgs = {
  *
  * @public
  */
-export function defineTool<T extends Validator<Value, "required", string>>(
-  tool: Omit<AgentTool<Infer<T>>, "input"> & { input: T },
+export function defineTool<
+  Input extends AnyRequiredValidator,
+  Output extends AnyRequiredValidator,
+>(
+  tool: Omit<AgentTool<Infer<Input> & Value, Infer<Output> & Value>, "input" | "output"> & {
+    input: Input;
+    output: Output;
+  },
 ): AgentTool;
-export function defineTool(tool: AgentTool): AgentTool;
+export function defineTool<Input extends AnyRequiredValidator>(
+  tool: Omit<AgentTool<Infer<Input> & Value>, "input"> & { input: Input },
+): AgentTool;
+export function defineTool<Output extends AnyRequiredValidator>(
+  tool: Omit<AgentTool<Value, Infer<Output> & Value>, "output"> & {
+    output: Output;
+  },
+): AgentTool;
+export function defineTool(
+  tool: Omit<AgentTool, "input" | "output"> & {
+    input?: undefined;
+    output?: undefined;
+  },
+): AgentTool;
 export function defineTool(tool: unknown): AgentTool {
   return tool as AgentTool;
 }
@@ -433,7 +458,7 @@ export class Agent<Tools extends AnyAgentTools = AnyAgentTools> {
   };
 
   /** Tool-call approval operations. @public */
-  readonly tool = {
+  readonly tools = {
     list: (ctx: AgentQueryCtx, args: { runId: string }) =>
       this.listToolCalls(ctx, args),
     approve: (ctx: AgentMutationCtx, args: ApprovalArgs) =>
