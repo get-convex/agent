@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-@convex-dev/agent is a TypeScript/NPM package that provides an AI Agent component for Convex. It enables building agentic AI applications with thread/message management, LLM integration via AI SDK, WebSocket streaming, tool calling, vector embeddings, and RAG.
+@convex-dev/agent is a TypeScript/NPM package that provides an AI Agent component for Convex. In v2 (this branch) Agent is a **Convex-native durable execution primitive**: it owns threads, messages, runs, tools, approvals, usage, structured output, cancellation, and run event streams. Run events are stored via `@convex-dev/stream` (an ordered event log served over HTTP).
+
+Agent is deliberately unopinionated about product concerns. The **app composes** auth/session, file storage, RAG/context loading, rate limits, billing, workflows, and provider SDKs *outside* Agent — Agent core no longer imports AI SDK types and is provider-agnostic (the app supplies an `AgentModel`). See `example/convex/support/` for a full app-owned composition.
 
 Documentation: [Convex Agent Docs](https://docs.convex.dev/agents)
 
@@ -14,6 +16,7 @@ Documentation: [Convex Agent Docs](https://docs.convex.dev/agents)
 ```bash
 npm run dev          # Run backend + frontend + build watch concurrently
 npm run build        # TypeScript build (tsc --project ./tsconfig.build.json)
+npm run build:demo   # Build the example app (cd example && vite build)
 ```
 
 ### Testing
@@ -25,7 +28,7 @@ npm run test:watch   # Watch mode (vitest --typecheck)
 ### Code Quality
 ```bash
 npm run lint         # ESLint
-npm run typecheck    # Full TypeScript validation including example/convex
+npm run typecheck    # Full TypeScript validation (package + example + example/convex)
 ```
 
 ## Architecture
@@ -33,41 +36,39 @@ npm run typecheck    # Full TypeScript validation including example/convex
 ### Source Structure (`/src`)
 
 **Three-Layer Architecture:**
-1. **Client** (`src/client/`) - Public API for consuming applications
-   - `index.ts` - Main `Agent` class and exports
-   - `start.ts` - `startGeneration()` core generation logic
-   - `streaming.ts`, `search.ts`, `messages.ts`, `threads.ts` - Feature modules
+1. **Client** (`src/client/`) — Public API for consuming applications
+   - `index.ts` — Main `Agent` class (namespaces: `threads`, `messages`, `runs`, `tool`, `events`, plus `http`)
+   - `execution.ts` — Run execution: drives an `AgentModel`, records run events, materializes result messages, handles cancellation/approval
+   - `runEvents.ts` — Run event reading/serving over the `@convex-dev/stream` HTTP protocol
+   - `componentRefs.ts` — Typed references into the generated component API
+   - `messageInput.ts` — Message input normalization
 
-2. **Component** (`src/component/`) - Convex backend (runs on Convex servers)
-   - `schema.ts` - Database schema (threads, messages, streamingMessages, streamDeltas, memories, files)
-   - `index.ts` - Main component implementation
-   - Backend operations for messages, threads, streaming, vector search
+2. **Component** (`src/component/`) — Convex backend (runs on Convex servers)
+   - `schema.ts` — Database schema (`threads`, `messages`, `runs`, `runToolCalls`)
+   - `runs.ts` — Run lifecycle, tool-call projection, run event log
+   - `messages.ts`, `threads.ts`, `users.ts` — Message/thread/user operations
 
-3. **React** (`src/react/`) - React hooks for UI integration
-   - `useThreadMessages.ts` - Paginated + streaming messages
-   - `useUIMessages.ts` - UIMessage-first hook with metadata
-   - `useSmoothText.ts` - Animated text rendering
+3. **React** (`src/react/`) — React hooks for UI integration
+   - `index.ts` — `useAgent` (primary surface) and `useAgentRun`
+   - `timeline.ts` — Builds an `AgentTimelineItem[]` from realtime messages + run events
 
 **Shared Files:**
-- `validators.ts` - Convex validators (vMessage, vMessageDoc, vThreadDoc, etc.)
-- `UIMessages.ts` - UIMessage types and conversion utilities
-- `mapping.ts` - Message serialization between ModelMessage and stored formats
+- `validators.ts` — Convex validators (`vAgentMessage`, `vPublicRun`, `vAgentToolCall`, `vAgentStatus`, `vThreadDoc`, `paginationResultValidator`-shaped page results, etc.)
 
 ### Key Patterns
 
-- **Streaming via WebSocket deltas** - Not HTTP streaming. Delta compression with heartbeats.
-- **Message-centric design** - All operations revolve around message persistence/retrieval
-- **Component-based encapsulation** - Uses Convex Components pattern
-- **Multi-user support** - Threads have optional `userId` for ownership
-- **Tool approval flow** - Tools can require human approval via `needsApproval`, with `agent.approveToolCall()` and `agent.denyToolCall()` methods
+- **Durable runs** — `runs.start()` creates durable intent in a mutation; `runs.execute()` advances it in a scheduled/internal action. The browser calls a mutation; provider work stays server-side.
+- **Run event streams over HTTP** — Streaming is NOT WebSocket deltas. Ordered run events are persisted via `@convex-dev/stream` and served through `agent.http(ctx, request, { runId })`; the React `useAgent` hook consumes them.
+- **Provider-agnostic core** — Agent core emits/consumes Agent-owned events; the app provides an `AgentModel` (`defineAgentModel`) that yields those events from any provider.
+- **App-owned composition** — auth, files, RAG/context, rate limits, billing, and workflows live in the app, not the component. Agent receives an already-authorized user/thread boundary.
+- **Tool approval flow** — tools (`defineTool`) can require human approval via `needsApproval`; approval state is projected into bounded `runToolCalls` rows, resolved with `agent.tool.approve()` / `agent.tool.deny()`.
 
 ### Database Tables (Convex Component)
 
-- **threads** - Conversations with userId, title, summary, status
-- **messages** - Chat messages with order, stepOrder, status, metadata
-- **streamingMessages** - Real-time streaming state (streaming/finished/aborted)
-- **streamDeltas** - Stream chunks with start/end ranges
-- **memories** - User/thread memories for RAG with embedding references
+- **threads** — Conversations with optional `userId`, title, summary, status
+- **messages** — Chat messages with order/stepOrder, status, the Agent-native `message` node, plus convenience `tool`/`text` fields and usage
+- **runs** — Durable run records: lifecycle status, usage, structured `output`, result message IDs, cancellation, workflow/stream correlation, and an append-only `nextEventSequence`
+- **runToolCalls** — Per-run tool-call projection (input/output/status/approval), so approval queries don't replay full event streams
 
 ## Convex-Specific Guidelines
 
@@ -75,7 +76,7 @@ Follow the rules in `.cursor/rules/convex_rules.mdc`:
 
 - **Function syntax**: Always use new syntax with `args` and `returns` validators
 - **Validators**: Use `v.null()` for null returns, `v.int64()` instead of deprecated `v.bigint()`
-- **Indexes**: Include all fields in index name (e.g., `by_threadId_and_status`)
+- **Indexes**: Include all fields in index name (e.g., `threadId_status_createdAt`)
 - **Queries**: Use `withIndex` instead of `filter`; define indexes in schema
 - **Internal functions**: Use `internalQuery`/`internalMutation`/`internalAction` for private functions
 - **Actions**: Add `"use node";` for Node.js modules; actions cannot use `ctx.db`
@@ -83,143 +84,105 @@ Follow the rules in `.cursor/rules/convex_rules.mdc`:
 
 ## Export Surfaces
 
-- `@convex-dev/agent` - Main exports (Agent class, types, validators, tools)
-- `@convex-dev/agent/react` - React hooks (useThreadMessages, useUIMessages, etc.)
-- `@convex-dev/agent/validators` - Convex validators for integration
-- `@convex-dev/agent/test` - Testing utilities
+- `@convex-dev/agent` — Main exports (`Agent` class, `defineTool`, `defineAgentModel`, context-loader types, validators)
+- `@convex-dev/agent/react` — React hooks (`useAgent`, `useAgentRun`, `AgentTimelineItem`)
+- `@convex-dev/agent/validators` — Convex validators for integration
+- `@convex-dev/agent/convex.config` — Component config for `defineApp`
+- `@convex-dev/agent/test` — Testing utilities
 
-## AI Guidance: Helping Users Upgrade to v0.6.0
+## V2 API Reference
 
-**IMPORTANT: v0.6.0 requires AI SDK v6 (ai@^6.0.0)**
+v2 is a **breaking** redesign — the AI-SDK/UIMessage-centered API is gone. Core surfaces:
 
-When helping users upgrade from @convex-dev/agent v0.3.x (AI SDK v5) to v0.6.0 (AI SDK v6):
+```ts
+const supportAgent = new Agent(components.agent, {
+  name: "Support Agent",
+  model: supportModel,                 // an AgentModel (defineAgentModel)
+  output: v.optional(v.object({ category: v.string(), confidence: v.number() })),
+});
 
-### Step 1: Update Dependencies First
+// Threads / messages
+agent.threads.create | get | list | update
+agent.messages.save | list
 
-Update all AI SDK packages together to avoid peer dependency conflicts:
+// Durable runs
+agent.runs.start | send | execute | cancel | get | list | link
 
-```bash
-npm install @convex-dev/agent@^0.6.0 ai@^6.0.35 @ai-sdk/provider-utils@^4.0.6
-npm install @ai-sdk/openai@^3.0.10  # or whichever provider
+// Tools + approvals
+agent.tool.list | approve | deny
+
+// Run events
+agent.events.read | readBatch
+agent.http(ctx, request, { runId })    // serve run events over HTTP
 ```
 
-**Compatible sibling packages:**
-- `@convex-dev/rag@^0.7.0` (v0.6.0 has type conflicts with AI SDK v6)
-- `@convex-dev/workflow@^0.3.2`
-
-### Step 2: Detect v5 Patterns
-
-Search for these patterns indicating v5 usage:
-- `createTool({ args:` - should be `inputSchema`
-- `createTool({ handler:` - should be `execute`
-- `textEmbeddingModel:` - should be `embeddingModel`
-- `maxSteps:` in generateText/streamText - should be `stopWhen: stepCountIs(N)`
-- `mode: "json"` in generateObject - removed in v6
-- `@ai-sdk/*` packages at v1.x or v2.x - should be v3.x
-- Type imports: `LanguageModelV2` → `LanguageModelV3`, `EmbeddingModel<string>` → `EmbeddingModelV3`
-
-### Step 3: Apply Transformations
-
-**Tool definitions:**
-```typescript
-// BEFORE (v5)
-const myTool = createTool({
-  description: "...",
-  parameters: z.object({ query: z.string() }),
+**Durable run shape** (mutation starts intent, action advances it):
+```ts
+export const send = mutation({
+  args: { threadId: v.string(), prompt: v.string(), clientKey: v.string() },
   handler: async (ctx, args) => {
-    return args.query.toUpperCase();
-  }
-})
+    const run = await supportAgent.runs.start(ctx, {
+      threadId: args.threadId,
+      prompt: args.prompt,
+      key: `client-message:${args.clientKey}`,
+    });
+    await ctx.scheduler.runAfter(0, internal.support.executeRun, { runId: run.runId });
+    return run;
+  },
+});
 
-// AFTER (v6)
-const myTool = createTool({
-  description: "...",
-  inputSchema: z.object({ query: z.string() }),
-  execute: async (ctx, input, options) => {
-    return input.query.toUpperCase();
-  }
-})
+export const executeRun = internalAction({
+  args: { runId: v.string() },
+  handler: async (ctx, { runId }) => {
+    await supportAgent.runs.execute(ctx, { runId });
+  },
+});
 ```
 
-**Agent embedding config:**
-```typescript
-// BEFORE
-new Agent(components.agent, {
-  textEmbeddingModel: openai.embedding("text-embedding-3-small")
-})
-
-// AFTER
-new Agent(components.agent, {
-  embeddingModel: openai.embedding("text-embedding-3-small")
-})
+**Provider-agnostic model** — the app yields Agent-owned events:
+```ts
+export const supportModel = defineAgentModel({
+  async *execute(request) {
+    yield { type: "text.delta", text: "Hello from Agent core." };
+    yield { type: "usage", usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16 } };
+    yield { type: "done" };
+  },
+});
 ```
 
-**Step limits:**
-```typescript
-// BEFORE
-await agent.generateText(ctx, { threadId }, {
-  prompt: "...",
-  maxSteps: 5
-})
+**Tools** are Agent-native; approval state is projected into bounded rows:
+```ts
+const refundPayment = defineTool({
+  description: "Refund a customer payment.",
+  input: v.object({ paymentId: v.string() }),
+  needsApproval: true,
+  execute: async (input, context) => {
+    if (context.signal?.aborted) throw new Error("Canceled");
+    return { refunded: input.paymentId };
+  },
+});
 
-// AFTER
-import { stepCountIs } from "@convex-dev/agent"
-await agent.generateText(ctx, { threadId }, {
-  prompt: "...",
-  stopWhen: stepCountIs(5)
-})
+await supportAgent.tool.approve(ctx, { runId, toolCallId });
+await supportAgent.tool.deny(ctx, { runId, toolCallId, reason: "Needs manager review." });
 ```
 
-**Type imports:**
-```typescript
-// BEFORE (v5)
-import type { LanguageModelV2 } from "@ai-sdk/provider";
-import type { EmbeddingModel } from "ai";
-let model: LanguageModelV2;
-let embedder: EmbeddingModel<string>;
-
-// AFTER (v6)
-import type { LanguageModelV3, EmbeddingModelV3 } from "@ai-sdk/provider";
-let model: LanguageModelV3;
-let embedder: EmbeddingModelV3;
+**React** — `useAgent` is the primary surface; the stream stays internal:
+```tsx
+const agent = useAgent(
+  {
+    listMessages: api.support.messages.list,
+    listRuns: api.support.runs.list,
+    readRunEventsBatch: api.support.runs.readEventsBatch,
+    send: api.support.runs.sendMessage,
+    cancel: api.support.runs.cancel,
+    approveToolCall: api.support.tools.approve,
+    denyToolCall: api.support.tools.deny,
+  },
+  { caseId },
+  { initialNumMessages: 50 },
+);
+// agent.timeline, agent.status, agent.activeRun, agent.usage, agent.output, agent.approvals
+await agent.send({ prompt: "Help me with this issue." });
 ```
 
-**generateObject (remove mode: "json"):**
-```typescript
-// BEFORE (v5)
-await generateObject({
-  model,
-  mode: "json",
-  schema: z.object({ ... }),
-  prompt: "..."
-})
-
-// AFTER (v6) - mode: "json" removed, just use schema
-await generateObject({
-  model,
-  schema: z.object({ ... }),
-  prompt: "..."
-})
-```
-
-### Step 4: Verify
-
-```bash
-npm run typecheck
-npm test
-```
-
-### Common Issues
-
-- **EmbeddingModelV2 vs V3 errors**: Ensure all `@ai-sdk/*` packages are v3.x
-- **Tool `args` vs `input`**: v6 uses `input` in execute signature (2nd param)
-- **`mimeType` vs `mediaType`**: v6 prefers `mediaType` (backwards compat maintained)
-- **Type import errors**: `LanguageModelV2` is now `LanguageModelV3`, `EmbeddingModel<string>` is now `EmbeddingModelV3` (no longer generic)
-- **generateObject mode errors**: `mode: "json"` was removed in v6 - just remove the mode option
-
-### New v6 Features to Mention
-
-After upgrade, users can now use:
-- **Tool approval**: `needsApproval` in createTool, `agent.approveToolCall()`, `agent.denyToolCall()`
-- **Reasoning streaming**: Works with models like Groq that support reasoning
-- **Detailed token usage**: `inputTokenDetails`, `outputTokenDetails` in usage tracking
+**App-owned composition** — auth/files/RAG/rate-limits/billing/workflows live in the app. Agent receives an already-authorized user/thread boundary, keeps typed file references (without owning file tables), takes retrieval results as `AgentContextBlock[]` via context loaders passed to `runs.execute`, and records usage on the run for the app to turn into billing. See `example/convex/support/` for the reference implementation.

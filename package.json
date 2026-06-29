@@ -15,16 +15,25 @@
     "agent",
     "component"
   ],
+  "dependencies": {
+    "@convex-dev/stream": "https://pkg.pr.new/get-convex/stream/@convex-dev/stream@db6d159"
+  },
   "type": "module",
   "scripts": {
     "setup": "node setup.cjs --init",
     "dev": "convex dev --start 'npm run dev:build'",
     "dev:frontend": "cd example && vite --clearScreen false",
-    "dev:build": "chokidar 'tsconfig*.json' 'src/**/*.ts' -i '**/*.test.ts' -c 'npm run build:codegen' --initial",
+    "dev:build": "chokidar 'tsconfig*.json' 'src/**/*.ts' -i '**/*.test.ts' -c 'npm run build:codegen:watch' --initial",
     "predev": "convex init && npm run build:codegen",
+    "build:demo": "cd example && vite build",
+    "deploy:demo": "convex deploy --cmd 'npm run build:demo' --cmd-url-env-var-name VITE_CONVEX_URL && static-hosting upload --prod --dist example/dist",
+    "deploy:demo:dev": "npm run build:demo && static-hosting upload --dev --dist example/dist",
+    "clean": "rm -rf dist *.tsbuildinfo",
     "build": "tsc --project ./tsconfig.build.json",
-    "build:codegen": "npx convex codegen --component-dir ./src/component && npm run build",
-    "build:clean": "rm -rf dist *.tsbuildinfo && npm run build:codegen",
+    "build:clean": "npm run clean && npm run build",
+    "build:codegen": "npm run clean && npm run build && npx convex codegen --component-dir ./src/component && npm run build",
+    "build:codegen:watch": "npm run build && npx convex codegen --component-dir ./src/component && npm run build",
+    "build:clean:codegen": "npm run build:codegen",
     "typecheck": "tsc --noEmit && tsc -p example && tsc -p example/convex",
     "lint": "eslint .",
     "test": "vitest run --typecheck",
@@ -47,13 +56,13 @@
       "types": "./dist/client/index.d.ts",
       "default": "./dist/client/index.js"
     },
-    "./validators": {
-      "types": "./dist/validators.d.ts",
-      "default": "./dist/validators.js"
-    },
     "./react": {
       "types": "./dist/react/index.d.ts",
       "default": "./dist/react/index.js"
+    },
+    "./validators": {
+      "types": "./dist/validators.d.ts",
+      "default": "./dist/validators.js"
     },
     "./test": "./src/test.ts",
     "./_generated/component.js": {
@@ -69,9 +78,7 @@
     }
   },
   "peerDependencies": {
-    "@ai-sdk/provider-utils": "^4.0.6",
-    "ai": "^6.0.35",
-    "convex": "^1.24.8",
+    "convex": "^1.42.0",
     "convex-helpers": "^0.1.103",
     "react": "^18.3.1 || ^19.0.0"
   },
@@ -81,20 +88,16 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "3.0.13",
-    "@ai-sdk/google": "3.0.30",
-    "@ai-sdk/groq": "3.0.8",
-    "@ai-sdk/openai": "3.0.10",
-    "@ai-sdk/provider": "3.0.3",
-    "@ai-sdk/provider-utils": "4.0.6",
     "@convex-dev/eslint-plugin": "^2.0.0",
     "@convex-dev/rag": "0.7.5",
     "@convex-dev/rate-limiter": "0.3.2",
+    "@convex-dev/static-hosting": "^0.1.3",
     "@convex-dev/workflow": "0.4.3",
     "@edge-runtime/vm": "5.0.0",
     "@eslint/js": "9.39.4",
     "@hookform/resolvers": "5.2.2",
     "@langchain/textsplitters": "1.0.1",
+    "@openrouter/sdk": "^0.12.79",
     "@radix-ui/react-accordion": "1.2.12",
     "@radix-ui/react-checkbox": "1.3.3",
     "@radix-ui/react-label": "2.1.8",
@@ -106,12 +109,11 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
-    "ai": "6.0.35",
     "autoprefixer": "10.4.27",
     "chokidar-cli": "3.0.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "convex": "1.39.1",
+    "convex": "^1.42.0",
     "convex-helpers": "0.1.114",
     "convex-test": "0.0.53",
     "dayjs": "1.11.20",
@@ -123,8 +125,6 @@
     "eslint-plugin-react-refresh": "0.5.2",
     "globals": "16.5.0",
     "lucide-react": "0.577.0",
-    "ollama-ai-provider": "1.2.0",
-    "openai": "5.23.2",
     "pkg-pr-new": "0.0.66",
     "postcss": "8.5.10",
     "prettier": "3.8.1",
@@ -147,5 +147,12 @@
   "module": "./dist/client/index.js",
   "optionalDependencies": {
     "@ungap/structured-clone": "^1.3.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": "11.17.0",
+      "onFail": "download"
+    }
   }
 }

@@ -22,6 +22,7 @@ export default [
   {
     files: [
       "src/**/*.{js,mjs,cjs,ts,tsx}",
+      "tests/**/*.{js,mjs,cjs,ts,tsx}",
       "example/**/*.{js,mjs,cjs,ts,tsx}",
       "playground/**/*.{js,mjs,cjs,ts,tsx}",
     ],
@@ -30,6 +31,7 @@ export default [
       parserOptions: {
         project: [
           "./tsconfig.json",
+          "./tsconfig.test.json",
           "./example/tsconfig.json",
           "./example/convex/tsconfig.json",
           "./playground/tsconfig.app.json",
@@ -45,6 +47,10 @@ export default [
   {
     files: [
       "src/**/*.{ts,tsx}",
+      "tests/client/**/*.{ts,tsx}",
+      "tests/component/**/*.{ts,tsx}",
+      "tests/setup/**/*.{ts,tsx}",
+      "tests/validators.test.ts",
       "example/convex/**/*.{ts,tsx}",
       "playground/convex/**/*.{ts,tsx}",
     ],
@@ -82,7 +88,9 @@ export default [
   {
     files: [
       "src/react/**/*.{ts,tsx}",
-      "example/ui/**/*.{ts,tsx}",
+      "tests/react/**/*.{ts,tsx}",
+      "tests/example/**/*.{ts,tsx}",
+      "example/src/**/*.{ts,tsx}",
       "playground/src/**/*.{ts,tsx}",
     ],
     languageOptions: {

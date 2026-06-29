@@ -2,21 +2,22 @@
 title: "Getting Started with Agent"
 sidebar_label: "Getting Started"
 sidebar_position: 100
-description: "Setting up the agent component"
+description: "Core Agent runs, tools, messages, and run event streams"
 ---
 
-To install the agent component, you'll need an existing Convex project. New to
-Convex? Go through the [tutorial](https://docs.convex.dev/tutorial/).
+The Agent component is a Convex-native runtime for durable agent runs. Agent
+owns threads, messages, tools, approvals, run lifecycle, and Agent event
+payloads. The Stream component stores each run's ordered event log internally.
 
-Run `npm create convex` or follow any of the
-[quickstarts](https://docs.convex.dev/home) to set one up.
+Model-specific adapters can translate their protocols into Agent events,
+but the core API is not centered on any external SDK.
 
 ## Installation
 
 Install the component package:
 
 ```ts
-npm install @convex-dev/agent
+pnpm add @convex-dev/agent
 ```
 
 Create a `convex.config.ts` file in your app's `convex/` folder and install the
@@ -33,44 +34,276 @@ app.use(agent);
 export default app;
 ```
 
-Then run `npx convex dev` to generate code for the component. This needs to
+Then run `pnpm exec convex dev` to generate code for the component. This needs to
 successfully run once before you start defining Agents.
 
-## Defining your first Agent
+## Define an Agent model
 
 ```ts
-import { components } from "./_generated/api";
-import { Agent, stepCountIs } from "@convex-dev/agent";
-import { openai } from "@ai-sdk/openai";
+import { Agent, type AgentModel } from "@convex-dev/agent";
+import { components } from "./_generated/api.js";
 
-const agent = new Agent(components.agent, {
-  name: "My Agent",
-  languageModel: openai.chat("gpt-4o-mini"),
-  instructions: "You are a weather forecaster.",
-  tools: { getWeather, getGeocoding },
-  stopWhen: stepCountIs(3),
+const model: AgentModel = {
+  async *execute(request) {
+    yield { type: "text.delta", text: "Hello from " };
+    yield { type: "text.delta", text: request.run.agentName };
+    yield { type: "done" };
+  },
+};
+
+export const supportAgent = new Agent(components.agent, {
+  name: "support",
+  model,
 });
 ```
 
-## Basic usage
+An `AgentModel` is the producer boundary. It receives durable run metadata,
+recent messages, tools, and an abort signal, then yields Agent-owned events.
+Agent persists those events and materializes messages and tool state.
+
+## Compose context explicitly
+
+Agent loads recent thread messages for each execution. App-owned systems such
+as RAG, billing, tenant policy, and rate limits compose through context loaders
+instead of Agent-owned embedding tables or wrapper DSLs.
 
 ```ts
-import { action } from "./_generated/server";
-import { v } from "convex/values";
+const loadSupportContext = async (ctx, { run, recentMessages }) => {
+  const results = await rag.search(ctx, {
+    namespace: run.userId,
+    query: recentMessages.at(-1)?.text ?? "",
+    limit: 5,
+  });
 
-export const helloWorld = action({
-  args: { city: v.string() },
-  handler: async (ctx, { city }) => {
-    const threadId = await createThread(ctx, components.agent);
-    const prompt = `What is the weather in ${city}?`;
-    const result = await agent.generateText(ctx, { threadId }, { prompt });
-    return result.text;
+  return [
+    {
+      type: "text",
+      name: "support-rag",
+      text: results.text,
+      metadata: { source: "rag" },
+    },
+  ];
+};
+
+await supportAgent.runs.execute(ctx, {
+  runId,
+  context: [loadSupportContext],
+});
+```
+
+Agent core does not install RAG, memory, embedding, or playground auth tables.
+Mount those components in your app and pass their results to Agent as context.
+
+## Compose auth, API keys, and rate limits
+
+Agent does not authenticate requests or store API keys. Authenticate the caller
+in your app function, enforce tenant policy and rate limits there, then pass the
+authorized user/thread/run identifiers to Agent.
+
+```ts
+export const startFromApi = httpAction(async (ctx, request) => {
+  const apiKey = request.headers.get("authorization")?.replace("Bearer ", "");
+  const caller = await authenticateApiKey(ctx, apiKey);
+
+  await enforceRateLimit(ctx, {
+    tenantId: caller.tenantId,
+    action: "agent.run",
+  });
+
+  const run = await supportAgent.runs.start(ctx, {
+    threadId: caller.threadId,
+    userId: caller.userId,
+    prompt: await request.text(),
+    key: `api-request:${caller.requestId}`,
+  });
+
+  await ctx.scheduler.runAfter(0, internal.support.executeRun, {
+    runId: run.runId,
+  });
+
+  return await supportAgent.http(ctx, request, { runId: run.runId });
+});
+```
+
+The API key table, hashing, rotation, scopes, billing, and rate limits belong to
+the app. Agent only receives already-authorized durable IDs and app-chosen keys.
+
+## Compose files as message parts
+
+Agent message parts can reference files, but Agent does not own blob storage,
+dedupe, refcounts, authorization, or cleanup. Store files in your app, then pass
+plain references into Agent messages.
+
+```ts
+const storageId = await ctx.storage.store(blob);
+const appFileId = await ctx.db.insert("files", {
+  storageId,
+  userId,
+  mediaType: "application/pdf",
+  filename: "receipt.pdf",
+});
+
+await supportAgent.messages.save(ctx, {
+  threadId,
+  userId,
+  message: {
+    author: { type: "user", userId },
+    content: [
+      { type: "text", text: "Please review this receipt." },
+      {
+        type: "file",
+        fileId: appFileId,
+        mediaType: "application/pdf",
+        filename: "receipt.pdf",
+      },
+    ],
   },
 });
 ```
 
-If you get type errors about `components.agent`, ensure you've run
-`npx convex dev` to generate code for the component.
+If model execution needs file summaries or signed URLs, resolve those app-owned
+file references in a context loader or in your model adapter.
 
-That's it! Check out [Agent Usage](./agent-usage.mdx) to see more details and
-options.
+## Start and execute a run
+
+```ts
+import { v } from "convex/values";
+import { action, mutation } from "./_generated/server.js";
+import { supportAgent } from "./agents.js";
+
+export const startSupportRun = mutation({
+  args: {
+    threadId: v.string(),
+    prompt: v.string(),
+    clientMessageId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await supportAgent.runs.start(ctx, {
+      threadId: args.threadId,
+      prompt: args.prompt,
+      key: `client-message:${args.clientMessageId}`,
+    });
+  },
+});
+
+export const executeSupportRun = action({
+  args: { runId: v.string() },
+  handler: async (ctx, args) => {
+    return await supportAgent.runs.execute(ctx, { runId: args.runId });
+  },
+});
+```
+
+Use `send` when one action should start and execute immediately:
+
+```ts
+await supportAgent.runs.send(ctx, {
+  threadId,
+  userId,
+  prompt,
+  key: `client-message:${clientMessageId}`,
+});
+```
+
+## Threads and messages
+
+```ts
+const thread = await supportAgent.threads.create(ctx, {
+  userId,
+  title: "Support chat",
+});
+
+await supportAgent.messages.save(ctx, {
+  threadId: thread._id,
+  userId,
+  message: {
+    author: { type: "user", userId },
+    content: [{ type: "text", text: "I need help with billing" }],
+  },
+});
+
+const messages = await supportAgent.messages.list(ctx, {
+  threadId: thread._id,
+  paginationOpts: { cursor: null, numItems: 50 },
+});
+```
+
+## Tools and approvals
+
+```ts
+import { defineTool } from "@convex-dev/agent";
+import { v } from "convex/values";
+
+const refundPayment = defineTool({
+  description: "Refund a payment after human approval.",
+  input: v.object({ paymentId: v.string() }),
+  needsApproval: true,
+  execute: async (input, context) => {
+    return { refunded: input.paymentId, runId: context.runId };
+  },
+});
+
+await supportAgent.runs.execute(ctx, {
+  runId,
+  tools: { refundPayment },
+});
+
+await supportAgent.tool.approve(ctx, {
+  runId,
+  toolCallId,
+});
+```
+
+The run moves to `waiting` when approval is required. Approval responses are
+stored in the run's event log, and a later `runs.execute` resumes the same
+durable run.
+
+## HTTP run streams
+
+Every run has an internal event stream. Authorize by run id in your route, then
+serve the durable event feed through Agent:
+
+```ts
+import { httpAction } from "./_generated/server.js";
+import { supportAgent } from "./agents.js";
+
+export const runEvents = httpAction(async (ctx, request) => {
+  const runId = new URL(request.url).searchParams.get("runId");
+  if (!runId) {
+    return new Response("Missing runId", { status: 400 });
+  }
+
+  const run = await supportAgent.runs.get(ctx, { runId });
+  if (!run || run.userId !== (await authorizeUser(request))) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const response = await supportAgent.http(ctx, request, { runId });
+  response.headers.set(
+    "Access-Control-Expose-Headers",
+    "X-Agent-Run-Id, X-Agent-Thread-Id, X-Agent-Message-Id, X-Stream-Id",
+  );
+  return response;
+});
+```
+
+## Workflows
+
+Workflows call normal internal actions with durable run ids. Agent does not add
+a workflow DSL.
+
+```ts
+export const executeRun = internalAction({
+  args: { runId: v.string() },
+  handler: async (ctx, args) => {
+    await supportAgent.runs.execute(ctx, { runId: args.runId });
+  },
+});
+
+export const supportWorkflow = workflow.define({
+  args: { runId: v.string() },
+  handler: async (step, args) => {
+    await step.runAction(internal.support.executeRun, args, { retry: true });
+  },
+});
+```
