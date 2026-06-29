@@ -1,5 +1,3 @@
-import type { AgentMessagePart } from "../state/types";
-
 export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -15,18 +13,6 @@ export function formatTime(value: number | undefined) {
 export function shortId(value: string | undefined) {
   if (!value) return "none";
   return value.length > 10 ? `${value.slice(0, 5)}...${value.slice(-5)}` : value;
-}
-
-export function partText(part: AgentMessagePart) {
-  if (part.type === "text" || part.type === "reasoning") return part.text;
-  if (part.type === "tool-call") return `${part.name} requested approval`;
-  if (part.type === "tool-result") {
-    return part.error ? part.error.message : JSON.stringify(part.output);
-  }
-  if (part.type === "file") return part.filename ?? part.fileId ?? "file";
-  if (part.type === "source") return part.title ?? part.url ?? part.id;
-  if (part.type === "approval-request") return "Approval requested";
-  return part.reason ?? (part.approved ? "Approved" : "Denied");
 }
 
 export function userFacingError(error: unknown) {

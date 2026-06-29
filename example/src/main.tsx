@@ -7,7 +7,8 @@ import {
   useQuery,
 } from "convex/react";
 import { Activity, Plus } from "lucide-react";
-import { useAgent } from "@convex-dev/agent/react";
+import { useChat } from "@ai-sdk/react";
+import { useChatTransport } from "@convex-dev/agent/vercel/react";
 
 import { api } from "../convex/_generated/api";
 import {
@@ -20,7 +21,6 @@ import {
 } from "./components/ActivityPanel";
 import { ApprovalCard } from "./components/ApprovalCard";
 import { Composer } from "./components/Composer";
-import { buildConversationTurnsFromTimeline } from "./state/conversationTurns";
 import { Conversation } from "./components/Conversation";
 import { clamp, userFacingError } from "./lib/format";
 import { cn } from "./lib/utils";
@@ -85,16 +85,6 @@ function writeStorage(storage: Storage, key: string, value: string) {
   }
 }
 
-const supportAgent = {
-  listMessages: api.support.messages.list,
-  listRuns: api.support.runs.list,
-  readRunEventsBatch: api.support.runs.readEventsBatch,
-  send: api.support.runs.sendMessage,
-  cancel: api.support.runs.cancel,
-  approveToolCall: api.support.tools.approve,
-  denyToolCall: api.support.tools.deny,
-};
-
 function App({ siteUrl }: { siteUrl: string | undefined }) {
   const [sessionId] = useState(readSessionId);
   const [prompt, setPrompt] = useState("");
@@ -104,16 +94,26 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityWidth, setActivityWidth] = useState(readActivityWidth);
   const { readStream, resetStream, stream } = useRunStream(siteUrl, sessionId);
-  const agent = useAgent(supportAgent, { sessionId }, {
-    initialNumMessages: 50,
-    initialNumRuns: 20,
-    initialNumEvents: 128,
-  });
+  const chat = useChat(
+    useChatTransport(
+      {
+        list: api.support.chat.list,
+        send: api.support.chat.send,
+        read: api.support.chat.read,
+        resume: api.support.chat.resume,
+        cancel: api.support.chat.cancel,
+      },
+      { sessionId },
+      { id: sessionId, cancelOnAbort: true },
+    ),
+  );
   const submitInFlightRef = useRef(false);
 
   const newCase = useMutation(api.support.cases.create);
   const generateUploadUrl = useMutation(api.support.files.generateUploadUrl);
   const saveUploadedFile = useMutation(api.support.files.saveUploaded);
+  const approveToolCall = useMutation(api.support.tools.approve);
+  const denyToolCall = useMutation(api.support.tools.deny);
   const upload = useFileUpload({
     sessionId,
     generateUploadUrl,
@@ -123,14 +123,13 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
 
   const activeCase = useQuery(api.support.cases.getActive, { sessionId });
   const activityRunId = activeRunId ?? activeCase?.lastRunId;
-  const latestRun = useMemo(
-    () =>
-      (activityRunId
-        ? agent.runs.find((run) => run.runId === activityRunId)
-        : undefined) ??
-      agent.runs[0] ??
-      null,
-    [activityRunId, agent.runs],
+  const latestRun = useQuery(
+    api.support.runs.get,
+    activityRunId ? { sessionId, runId: activityRunId } : "skip",
+  );
+  const toolCalls = useQuery(
+    api.support.tools.list,
+    latestRun ? { sessionId, runId: latestRun.runId } : "skip",
   );
   const activity = useQuery(
     api.support.activity.list,
@@ -143,11 +142,6 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
     url.searchParams.set("sessionId", sessionId);
     return url.toString();
   }, [sessionId, latestRun, siteUrl]);
-  const turns = useMemo(
-    () => buildConversationTurnsFromTimeline(agent.timeline),
-    [agent.timeline],
-  );
-
   function resizeActivity(nextWidth: number) {
     setActivityWidth(clamp(nextWidth, ACTIVITY_MIN_WIDTH, ACTIVITY_MAX_WIDTH));
   }
@@ -182,12 +176,15 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
     setPrompt("");
     upload.clearAttachments();
     try {
-      const run = await agent.send({
-        clientMessageId,
-        prompt: promptToSend,
-        fileRefs,
+      await chat.sendMessage({
+        text: promptToSend,
+        messageId: clientMessageId,
+      }, {
+        body: {
+          clientMessageId,
+          fileRefs,
+        },
       });
-      setActiveRunId(run.runId);
     } catch (nextError) {
       const message = userFacingError(nextError);
       setError(message);
@@ -200,22 +197,12 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
   }
 
   async function stopActiveRun() {
-    const run = agent.activeRun;
-    if (
-      !run ||
-      run.status === "success" ||
-      run.status === "failed" ||
-      run.status === "canceled"
-    ) {
+    if (chat.status !== "submitted" && chat.status !== "streaming") {
       return;
     }
     setError(null);
     try {
-      const canceled = await agent.cancel({
-        runId: run.runId,
-        reason: "Stopped by user.",
-      });
-      setActiveRunId(canceled.runId);
+      chat.stop();
     } catch (nextError) {
       setError(userFacingError(nextError));
     }
@@ -232,18 +219,30 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
     setError(null);
     try {
       const nextRun = await (resolution === "approve"
-        ? agent.approve({ runId: call.runId, toolCallId: call.toolCallId })
-        : agent.deny({ runId: call.runId, toolCallId: call.toolCallId }));
+        ? approveToolCall({
+            sessionId,
+            runId: call.runId,
+            toolCallId: call.toolCallId,
+          })
+        : denyToolCall({
+            sessionId,
+            runId: call.runId,
+            toolCallId: call.toolCallId,
+          }));
       setActiveRunId(nextRun.runId);
+      void chat.resumeStream();
     } catch (nextError) {
       setError(userFacingError(nextError));
     }
   }
 
   const runIsDrafting =
-    submitting || agent.status === "running" || agent.status === "waiting";
-  const canStopRun = Boolean(agent.activeRun) && !submitting;
-  const waitingToolCall = agent.approvals.find(
+    submitting ||
+    chat.status === "submitted" ||
+    chat.status === "streaming" ||
+    latestRun?.status === "waiting";
+  const canStopRun = chat.status === "submitted" || chat.status === "streaming";
+  const waitingToolCall = (toolCalls ?? []).find(
     (call) => call.status === "waiting",
   );
 
@@ -303,8 +302,8 @@ function App({ siteUrl }: { siteUrl: string | undefined }) {
           <section className="grid min-w-0 min-h-0 grid-rows-[minmax(0,1fr)_auto_auto] gap-[10px] max-[760px]:w-full max-[760px]:gap-2 max-[760px]:overflow-hidden">
             <Conversation
               agentName={latestRun?.agentName}
-              loading={agent.status === "loading"}
-              turns={turns}
+              loading={activeCase === undefined}
+              messages={chat.messages}
             />
             {waitingToolCall ? (
               <ApprovalCard

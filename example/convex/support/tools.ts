@@ -37,7 +37,7 @@ export const list = query({
   handler: async (ctx, args) => {
     const current = caller(args);
     await requireAuthorizedRun(ctx, args.runId, current.userId);
-    return await approvalAgent.tool.list(ctx, { runId: args.runId });
+    return await approvalAgent.tools.list(ctx, { runId: args.runId });
   },
 });
 
@@ -51,7 +51,7 @@ export const approve = mutation({
   handler: async (ctx, args) => {
     const current = caller(args);
     await requireAuthorizedRun(ctx, args.runId, current.userId);
-    const run = await approvalAgent.tool.approve(ctx, {
+    const run = await approvalAgent.tools.approve(ctx, {
       runId: args.runId,
       toolCallId: args.toolCallId,
       reason: "Approved from the support UI.",
@@ -74,7 +74,7 @@ export const deny = mutation({
   handler: async (ctx, args) => {
     const current = caller(args);
     await requireAuthorizedRun(ctx, args.runId, current.userId);
-    const run = await approvalAgent.tool.deny(ctx, {
+    const run = await approvalAgent.tools.deny(ctx, {
       runId: args.runId,
       toolCallId: args.toolCallId,
       reason: "Denied from the support UI.",

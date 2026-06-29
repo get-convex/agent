@@ -1,26 +1,17 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { ChevronRight, FileText, Search, ShieldCheck, Sparkles } from "lucide-react";
-import type { ReactNode } from "react";
-
-import { presentDraft } from "../state/assistantPresentation";
-import { formatTime, partText } from "../lib/format";
-import { MarkdownText } from "./MarkdownText";
 import {
-  bubbleText,
-  callout,
-  calloutError,
-  caret,
-  chip,
-  evidenceChip,
-  prose,
-} from "../lib/ui";
+  ChevronRight,
+  FileText,
+  Search,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import type { UIMessage } from "ai";
+
+import { MarkdownText } from "./MarkdownText";
+import { bubbleText, chip, evidenceChip, prose } from "../lib/ui";
 import { cn } from "../lib/utils";
-import type {
-  AssistantBubble,
-  ConversationTurn,
-  UserBubble,
-} from "../state/conversationTurns";
-import type { AgentMessageDoc, LiveDraft } from "../state/types";
 
 const emptyStateClass =
   "grid min-h-full place-items-center content-center gap-2 p-6 text-content-tertiary text-center [&_strong]:text-content-primary [&_strong]:text-base [&_span]:max-w-[360px] [&_span]:leading-[1.45]";
@@ -31,18 +22,18 @@ const bubbleMetaClass =
 export function Conversation({
   agentName,
   loading,
-  turns,
+  messages,
 }: {
   agentName?: string;
   loading: boolean;
-  turns: ConversationTurn[];
+  messages: readonly UIMessage[];
 }) {
   const threadRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
-  const hasVisibleMessages = turns.length > 0;
-  const scrollSignature = turns.map(turnScrollSignature).join("|");
+  const hasMessages = messages.length > 0;
+  const scrollSignature = messages.map(messageScrollSignature).join("|");
 
   useEffect(() => {
     const thread = threadRef.current;
@@ -50,13 +41,13 @@ export function Conversation({
     if (!thread || !sentinel) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        atBottomRef.current = entries[entries.length - 1]?.isIntersecting ?? true;
+        atBottomRef.current = entries.at(-1)?.isIntersecting ?? true;
       },
       { root: thread, rootMargin: "0px 0px 96px 0px", threshold: 0 },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasVisibleMessages]);
+  }, [hasMessages]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -67,20 +58,18 @@ export function Conversation({
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, [hasVisibleMessages]);
+  }, [hasMessages]);
 
   useLayoutEffect(() => {
     if (!atBottomRef.current) return;
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    sentinel.scrollIntoView({ block: "end" });
+    sentinelRef.current?.scrollIntoView({ block: "end" });
   }, [scrollSignature]);
 
-  if (loading && !hasVisibleMessages) {
+  if (loading && !hasMessages) {
     return <div className={emptyStateClass}>Loading conversation...</div>;
   }
 
-  if (!hasVisibleMessages) {
+  if (!hasMessages) {
     return (
       <div className={emptyStateClass}>
         <Sparkles size={22} />
@@ -99,8 +88,8 @@ export function Conversation({
         className="flex flex-col gap-[22px] px-1 max-[760px]:gap-[18px] max-[760px]:px-0"
         ref={contentRef}
       >
-        {turns.map((turn) => (
-          <ConversationTurnView agentName={agentName} turn={turn} key={turn.key} />
+        {messages.map((message) => (
+          <MessageRow agentName={agentName} message={message} key={message.id} />
         ))}
         <div className="h-px" ref={sentinelRef} aria-hidden />
       </div>
@@ -108,72 +97,29 @@ export function Conversation({
   );
 }
 
-function messageTextLength(message: AgentMessageDoc) {
-  return (
-    message.message?.content.reduce(
-      (total, part) =>
-        part.type === "text" || part.type === "reasoning"
-          ? total + part.text.length
-          : total,
-      0,
-    ) ?? 0
-  );
-}
-
-function turnScrollSignature(turn: ConversationTurn) {
-  const user =
-    turn.user?.kind === "message"
-      ? `${turn.user.message._id}:${messageTextLength(turn.user.message)}`
-      : "";
-  const assistant =
-    turn.assistant?.kind === "message"
-      ? `${turn.assistant.message._id}:${messageTextLength(turn.assistant.message)}`
-      : turn.assistant
-        ? `${turn.assistant.runId ?? "draft"}:${turn.assistant.draft?.text.length ?? 0}:${turn.assistant.draft?.status ?? "drafting"}`
-        : "";
-  return `${turn.key}:${user}:${assistant}`;
-}
-
-function ConversationTurnView({
+function MessageRow({
   agentName,
-  turn,
+  message,
 }: {
   agentName?: string;
-  turn: ConversationTurn;
+  message: UIMessage;
 }) {
-  return (
-    <section className="flex flex-col gap-[7px] max-[760px]:gap-1.5">
-      {turn.user ? <UserMessage bubble={turn.user} /> : null}
-      {turn.assistant ? (
-        <AssistantBubbleView agentName={agentName} bubble={turn.assistant} />
-      ) : null}
-    </section>
-  );
-}
-
-function AssistantBubbleView({
-  agentName,
-  bubble,
-}: {
-  agentName?: string;
-  bubble: AssistantBubble;
-}) {
-  return bubble.kind === "message" ? (
-    <AgentMessage message={bubble.message} />
-  ) : (
-    <AgentDraft agentName={agentName} draft={bubble.draft} />
-  );
+  if (message.role === "user") {
+    return <UserMessage message={message} />;
+  }
+  if (message.role === "system") {
+    return null;
+  }
+  return <AgentMessage agentName={agentName} message={message} />;
 }
 
 function AgentShell({
   label,
   meta,
-  live,
   children,
 }: {
   label: string;
   meta?: string;
-  live?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -181,11 +127,7 @@ function AgentShell({
       <div className="min-w-0 w-full max-w-full">
         <div className={bubbleMetaClass}>
           <strong>{label}</strong>
-          {meta ? (
-            <span className={live ? "text-blue-200 animate-pulse" : undefined}>
-              {meta}
-            </span>
-          ) : null}
+          {meta ? <span>{meta}</span> : null}
         </div>
         <div className="grid gap-2">{children}</div>
       </div>
@@ -193,179 +135,131 @@ function AgentShell({
   );
 }
 
-function AgentDraft({
+function AgentMessage({
   agentName,
-  draft,
+  message,
 }: {
   agentName?: string;
-  draft: LiveDraft | null;
+  message: UIMessage;
 }) {
-  const view = presentDraft(draft);
-  return (
-    <AgentShell
-      label={agentName ?? "Support Agent"}
-      meta={view.phase === "streaming" ? view.statusLabel : undefined}
-      live={view.phase === "streaming"}
-    >
-      {view.phase === "thinking" ? (
-        <p className="w-fit m-0 text-content-secondary text-[15px] animate-pulse">
-          Thinking…
-        </p>
-      ) : view.phase === "streaming" ? (
-        <p className="m-0 text-content-secondary text-[15px] leading-[1.65] whitespace-pre-wrap">
-          {view.bodyText}
-          <span className={caret} aria-hidden />
-        </p>
-      ) : (
-        <div className={cn(prose, "max-[760px]:text-[14.5px]")}>
-          <MarkdownText text={view.bodyText} keyPrefix={draft?.runId ?? "draft"} />
-        </div>
-      )}
-      <Evidence
-        keyPrefix={draft?.runId ?? "draft"}
-        files={
-          draft?.files.map((file) => ({
-            label: file.filename ?? file.fileId ?? file.url ?? "file",
-          })) ?? []
-        }
-        sources={
-          draft?.sources.map((source) => ({
-            label: source.title ?? source.id,
-          })) ?? []
-        }
-      />
-      {view.showReasoningToggle && view.reasoning ? (
-        <Reasoning text={view.reasoning} keyPrefix={draft?.runId ?? "draft"} />
-      ) : null}
-      {view.error ? (
-        <div className={cn(callout, calloutError, "mt-0.5")}>{view.error}</div>
-      ) : null}
-    </AgentShell>
-  );
-}
-
-function AgentMessage({ message }: { message: AgentMessageDoc }) {
-  const author = message.message?.author;
-  const label = author?.type === "agent" ? author.name : "Support Agent";
-  const { textParts, fileParts, sourceParts, reasoningParts, toolParts } =
-    splitParts(message);
+  const parts = splitParts(message);
 
   return (
-    <AgentShell label={label} meta={formatTime(message._creationTime)}>
-      {textParts.length > 0 ? (
+    <AgentShell label={agentName ?? "Support Agent"}>
+      {parts.text.length > 0 ? (
         <div className={cn(prose, "max-[760px]:text-[14.5px]")}>
-          {textParts.map((part, index) => (
+          {parts.text.map((part, index) => (
             <MarkdownText
               text={part.text}
-              keyPrefix={message._id}
-              key={`${message._id}:text:${index}`}
+              keyPrefix={message.id}
+              key={`${message.id}:text:${index}`}
             />
           ))}
         </div>
       ) : null}
       <Evidence
-        keyPrefix={message._id}
-        files={fileParts.map((part) => ({
-          label: part.filename ?? part.fileId ?? "file",
-        }))}
-        sources={sourceParts.map((part) => ({
-          label: part.title ?? part.id,
-        }))}
+        keyPrefix={message.id}
+        files={parts.files}
+        sources={parts.sources}
       />
-      {toolParts.map((part, index) => (
+      {parts.tools.map((part, index) => (
         <div
           className="flex items-center gap-2 px-[11px] py-[9px] rounded-lg border border-edge-soft bg-[rgba(42,40,37,0.58)] text-content-secondary text-[13px]"
-          key={`${message._id}:tool:${index}`}
+          key={`${message.id}:tool:${index}`}
         >
           <ShieldCheck size={14} />
-          <span>{partText(part)}</span>
+          <span>{toolLabel(part)}</span>
         </div>
       ))}
-      {reasoningParts.length > 0 ? (
+      {parts.reasoning.length > 0 ? (
         <Reasoning
-          text={reasoningParts.map((part) => part.text).join("\n\n")}
-          keyPrefix={message._id}
+          text={parts.reasoning.map((part) => part.text).join("\n\n")}
+          keyPrefix={message.id}
         />
       ) : null}
     </AgentShell>
   );
 }
 
-function UserMessage({ bubble }: { bubble: UserBubble }) {
-  const message = bubble.message;
-  const { textParts, fileParts, sourceParts } = splitParts(message);
+function UserMessage({ message }: { message: UIMessage }) {
+  const parts = splitParts(message);
   return (
     <article className="flex min-w-0 animate-fade-in justify-end">
       <div className="min-w-0 max-w-[min(560px,88%)] max-[760px]:max-w-[min(82vw,360px)] max-[430px]:max-w-[min(78vw,300px)]">
         <div className={cn(bubbleMetaClass, "justify-end")}>
           <strong>Customer</strong>
-          <span>{formatTime(message._creationTime)}</span>
         </div>
-        {textParts.length > 0 ? (
-          <div className={cn(bubbleText, "max-[760px]:px-3 max-[760px]:leading-[1.5]")}>
-            {textParts.map((part, index) => (
+        {parts.text.length > 0 ? (
+          <div
+            className={cn(
+              bubbleText,
+              "max-[760px]:px-3 max-[760px]:leading-[1.5]",
+            )}
+          >
+            {parts.text.map((part, index) => (
               <MarkdownText
                 text={part.text}
-                keyPrefix={message._id}
-                key={`${message._id}:text:${index}`}
+                keyPrefix={message.id}
+                key={`${message.id}:text:${index}`}
               />
             ))}
           </div>
         ) : null}
         <Evidence
-          keyPrefix={message._id}
-          files={fileParts.map((part) => ({
-            label: part.filename ?? part.fileId ?? "file",
-          }))}
-          sources={sourceParts.map((part) => ({
-            label: part.title ?? part.id,
-          }))}
+          keyPrefix={message.id}
+          files={parts.files}
+          sources={parts.sources}
         />
       </div>
     </article>
   );
 }
 
-function splitParts(message: AgentMessageDoc) {
-  const content = message.message?.content ?? [];
-  type Part = (typeof content)[number];
-  const textParts: Extract<Part, { type: "text" }>[] = [];
-  const fileParts: Extract<Part, { type: "file" }>[] = [];
-  const sourceParts: Extract<Part, { type: "source" }>[] = [];
-  const reasoningParts: Extract<Part, { type: "reasoning" }>[] = [];
-  const toolParts: Part[] = [];
-  for (const part of content) {
+function splitParts(message: UIMessage) {
+  type Part = UIMessage["parts"][number];
+  const text: Extract<Part, { type: "text" }>[] = [];
+  const reasoning: Extract<Part, { type: "reasoning" }>[] = [];
+  const files: EvidenceItem[] = [];
+  const sources: EvidenceItem[] = [];
+  const tools: Part[] = [];
+
+  for (const part of message.parts) {
     switch (part.type) {
       case "text":
-        textParts.push(part);
-        break;
-      case "file":
-        fileParts.push(part);
-        break;
-      case "source":
-        sourceParts.push(part);
+        text.push(part);
         break;
       case "reasoning":
-        reasoningParts.push(part);
+        reasoning.push(part);
         break;
-      case "tool-call":
-      case "tool-result":
-      case "approval-request":
-      case "approval-response":
-        toolParts.push(part);
+      case "file":
+        files.push({ label: part.filename ?? part.url ?? "file" });
         break;
+      case "source-url":
+        sources.push({ label: part.title ?? part.url });
+        break;
+      case "source-document":
+        sources.push({ label: part.title ?? part.filename ?? part.sourceId });
+        break;
+      case "dynamic-tool":
+        tools.push(part);
+        break;
+      default:
+        collectDataPart(part, files, sources, tools);
     }
   }
-  return { textParts, fileParts, sourceParts, reasoningParts, toolParts };
+
+  return { text, reasoning, files, sources, tools };
 }
+
+type EvidenceItem = { label: string };
 
 function Evidence({
   files,
   sources,
   keyPrefix,
 }: {
-  files: { label: string }[];
-  sources: { label: string }[];
+  files: EvidenceItem[];
+  sources: EvidenceItem[];
   keyPrefix: string;
 }) {
   if (files.length === 0 && sources.length === 0) return null;
@@ -402,4 +296,89 @@ function Reasoning({ text, keyPrefix }: { text: string; keyPrefix: string }) {
       </div>
     </details>
   );
+}
+
+function collectDataPart<Part>(
+  part: Part,
+  files: EvidenceItem[],
+  sources: EvidenceItem[],
+  tools: Part[],
+) {
+  if (typeof part !== "object" || part === null) {
+    return;
+  }
+  const candidate = part as { type?: unknown; data?: unknown };
+  if (typeof candidate.type !== "string") {
+    return;
+  }
+  const data =
+    typeof candidate.data === "object" && candidate.data !== null
+      ? (candidate.data as Record<string, unknown>)
+      : undefined;
+  if (candidate.type === "data-agent-file" && data) {
+    const filename = data.filename;
+    const fileId = data.fileId;
+    files.push({
+      label:
+        typeof filename === "string"
+          ? filename
+          : typeof fileId === "string"
+            ? fileId
+            : "file",
+    });
+    return;
+  }
+  if (candidate.type === "data-agent-source" && data) {
+    const title = data.title;
+    const id = data.id;
+    sources.push({
+      label: typeof title === "string" ? title : typeof id === "string" ? id : "source",
+    });
+    return;
+  }
+  if (
+    candidate.type === "data-agent-approval-request" ||
+    candidate.type === "data-agent-approval-response"
+  ) {
+    tools.push(part as Part);
+  }
+}
+
+function toolLabel(part: UIMessage["parts"][number]) {
+  if (part.type === "dynamic-tool") {
+    switch (part.state) {
+      case "input-available":
+        return `${part.toolName} requested`;
+      case "approval-requested":
+        return `${part.toolName} needs approval`;
+      case "output-available":
+        return `${part.toolName} completed`;
+      case "output-error":
+        return `${part.toolName} failed`;
+      default:
+        return part.toolName;
+    }
+  }
+  if (typeof part === "object" && part !== null) {
+    const candidate = part as { type?: unknown; data?: unknown };
+    if (candidate.type === "data-agent-approval-request") {
+      return "Approval requested";
+    }
+    if (candidate.type === "data-agent-approval-response") {
+      const data =
+        typeof candidate.data === "object" && candidate.data !== null
+          ? (candidate.data as Record<string, unknown>)
+          : undefined;
+      return data?.approved === true ? "Approval granted" : "Approval denied";
+    }
+  }
+  return "Tool activity";
+}
+
+function messageScrollSignature(message: UIMessage) {
+  return `${message.id}:${message.parts
+    .map((part) =>
+      part.type === "text" || part.type === "reasoning" ? part.text.length : part.type,
+    )
+    .join(",")}`;
 }

@@ -13,6 +13,7 @@ import type * as staticHosting from "../staticHosting.js";
 import type * as support_activity from "../support/activity.js";
 import type * as support_agent from "../support/agent.js";
 import type * as support_cases from "../support/cases.js";
+import type * as support_chat from "../support/chat.js";
 import type * as support_context from "../support/context.js";
 import type * as support_files from "../support/files.js";
 import type * as support_http from "../support/http.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   "support/activity": typeof support_activity;
   "support/agent": typeof support_agent;
   "support/cases": typeof support_cases;
+  "support/chat": typeof support_chat;
   "support/context": typeof support_context;
   "support/files": typeof support_files;
   "support/http": typeof support_http;

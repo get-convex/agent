@@ -1,6 +1,7 @@
 import { streamQueryArgsValidator } from "@convex-dev/stream";
 import {
   vAgentRunEvent,
+  type AgentMessageInput,
   type AgentContextBlock,
   type AgentContextLoader,
 } from "@convex-dev/agent";
@@ -10,6 +11,7 @@ import { components, internal } from "../_generated/api";
 import {
   internalAction,
   internalQuery,
+  type MutationCtx,
   mutation,
   query,
 } from "../_generated/server";
@@ -53,7 +55,7 @@ import { requestMetadata } from "./request";
 
 const rag = createRag(components);
 
-const vRunEventRead = v.object({
+export const vRunEventRead = v.object({
   runId: v.string(),
   page: v.array(
     v.object({
@@ -214,6 +216,150 @@ function executionContextLoaders(meta: { fileRefs: Id<"files">[] }) {
   return loaders;
 }
 
+export async function startSupportRun(
+  ctx: MutationCtx,
+  args: {
+    sessionId: string;
+    clientMessageId: string;
+    prompt: string;
+    fileRefs?: Id<"files">[];
+    useWorkflow?: boolean;
+    message?: AgentMessageInput;
+  },
+): Promise<CaseRun> {
+  const current = caller(args);
+  const metadata = await requestMetadata(ctx);
+  const fileRefs = args.fileRefs ?? [];
+  const files = await filesForMutation(ctx, current.userId, fileRefs);
+  const existing = await ctx.db
+    .query("caseRuns")
+    .withIndex("by_user_clientMessageId", (q) =>
+      q.eq("userId", current.userId).eq("clientMessageId", args.clientMessageId),
+    )
+    .first();
+  if (!existing) {
+    await checkSendQuota(ctx, current.userId, metadata.clientIp);
+  }
+
+  const title = runTitle(args.prompt);
+  const supportCase = await getOrCreateActiveCaseForMutation(
+    ctx,
+    current.userId,
+    title,
+  );
+  const scenario = scenarioFor({ prompt: args.prompt, fileRefs });
+  const run = await coreAgent.runs.start(ctx, {
+    threadId: supportCase.threadId,
+    userId: current.userId,
+    key: `client-message:${args.clientMessageId}`,
+    message:
+      args.message !== undefined
+        ? messageWithFiles(args.message, files)
+        : messageForPrompt({
+            clientMessageId: args.clientMessageId,
+            prompt: args.prompt,
+            userId: current.userId,
+            files,
+          }),
+  });
+  if (existing) {
+    return run;
+  }
+
+  const baseCaseRun = {
+    userId: current.userId,
+    clientMessageId: args.clientMessageId,
+    scenario,
+    title,
+    fileRefs,
+    requestMetadata: metadata,
+  };
+  await recordCaseRunForMutation(ctx, {
+    ...baseCaseRun,
+    runId: run.runId,
+    threadId: run.threadId,
+    messageId: run.messageId,
+    streamId: run.streamId,
+  });
+  await ctx.db.patch("cases", supportCase._id, {
+    lastRunId: run.runId,
+    status: "drafting",
+    updatedAt: Date.now(),
+  });
+  if (retrievalConfigured()) {
+    await scheduleKnowledgeSeedForMutation(ctx, current.userId);
+  }
+  if (args.useWorkflow === true) {
+    const workflowId = await workflow.start(ctx, internal.support.workflow.workflowRun, {
+      runId: run.runId,
+    });
+    const linked = await coreAgent.runs.link(ctx, { runId: run.runId, workflowId });
+    await recordCaseRunForMutation(ctx, {
+      ...baseCaseRun,
+      runId: linked.runId,
+      threadId: linked.threadId,
+      messageId: linked.messageId,
+      streamId: linked.streamId,
+      workflowId,
+    });
+    return linked;
+  }
+  await ctx.scheduler.runAfter(0, internal.support.runs.execute, {
+    runId: run.runId,
+  });
+  return run;
+}
+
+function messageForPrompt(args: {
+  clientMessageId: string;
+  prompt: string;
+  userId: string;
+  files: FileDoc[];
+}): AgentMessageInput {
+  return {
+    clientKey: args.clientMessageId,
+    message: {
+      author: { type: "user", userId: args.userId },
+      content: [
+        { type: "text", text: args.prompt },
+        ...args.files.map((file) => ({
+          type: "file" as const,
+          fileId: file._id,
+          url: file.url,
+          mediaType: file.mediaType,
+          filename: file.filename,
+        })),
+      ],
+    },
+    text: args.prompt,
+  };
+}
+
+function messageWithFiles(
+  message: AgentMessageInput,
+  files: FileDoc[],
+): AgentMessageInput {
+  if (files.length === 0) {
+    return message;
+  }
+  return {
+    ...message,
+    message: {
+      ...message.message,
+      content: [
+        ...message.message.content,
+        ...files.map((file) => ({
+          type: "file" as const,
+          fileId: file._id,
+          url: file.url,
+          mediaType: file.mediaType,
+          filename: file.filename,
+        })),
+      ],
+    },
+  };
+}
+
 export const sendMessage = mutation({
   args: {
     sessionId: vSessionId,
@@ -224,95 +370,7 @@ export const sendMessage = mutation({
   },
   returns: vCaseRun,
   handler: async (ctx, args) => {
-    const current = caller(args);
-    const metadata = await requestMetadata(ctx);
-    const fileRefs = args.fileRefs ?? [];
-    const files = await filesForMutation(ctx, current.userId, fileRefs);
-    const existing = await ctx.db
-      .query("caseRuns")
-      .withIndex("by_user_clientMessageId", (q) =>
-        q.eq("userId", current.userId).eq("clientMessageId", args.clientMessageId),
-      )
-      .first();
-    if (!existing) {
-      await checkSendQuota(ctx, current.userId, metadata.clientIp);
-    }
-
-    const title = runTitle(args.prompt);
-    const supportCase = await getOrCreateActiveCaseForMutation(
-      ctx,
-      current.userId,
-      title,
-    );
-    const scenario = scenarioFor({ prompt: args.prompt, fileRefs });
-    const run = await coreAgent.runs.start(ctx, {
-      threadId: supportCase.threadId,
-      userId: current.userId,
-      key: `client-message:${args.clientMessageId}`,
-      message: {
-        clientKey: args.clientMessageId,
-        message: {
-          author: { type: "user", userId: current.userId },
-          content: [
-            { type: "text", text: args.prompt },
-            ...files.map((file) => ({
-              type: "file" as const,
-              fileId: file._id,
-              url: file.url,
-              mediaType: file.mediaType,
-              filename: file.filename,
-            })),
-          ],
-        },
-        text: args.prompt,
-      },
-    });
-    if (existing) {
-      return run;
-    }
-
-    const baseCaseRun = {
-      userId: current.userId,
-      clientMessageId: args.clientMessageId,
-      scenario,
-      title,
-      fileRefs,
-      requestMetadata: metadata,
-    };
-    await recordCaseRunForMutation(ctx, {
-      ...baseCaseRun,
-      runId: run.runId,
-      threadId: run.threadId,
-      messageId: run.messageId,
-      streamId: run.streamId,
-    });
-    await ctx.db.patch("cases", supportCase._id, {
-      lastRunId: run.runId,
-      status: "drafting",
-      updatedAt: Date.now(),
-    });
-    if (retrievalConfigured()) {
-      await scheduleKnowledgeSeedForMutation(ctx, current.userId);
-    }
-    if (args.useWorkflow === true) {
-      const workflowId = await workflow.start(ctx, internal.support.workflow.workflowRun, {
-        runId: run.runId,
-      });
-      const linked = await coreAgent.runs.link(ctx, { runId: run.runId, workflowId });
-      await recordCaseRunForMutation(ctx, {
-        ...baseCaseRun,
-        runId: linked.runId,
-        threadId: linked.threadId,
-        messageId: linked.messageId,
-        streamId: linked.streamId,
-        workflowId,
-      });
-      return linked;
-    }
-    await ctx.scheduler.runAfter(0, internal.support.runs.execute, {
-      runId: run.runId,
-    });
-    return run;
+    return await startSupportRun(ctx, args);
   },
 });
 
@@ -370,6 +428,24 @@ export const readEventsBatch = query({
   },
 });
 
+export async function cancelSupportRun(
+  ctx: MutationCtx,
+  args: {
+    sessionId: string;
+    runId: string;
+    reason?: string;
+  },
+): Promise<CaseRun> {
+  const current = caller(args);
+  await requireAuthorizedRun(ctx, args.runId, current.userId);
+  const run = await coreAgent.runs.cancel(ctx, {
+    runId: args.runId,
+    reason: args.reason,
+  });
+  await patchCaseStatusForRun(ctx, current.userId, run, caseStatusForRun(run));
+  return run;
+}
+
 export const cancel = mutation({
   args: {
     sessionId: vSessionId,
@@ -378,14 +454,7 @@ export const cancel = mutation({
   },
   returns: vCaseRun,
   handler: async (ctx, args) => {
-    const current = caller(args);
-    await requireAuthorizedRun(ctx, args.runId, current.userId);
-    const run = await coreAgent.runs.cancel(ctx, {
-      runId: args.runId,
-      reason: args.reason,
-    });
-    await patchCaseStatusForRun(ctx, current.userId, run, caseStatusForRun(run));
-    return run;
+    return await cancelSupportRun(ctx, args);
   },
 });
 

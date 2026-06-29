@@ -61,24 +61,3 @@ export type UploadAttachment = Partial<FileDoc> & {
   uploadState: "reading" | "uploading" | "ready" | "metadataOnly" | "error";
   error?: string;
 };
-
-export type LiveDraft = {
-  runId: string;
-  messageId?: string;
-  createdAt: number;
-  status: "connecting" | "waiting" | "streaming" | "closed" | "stopped" | "error";
-  text: string;
-  reasoning: string;
-  sources: Array<{
-    id: string;
-    title?: string;
-    url?: string;
-  }>;
-  files: Array<{
-    fileId?: string;
-    filename?: string;
-    mediaType?: string;
-    url?: string;
-  }>;
-  error?: string;
-};
