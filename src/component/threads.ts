@@ -1,10 +1,9 @@
-import { assert, omit, pick } from "convex-helpers";
+import { assert, pick } from "convex-helpers";
 import { paginator } from "convex-helpers/server/pagination";
 import { partial } from "convex-helpers/validators";
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import type { ObjectType } from "convex/values";
-import { type ThreadDoc, vThreadDoc } from "../client/index.js";
-import { vPaginationResult } from "../validators.js";
+import { type ThreadDoc, vThreadDoc } from "../validators.js";
 import { api, internal } from "./_generated/api.js";
 import type { Doc } from "./_generated/dataModel.js";
 import {
@@ -15,8 +14,8 @@ import {
   query,
 } from "./_generated/server.js";
 import { deleteMessage } from "./messages.js";
+import { deleteRunsPageForThreadId } from "./runs.js";
 import { schema, v } from "./schema.js";
-import { deleteStreamsPageForThreadId } from "./streams.js";
 
 function publicThreadOrNull(thread: Doc<"threads"> | null): ThreadDoc | null {
   if (thread === null) {
@@ -26,7 +25,7 @@ function publicThreadOrNull(thread: Doc<"threads"> | null): ThreadDoc | null {
 }
 
 function publicThread(thread: Doc<"threads">): ThreadDoc {
-  return omit(thread, ["defaultSystemPrompt", "parentThreadIds", "order"]);
+  return thread;
 }
 
 export const getThread = query({
@@ -54,13 +53,17 @@ export const listThreadsByUserId = query({
       page: threads.page.map(publicThread),
     };
   },
-  returns: vPaginationResult(vThreadDoc),
+  returns: paginationResultValidator(vThreadDoc),
 });
 
 const vThread = schema.tables.threads.validator;
 
 export const createThread = mutation({
-  args: omit(vThread.fields, ["order", "status"]),
+  args: {
+    userId: v.optional(v.string()),
+    title: v.optional(v.string()),
+    summary: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const threadId = await ctx.db.insert("threads", {
       ...args,
@@ -102,8 +105,8 @@ export const searchThreadTitles = query({
     const threads = await ctx.db
       .query("threads")
       .withSearchIndex("title", (q) =>
-        args.userId
-          ? q.search("title", args.query).eq("userId", args.userId ?? undefined)
+        args.userId !== undefined && args.userId !== null
+          ? q.search("title", args.query).eq("userId", args.userId)
           : q.search("title", args.query),
       )
       .take(args.limit);
@@ -111,20 +114,6 @@ export const searchThreadTitles = query({
   },
   returns: v.array(vThreadDoc),
 });
-
-// When we expose this, we need to also hide all the messages and steps
-// export const archiveThread = mutation({
-//   args: { threadId: v.id("threads") },
-//   handler: async (ctx, args) => {
-//     const thread = await ctx.db.get(args.threadId);
-//     assert(thread, `Thread ${args.threadId} not found`);
-//     await ctx.db.patch(args.threadId, { status: "archived" });
-//     return publicThread((await ctx.db.get(args.threadId))!);
-//   },
-//   returns: vThreadDoc,
-// });
-
-// TODO: delete thread
 
 /**
  * Use this to delete a thread and everything it contains.
@@ -134,18 +123,29 @@ export const searchThreadTitles = query({
 export const deleteAllForThreadIdSync = action({
   args: { threadId: v.id("threads"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    let cursor: string | undefined = undefined;
+    let messageCursor: string | undefined = undefined;
     while (true) {
       const result: DeleteThreadReturns = await ctx.runMutation(
         internal.threads._deletePageForThreadId,
-        { threadId: args.threadId, cursor, limit: args.limit },
+        { threadId: args.threadId, cursor: messageCursor, limit: args.limit },
       );
       if (result.isDone) {
         break;
       }
-      cursor = result.cursor;
+      messageCursor = result.cursor;
     }
-    await ctx.runAction(api.streams.deleteAllStreamsForThreadIdSync, {
+    let runCursor: string | undefined = undefined;
+    while (true) {
+      const result: DeleteThreadReturns = await ctx.runMutation(
+        internal.runs._deletePageForThreadId,
+        { threadId: args.threadId, cursor: runCursor, limit: args.limit },
+      );
+      if (result.isDone) {
+        break;
+      }
+      runCursor = result.cursor;
+    }
+    await ctx.runMutation(internal.threads._deleteThreadIfDone, {
       threadId: args.threadId,
     });
   },
@@ -155,10 +155,9 @@ export const deleteAllForThreadIdSync = action({
 const deleteThreadArgs = {
   threadId: v.id("threads"),
   cursor: v.optional(v.string()),
+  runCursor: v.optional(v.string()),
   messagesDone: v.optional(v.boolean()),
-  streamsDone: v.optional(v.boolean()),
-  streamOrder: v.optional(v.number()),
-  deltaCursor: v.optional(v.string()),
+  runsDone: v.optional(v.boolean()),
   limit: v.optional(v.number()),
 };
 type DeleteThreadArgs = ObjectType<typeof deleteThreadArgs>;
@@ -172,6 +171,15 @@ export const _deletePageForThreadId = internalMutation({
   args: deleteThreadArgs,
   handler: deletePageForThreadIdHandler,
   returns: deleteThreadReturns,
+});
+
+export const _deleteThreadIfDone = internalMutation({
+  args: { threadId: v.id("threads") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await deleteThreadIfDone(ctx, args.threadId);
+    return null;
+  },
 });
 
 /**
@@ -188,28 +196,28 @@ export const deleteAllForThreadIdAsync = mutation({
     if (!args.messagesDone) {
       messagesResult = await deletePageForThreadIdHandler(ctx, args);
     }
-    let streamResult = {
-      isDone: args.streamsDone ?? false,
-      streamOrder: args.streamOrder,
-      deltaCursor: args.deltaCursor,
+    let runsResult = {
+      isDone: args.runsDone ?? false,
+      cursor: args.runCursor,
     };
-    if (!args.streamsDone) {
-      streamResult = await deleteStreamsPageForThreadId(ctx, {
+    if (!args.runsDone) {
+      runsResult = await deleteRunsPageForThreadId(ctx, {
         threadId: args.threadId,
-        streamOrder: args.streamOrder,
-        deltaCursor: args.deltaCursor,
+        cursor: args.runCursor,
+        limit: args.limit,
       });
     }
-    const isDone = messagesResult.isDone && streamResult.isDone;
+    const isDone = messagesResult.isDone && runsResult.isDone;
     if (!isDone) {
       await ctx.scheduler.runAfter(0, api.threads.deleteAllForThreadIdAsync, {
         threadId: args.threadId,
         cursor: messagesResult.cursor,
+        runCursor: runsResult.cursor,
         messagesDone: messagesResult.isDone,
-        streamsDone: streamResult.isDone,
-        streamOrder: streamResult.streamOrder,
-        deltaCursor: streamResult.deltaCursor,
+        runsDone: runsResult.isDone,
       });
+    } else {
+      await deleteThreadIfDone(ctx, args.threadId);
     }
     return { isDone };
   },
@@ -230,14 +238,31 @@ async function deletePageForThreadIdHandler(
       cursor: args.cursor ?? null,
     });
   await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
-  if (messages.isDone) {
-    const thread = await ctx.db.get("threads", args.threadId);
-    if (thread) {
-      await ctx.db.delete("threads", args.threadId);
-    }
-  }
+  if (messages.isDone) await deleteThreadIfDone(ctx, args.threadId);
   return {
     cursor: messages.continueCursor,
     isDone: messages.isDone,
   };
+}
+
+async function deleteThreadIfDone(
+  ctx: MutationCtx,
+  threadId: Doc<"threads">["_id"],
+) {
+  const message = await ctx.db
+    .query("messages")
+    .withIndex("threadId_status_tool_order_stepOrder", (q) =>
+      q.eq("threadId", threadId),
+    )
+    .first();
+  if (message) return;
+  const run = await ctx.db
+    .query("runs")
+    .withIndex("threadId_createdAt", (q) => q.eq("threadId", threadId))
+    .first();
+  if (run) return;
+  const thread = await ctx.db.get("threads", threadId);
+  if (thread) {
+    await ctx.db.delete("threads", threadId);
+  }
 }

@@ -2,49 +2,36 @@ import { assert, omit, pick } from "convex-helpers";
 import { mergedStream, stream } from "convex-helpers/server/stream";
 import {
   paginationOptsValidator,
+  paginationResultValidator,
   type WithoutSystemFields,
 } from "convex/server";
 import type { ObjectType } from "convex/values";
 import {
-  DEFAULT_MESSAGE_RANGE,
   DEFAULT_RECENT_MESSAGES,
   extractText,
   isTool,
-  sorted,
 } from "../shared.js";
 import {
-  vMessageDoc,
-  vMessageEmbeddingsWithDimension,
+  vAgentMessageDoc,
   vMessageStatus,
-  vMessageWithMetadataInternal,
-  vPaginationResult,
-  type MessageDoc,
+  vAgentMessageInputInternal,
+  type AgentMessageDoc,
 } from "../validators.js";
-import { api, internal } from "./_generated/api.js";
+import { internal } from "./_generated/api.js";
 import type { Doc, Id } from "./_generated/dataModel.js";
 import {
   action,
   internalMutation,
-  internalQuery,
   mutation,
   type MutationCtx,
   query,
   type QueryCtx,
 } from "./_generated/server.js";
 import { schema, v } from "./schema.js";
-import { insertVector, searchVectors } from "./vector/index.js";
-import {
-  getVectorIdInfo,
-  validateVectorDimension,
-  type VectorTableId,
-  vVectorId,
-} from "./vector/tables.js";
-import { changeRefcount } from "./files.js";
-import { getStreamingMessagesWithMetadata, finishHandler } from "./streams.js";
 import { partial } from "convex-helpers/validators";
 
-function publicMessage(message: Doc<"messages">): MessageDoc {
-  return omit(message, ["parentMessageId", "stepId", "files"]);
+function publicMessage(message: Doc<"messages">): AgentMessageDoc {
+  return omit(message, ["parentMessageId"]);
 }
 
 export async function deleteMessage(
@@ -52,13 +39,6 @@ export async function deleteMessage(
   messageDoc: Doc<"messages">,
 ) {
   await ctx.db.delete("messages", messageDoc._id);
-  if (messageDoc.embeddingId) {
-    const { tableName } = getVectorIdInfo(ctx, messageDoc.embeddingId);
-    await ctx.db.delete(tableName, messageDoc.embeddingId);
-  }
-  if (messageDoc.fileIds) {
-    await changeRefcount(ctx, messageDoc.fileIds, []);
-  }
 }
 
 export const deleteByIds = mutation({
@@ -79,7 +59,7 @@ export const deleteByIds = mutation({
   },
 });
 
-export const messageStatuses = vMessageDoc.fields.status.members.map(
+export const messageStatuses = vAgentMessageDoc.fields.status.members.map(
   (m) => m.value,
 );
 
@@ -135,24 +115,17 @@ const addMessagesArgs = {
   threadId: v.id("threads"),
   promptMessageId: v.optional(v.id("messages")),
   agentName: v.optional(v.string()),
-  messages: v.array(vMessageWithMetadataInternal),
-  embeddings: v.optional(vMessageEmbeddingsWithDimension),
+  messages: v.array(vAgentMessageInputInternal),
   failPendingSteps: v.optional(v.boolean()),
   // A pending message to update. If the pending message failed, abort.
   pendingMessageId: v.optional(v.id("messages")),
-  // if set to true, these messages will not show up in text or vector search
-  // results for the userId
-  hideFromUserIdSearch: v.optional(v.boolean()),
-  // If provided, finish this stream atomically with the message save.
-  // This prevents UI flickering from separate mutations (issue #181).
-  finishStreamId: v.optional(v.id("streamingMessages")),
 };
 export const addMessages = mutation({
   args: addMessagesArgs,
   handler: addMessagesHandler,
-  returns: v.object({ messages: v.array(vMessageDoc) }),
+  returns: v.object({ messages: v.array(vAgentMessageDoc) }),
 });
-async function addMessagesHandler(
+export async function addMessagesHandler(
   ctx: MutationCtx,
   args: ObjectType<typeof addMessagesArgs>,
 ) {
@@ -164,18 +137,13 @@ async function addMessagesHandler(
     userId = thread.userId;
   }
   const {
-    embeddings,
     failPendingSteps,
-    // Destructured separately to exclude from `...rest` (used in addMessages args, not message fields)
-    finishStreamId,
     messages,
     promptMessageId,
     pendingMessageId,
-    hideFromUserIdSearch,
     ...rest
   } = args;
-  const promptMessage =
-    promptMessageId && (await ctx.db.get("messages", promptMessageId));
+  const promptMessage = promptMessageId && (await ctx.db.get("messages", promptMessageId));
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
     const pendingMessages = await ctx.db
@@ -189,17 +157,12 @@ async function addMessagesHandler(
       pendingMessages
         .filter((m) => !promptMessage || m.order === promptMessage.order)
         .filter((m) => !pendingMessageId || m._id !== pendingMessageId)
-        .map(async (m) => {
-          if (m.embeddingId) {
-            const { tableName } = getVectorIdInfo(ctx, m.embeddingId);
-            await ctx.db.delete(tableName, m.embeddingId);
-          }
-          await ctx.db.patch("messages", m._id, {
+        .map(async (m) =>
+          ctx.db.patch("messages", m._id, {
             status: "failed",
             error: "Restarting",
-            embeddingId: undefined,
-          });
-        }),
+          }),
+        ),
     );
   }
   let order, stepOrder;
@@ -221,43 +184,21 @@ async function addMessagesHandler(
     stepOrder = maxMessage?.stepOrder ?? -1;
   }
   const toReturn: Doc<"messages">[] = [];
-  if (embeddings) {
-    assert(
-      embeddings.vectors.length === messages.length,
-      "embeddings.vectors.length must match messages.length",
-    );
-  }
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
-    let embeddingId: VectorTableId | undefined;
-    if (
-      embeddings &&
-      embeddings.vectors[i] &&
-      !fail &&
-      message.status !== "failed"
-    ) {
-      embeddingId = await insertVector(ctx, embeddings.dimension, {
-        vector: embeddings.vectors[i]!,
-        model: embeddings.model,
-        table: "messages",
-        userId: hideFromUserIdSearch ? undefined : userId,
-        threadId,
-      });
-    }
-    const messageDoc = {
+    const messageDoc: Omit<
+      WithoutSystemFields<Doc<"messages">>,
+      "order" | "stepOrder"
+    > = {
       ...rest,
       ...message,
-      embeddingId,
       parentMessageId: promptMessageId,
       userId,
       tool: isTool(message.message),
-      text: hideFromUserIdSearch ? undefined : extractText(message.message),
+      text: extractText(message.message),
       status: fail ? "failed" : (message.status ?? "success"),
       error: fail ? error : message.error,
-    } satisfies Omit<
-      WithoutSystemFields<Doc<"messages">>,
-      "order" | "stepOrder"
-    >;
+    };
     // If there is a pending message, we replace that one with the first message
     // and subsequent ones will follow the regular order/subOrder advancement.
     if (i === 0 && pendingMessageId) {
@@ -271,13 +212,6 @@ async function addMessagesHandler(
         messageDoc.status = "failed";
         messageDoc.error = error;
       }
-      if (message.fileIds) {
-        await changeRefcount(
-          ctx,
-          pendingMessage.fileIds ?? [],
-          message.fileIds,
-        );
-      }
       await ctx.db.replace("messages", pendingMessage._id, {
         ...messageDoc,
         order: pendingMessage.order,
@@ -286,7 +220,7 @@ async function addMessagesHandler(
       toReturn.push((await ctx.db.get("messages", pendingMessage._id))!);
       continue;
     }
-    if (message.message.role === "user") {
+    if (message.message.author.type === "user") {
       if (promptMessage && promptMessage.order === order) {
         // see if there's a later message than the parent message order
         const maxMessage = await getMaxMessage(ctx, threadId);
@@ -306,16 +240,7 @@ async function addMessagesHandler(
       order,
       stepOrder,
     });
-    if (message.fileIds) {
-      await changeRefcount(ctx, [], message.fileIds);
-    }
-    // TODO: delete the associated stream data for the order/stepOrder
     toReturn.push((await ctx.db.get("messages", messageId))!);
-  }
-  // Atomically finish the stream if requested, preventing UI flickering
-  // from separate mutations for message save and stream finish (issue #181).
-  if (finishStreamId) {
-    await finishHandler(ctx, { streamId: finishStreamId });
   }
   return { messages: toReturn.map(publicMessage) };
 }
@@ -382,41 +307,12 @@ export const finalizeMessage = mutation({
     const message = await ctx.db.get("messages", messageId);
     assert(message, `Message ${messageId} not found`);
     if (message.status !== "pending") {
-      console.debug(
-        "Trying to finalize a message that's already",
-        message.status,
-      );
       return;
     }
-    // See if we can add any in-progress data
-    if (!message.message?.content.length) {
-      const messages = await getStreamingMessagesWithMetadata(
-        ctx,
-        message,
-        result,
-      );
-      if (messages.length > 0) {
-        await addMessagesHandler(ctx, {
-          messages,
-          threadId: message.threadId,
-          agentName: message.agentName,
-          failPendingSteps: false,
-          pendingMessageId: messageId,
-          userId: message.userId,
-          embeddings: undefined,
-        });
-        return;
-      }
-    }
     if (result.status === "failed") {
-      if (message.embeddingId) {
-        const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
-        await ctx.db.delete(tableName, message.embeddingId);
-      }
       await ctx.db.patch("messages", messageId, {
         status: "failed",
         error: result.error,
-        embeddingId: undefined,
       });
     } else {
       await ctx.db.patch("messages", messageId, { status: "success" });
@@ -431,25 +327,16 @@ export const updateMessage = mutation({
       partial(
         pick(schema.tables.messages.validator.fields, [
           "message",
-          "fileIds",
           "status",
           "error",
-          "model",
-          "provider",
-          "providerOptions",
-          "finishReason",
         ]),
       ),
     ),
   },
-  returns: vMessageDoc,
+  returns: vAgentMessageDoc,
   handler: async (ctx, args) => {
     const message = await ctx.db.get("messages", args.messageId);
     assert(message, `Message ${args.messageId} not found`);
-
-    if (args.patch.fileIds) {
-      await changeRefcount(ctx, message.fileIds ?? [], args.patch.fileIds);
-    }
 
     const patch: Partial<Doc<"messages">> = { ...args.patch };
 
@@ -457,14 +344,6 @@ export const updateMessage = mutation({
       patch.message = args.patch.message;
       patch.tool = isTool(args.patch.message);
       patch.text = extractText(args.patch.message);
-    }
-
-    if (args.patch.status === "failed") {
-      if (message.embeddingId) {
-        const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
-        await ctx.db.delete(tableName, message.embeddingId);
-      }
-      patch.embeddingId = undefined;
     }
 
     await ctx.db.patch("messages", args.messageId, patch);
@@ -475,9 +354,6 @@ export const updateMessage = mutation({
 const cloneMessageArgs = {
   sourceThreadId: v.id("threads"),
   targetThreadId: v.id("threads"),
-  // defaults to false, so searching for a message by userId will not find
-  // these copies
-  copyUserIdForVectorSearch: v.optional(v.boolean()),
   // defaults to false, so tool calls & responses will be copied
   excludeToolMessages: v.optional(v.boolean()),
   // defaults to copying all messages, but you could just copy success messages.
@@ -540,34 +416,8 @@ export const cloneMessageBatch = internalMutation({
             ),
         )
         .map(async (m) => {
-          // update file refs
-          if (m.fileIds) {
-            await changeRefcount(ctx, [], m.fileIds);
-          }
-          let embeddingId: VectorTableId | undefined = undefined;
-          if (m.embeddingId) {
-            const { tableName } = getVectorIdInfo(ctx, m.embeddingId);
-            const vector = await ctx.db.get(tableName, m.embeddingId);
-            assert(vector, `Vector ${m.embeddingId} not found`);
-            const dimension = vector.vector.length;
-            validateVectorDimension(dimension);
-            embeddingId = await insertVector(ctx, dimension, {
-              ...pick(vector, ["model", "table", "vector"]),
-              userId: args.copyUserIdForVectorSearch
-                ? vector.userId
-                : undefined,
-              threadId: args.targetThreadId,
-            });
-          }
           await ctx.db.insert("messages", {
-            ...omit(m, [
-              "_id",
-              "_creationTime",
-              "threadId",
-              "order",
-              "embeddingId",
-            ]),
-            embeddingId,
+            ...omit(m, ["_id", "_creationTime", "threadId", "order"]),
             threadId: args.targetThreadId,
             order: orderOffset + m.order,
           });
@@ -633,7 +483,7 @@ export const listMessagesByThreadId = query({
     const messages = await listMessagesByThreadIdHandler(ctx, args);
     return { ...messages, page: messages.page.map(publicMessage) };
   },
-  returns: vPaginationResult(vMessageDoc),
+  returns: paginationResultValidator(vAgentMessageDoc),
 });
 
 async function listMessagesByThreadIdHandler(
@@ -686,222 +536,11 @@ async function listMessagesByThreadIdHandler(
 export const getMessagesByIds = query({
   args: { messageIds: v.array(v.id("messages")) },
   handler: async (ctx, args) => {
-    return (
-      await Promise.all(args.messageIds.map((id) => ctx.db.get("messages", id)))
-    ).map((m) => (m ? publicMessage(m) : null));
-  },
-  returns: v.array(v.union(v.null(), vMessageDoc)),
-});
-
-export const searchMessages = action({
-  args: {
-    threadId: v.optional(v.id("threads")),
-    searchAllMessagesForUserId: v.optional(v.string()),
-    targetMessageId: v.optional(v.id("messages")),
-    embedding: v.optional(v.array(v.number())),
-    embeddingModel: v.optional(v.string()),
-    text: v.optional(v.string()),
-    textSearch: v.optional(v.boolean()),
-    vectorSearch: v.optional(v.boolean()),
-    limit: v.number(),
-    vectorScoreThreshold: v.optional(v.number()),
-    messageRange: v.optional(
-      v.object({ before: v.number(), after: v.number() }),
-    ),
-  },
-  returns: v.array(vMessageDoc),
-  handler: async (ctx, args): Promise<MessageDoc[]> => {
-    assert(
-      args.searchAllMessagesForUserId || args.threadId,
-      "Specify userId or threadId",
+    return (await Promise.all(args.messageIds.map((id) => ctx.db.get("messages", id)))).map(
+      (m) => (m ? publicMessage(m) : null),
     );
-    const limit = args.limit;
-    let textSearchMessages: MessageDoc[] | undefined;
-    if (args.textSearch) {
-      textSearchMessages = await ctx.runQuery(api.messages.textSearch, {
-        searchAllMessagesForUserId: args.searchAllMessagesForUserId,
-        threadId: args.threadId,
-        targetMessageId: args.targetMessageId,
-        text: args.text,
-        limit,
-      });
-    }
-    if (args.vectorSearch) {
-      let embedding = args.embedding;
-      let model = args.embeddingModel;
-      if (!embedding) {
-        if (args.targetMessageId) {
-          const target = await ctx.runQuery(
-            api.messages.getMessageSearchFields,
-            {
-              messageId: args.targetMessageId,
-            },
-          );
-          assert(target, "Target message embedding not found.");
-          embedding = target.embedding;
-          model = target.embeddingModel;
-        }
-      }
-      assert(embedding && model, "Embedding missing");
-      const dimension = embedding.length;
-      validateVectorDimension(dimension);
-      const vectors = (
-        await searchVectors(ctx, embedding, {
-          dimension,
-          model,
-          table: "messages",
-          searchAllMessagesForUserId: args.searchAllMessagesForUserId,
-          threadId: args.threadId,
-          limit,
-        })
-      ).filter((v) => v._score > (args.vectorScoreThreshold ?? 0));
-      // Reciprocal rank fusion
-      const k = 10;
-      const textEmbeddingIds = textSearchMessages?.map((m) => m.embeddingId);
-      const vectorScores = vectors
-        .map((v, i) => ({
-          id: v._id,
-          score:
-            1 / (i + k) +
-            1 / ((textEmbeddingIds?.indexOf(v._id) ?? Infinity) + k),
-        }))
-        .sort((a, b) => b.score - a.score);
-      const embeddingIds = vectorScores.slice(0, limit).map((v) => v.id);
-      const messages: MessageDoc[] = await ctx.runQuery(
-        internal.messages._fetchSearchMessages,
-        {
-          searchAllMessagesForUserId: args.searchAllMessagesForUserId,
-          threadId: args.threadId,
-          embeddingIds,
-          textSearchMessages: textSearchMessages?.filter(
-            (m) => !embeddingIds.includes(m.embeddingId! as VectorTableId),
-          ),
-          messageRange: args.messageRange ?? DEFAULT_MESSAGE_RANGE,
-          beforeMessageId: args.targetMessageId,
-          limit,
-        },
-      );
-      return messages;
-    }
-    return textSearchMessages?.flat() ?? [];
   },
-});
-
-export const _fetchSearchMessages = internalQuery({
-  args: {
-    threadId: v.optional(v.id("threads")),
-    embeddingIds: v.array(vVectorId),
-    searchAllMessagesForUserId: v.optional(v.string()),
-    textSearchMessages: v.optional(v.array(vMessageDoc)),
-    messageRange: v.object({ before: v.number(), after: v.number() }),
-    beforeMessageId: v.optional(v.id("messages")),
-    limit: v.number(),
-  },
-  returns: v.array(vMessageDoc),
-  handler: async (ctx, args): Promise<MessageDoc[]> => {
-    const beforeMessage =
-      args.beforeMessageId &&
-      (await ctx.db.get("messages", args.beforeMessageId));
-    const { searchAllMessagesForUserId, threadId } = args;
-    assert(
-      searchAllMessagesForUserId || threadId,
-      "Specify searchAllMessagesForUserId or threadId to search",
-    );
-    let messages: MessageDoc[] = (
-      await Promise.all(
-        args.embeddingIds.map((embeddingId) =>
-          ctx.db
-            .query("messages")
-            .withIndex("embeddingId_threadId", (q) =>
-              searchAllMessagesForUserId
-                ? q.eq("embeddingId", embeddingId)
-                : q.eq("embeddingId", embeddingId).eq("threadId", threadId!),
-            )
-            // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many messages with the same embeddingId for different users / threads
-            .filter((q) =>
-              q.and(
-                q.eq(q.field("status"), "success"),
-                searchAllMessagesForUserId
-                  ? q.eq(q.field("userId"), searchAllMessagesForUserId)
-                  : q.eq(q.field("threadId"), threadId),
-              ),
-            )
-            .first(),
-        ),
-      )
-    )
-      .filter(
-        (m): m is Doc<"messages"> =>
-          m !== undefined &&
-          m !== null &&
-          !m.tool &&
-          (!beforeMessage ||
-            m.order < beforeMessage.order ||
-            (m.order === beforeMessage.order &&
-              m.stepOrder < beforeMessage.stepOrder)),
-      )
-      .map(publicMessage);
-    messages.push(...(args.textSearchMessages ?? []));
-    // TODO: prioritize more recent messages
-    messages = sorted(messages);
-    messages = messages.slice(0, args.limit);
-    // Fetch the surrounding messages
-    if (!threadId) {
-      return messages;
-    }
-    const included: Record<string, Set<number>> = {};
-    for (const m of messages) {
-      const searchId = m.threadId ?? m.userId!;
-      if (!included[searchId]) {
-        included[searchId] = new Set();
-      }
-      included[searchId].add(m.order!);
-    }
-    const ranges: Record<string, Doc<"messages">[]> = {};
-    const { before, after } = args.messageRange;
-    for (const m of messages) {
-      const searchId = m.threadId ?? m.userId!;
-      const order = m.order!;
-      let earliest = order - before;
-      let latest = order + after;
-      for (; earliest <= latest; earliest++) {
-        if (!included[searchId].has(earliest)) {
-          break;
-        }
-      }
-      for (; latest >= earliest; latest--) {
-        if (!included[searchId].has(latest)) {
-          break;
-        }
-      }
-      for (let i = earliest; i <= latest; i++) {
-        included[searchId].add(i);
-      }
-      if (earliest !== latest) {
-        const surrounding = await ctx.db
-          .query("messages")
-          .withIndex("threadId_status_tool_order_stepOrder", (q) =>
-            q
-              .eq("threadId", m.threadId as Id<"threads">)
-              .eq("status", "success")
-              .eq("tool", false)
-              .gte("order", earliest)
-              .lte("order", latest),
-          )
-          .collect();
-        if (!ranges[searchId]) {
-          ranges[searchId] = [];
-        }
-        ranges[searchId].push(...surrounding);
-      }
-    }
-    for (const r of Object.values(ranges).flat()) {
-      if (!messages.some((m) => m._id === r._id)) {
-        messages.push(publicMessage(r));
-      }
-    }
-    return sorted(messages);
-  },
+  returns: v.array(v.union(v.null(), vAgentMessageDoc)),
 });
 
 // returns ranges of messages in order of text search relevance,
@@ -920,12 +559,10 @@ export const textSearch = query({
       "Specify userId or threadId",
     );
     const targetMessage =
-      args.targetMessageId &&
-      (await ctx.db.get("messages", args.targetMessageId));
+      args.targetMessageId && (await ctx.db.get("messages", args.targetMessageId));
     const order = targetMessage?.order;
     const text = args.text || targetMessage?.text;
     if (!text) {
-      console.warn("No text to search", targetMessage, args.text);
       return [];
     }
     const messages = await ctx.db
@@ -936,7 +573,7 @@ export const textSearch = query({
           : q.search("text", text).eq("threadId", args.threadId!),
       )
       // Just in case tool messages slip through
-      // eslint-disable-next-line @convex-dev/no-filter-in-query -- we can't do this in the search index, but text search ideally isn't for really old orders
+      // eslint-disable-next-line @convex-dev/no-filter-in-query
       .filter((q) => {
         const qq = q.eq(q.field("tool"), false);
         if (order) {
@@ -955,40 +592,5 @@ export const textSearch = query({
       )
       .map(publicMessage);
   },
-  returns: v.array(vMessageDoc),
-});
-
-export const getMessageSearchFields = query({
-  args: {
-    messageId: v.id("messages"),
-  },
-  returns: v.object({
-    text: v.optional(v.string()),
-    embedding: v.optional(v.array(v.number())),
-    embeddingModel: v.optional(v.string()),
-  }),
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{
-    text?: string | undefined;
-    embedding?: number[] | undefined;
-    embeddingModel?: string | undefined;
-  }> => {
-    const message = await ctx.db.get("messages", args.messageId);
-    const text = message?.text;
-    let embedding = undefined;
-    let embeddingModel = undefined;
-    if (message?.embeddingId) {
-      const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
-      const target = await ctx.db.get(tableName, message.embeddingId);
-      embedding = target?.vector;
-      embeddingModel = target?.model;
-    }
-    return {
-      text,
-      embedding,
-      embeddingModel,
-    };
-  },
+  returns: v.array(vAgentMessageDoc),
 });

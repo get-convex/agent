@@ -2,11 +2,11 @@
   "compilerOptions": {
     "target": "ESNext",
     "paths": {
-      "@/*": ["ui/*"]
+      "@/*": ["src/*"]
     },
     "baseUrl": ".",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
@@ -17,5 +17,5 @@
     "jsx": "react-jsx",
     "noEmit": true
   },
-  "include": ["./ui", "vite.config.ts"]
+  "include": ["./src", "vite.config.ts"]
 }

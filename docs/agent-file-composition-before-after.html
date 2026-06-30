@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Core Composition: Before and After</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #11100e;
+        --panel: #1e1c19;
+        --panel-strong: #282520;
+        --ink: #f4efe7;
+        --muted: #b4aaa0;
+        --line: #464039;
+        --accent: #5f7cff;
+        --accent-2: #2fbf71;
+        --danger: #e35d4f;
+        --warn: #d8a340;
+        --code: #0c0b0a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(135deg, rgba(95, 124, 255, 0.12), transparent 28rem),
+          radial-gradient(circle at 82% 12%, rgba(47, 191, 113, 0.1), transparent 22rem),
+          var(--bg);
+        color: var(--ink);
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.5;
+      }
+
+      main {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+      }
+
+      header {
+        margin-bottom: 28px;
+        border: 1px solid var(--line);
+        background: rgba(30, 28, 25, 0.88);
+        padding: 28px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.1;
+      }
+
+      h1 {
+        max-width: 860px;
+        font-size: clamp(34px, 5vw, 68px);
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 820px;
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .rule {
+        display: inline-flex;
+        margin-top: 22px;
+        border: 1px solid rgba(47, 191, 113, 0.55);
+        background: rgba(47, 191, 113, 0.12);
+        padding: 10px 12px;
+        color: #c9f4d8;
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: rgba(30, 28, 25, 0.92);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+        padding: 18px;
+      }
+
+      .panel-header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+      }
+
+      .badge {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        padding: 5px 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .badge.before {
+        border-color: rgba(227, 93, 79, 0.6);
+        color: #ffb7ae;
+      }
+
+      .badge.after {
+        border-color: rgba(47, 191, 113, 0.6);
+        color: #bdf3cf;
+      }
+
+      .diagram {
+        padding: 18px;
+      }
+
+      .lane {
+        display: grid;
+        gap: 10px;
+      }
+
+      .node {
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        padding: 13px;
+      }
+
+      .node strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .node span {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .node.danger {
+        border-color: rgba(227, 93, 79, 0.65);
+        background: rgba(227, 93, 79, 0.11);
+      }
+
+      .node.good {
+        border-color: rgba(47, 191, 113, 0.65);
+        background: rgba(47, 191, 113, 0.11);
+      }
+
+      .arrow {
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        text-align: center;
+      }
+
+      section {
+        margin-top: 22px;
+      }
+
+      .section-title {
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .code-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .code-card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .code-label {
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-strong);
+        padding: 10px 14px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      pre {
+        margin: 0;
+        overflow: auto;
+        background: var(--code);
+        padding: 16px;
+      }
+
+      code {
+        color: #efe6d7;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .map {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        padding: 18px;
+      }
+
+      .map-card {
+        min-height: 122px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        padding: 12px;
+      }
+
+      .map-card h3 {
+        margin-bottom: 8px;
+        font-size: 15px;
+      }
+
+      .map-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .map-card.core {
+        border-color: rgba(95, 124, 255, 0.7);
+        background: rgba(95, 124, 255, 0.1);
+      }
+
+      .map-card.app {
+        border-color: rgba(47, 191, 113, 0.65);
+        background: rgba(47, 191, 113, 0.1);
+      }
+
+      .map-card.substrate {
+        border-color: rgba(216, 163, 64, 0.65);
+        background: rgba(216, 163, 64, 0.1);
+      }
+
+      .status {
+        display: inline-flex;
+        margin-bottom: 8px;
+        border: 1px solid var(--line);
+        padding: 3px 7px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .status.done {
+        border-color: rgba(47, 191, 113, 0.65);
+        color: #bdf3cf;
+      }
+
+      .status.todo {
+        border-color: rgba(216, 163, 64, 0.75);
+        color: #f1d49a;
+      }
+
+      .status.core {
+        border-color: rgba(95, 124, 255, 0.7);
+        color: #c6d0ff;
+      }
+
+      .callout {
+        border: 1px solid var(--line);
+        background: rgba(30, 28, 25, 0.92);
+        padding: 18px;
+      }
+
+      .callout h3 {
+        margin-bottom: 8px;
+      }
+
+      .callout p,
+      .callout li {
+        color: var(--muted);
+      }
+
+      .checklist {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      .checklist li {
+        margin: 8px 0;
+      }
+
+      .decision-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid var(--line);
+        background: rgba(30, 28, 25, 0.92);
+      }
+
+      .decision-table th,
+      .decision-table td {
+        border-bottom: 1px solid var(--line);
+        padding: 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .decision-table th {
+        background: var(--panel-strong);
+        color: var(--ink);
+      }
+
+      .decision-table td {
+        color: var(--muted);
+      }
+
+      .decision-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      @media (max-width: 860px) {
+        main {
+          width: min(100% - 20px, 720px);
+          padding-top: 24px;
+        }
+
+        header {
+          padding: 20px;
+        }
+
+        .grid,
+        .code-grid,
+        .split,
+        .map {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Convex Agent core boundary</p>
+        <h1>Agent core owns runs. Apps compose everything around them.</h1>
+        <p class="lede">
+          The clean Agent core owns threads, messages, runs, tools, approvals,
+          and Agent event payloads. Stream owns ordered event storage and HTTP
+          serving. Apps own retrieval, auth, rate limits, billing, API keys,
+          files, workflows, and UI/framework protocols.
+        </p>
+        <div class="rule">
+          Rule: Agent should expose durable Agent primitives, not product policy or framework glue.
+        </div>
+      </header>
+
+      <section>
+        <div class="grid">
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>Before</h2>
+                <p>Agent tries to be the whole application stack.</p>
+              </div>
+              <span class="badge before">Coupled</span>
+            </div>
+            <div class="diagram">
+              <div class="lane">
+                <div class="node">
+                  <strong>App calls Agent-specific helpers</strong>
+                  <span>Chat, files, RAG, auth, deltas, and workflows orbit Agent APIs.</span>
+                </div>
+                <div class="arrow">|</div>
+                <div class="node danger">
+                  <strong>Agent owns product policy</strong>
+                  <span>File refcounts, API keys, memories, rate limits, and wrapper protocols leak into core.</span>
+                </div>
+                <div class="arrow">|</div>
+                <div class="node danger">
+                  <strong>Agent owns transport machinery</strong>
+                  <span>WebSocket deltas, streaming messages, and HTTP framing live beside message storage.</span>
+                </div>
+                <div class="arrow">|</div>
+                <div class="node danger">
+                  <strong>Hard to compose</strong>
+                  <span>Apps must accept Agent's storage and protocol choices.</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h2>After</h2>
+                <p>Agent is a Convex primitive apps build around.</p>
+              </div>
+              <span class="badge after">Composed</span>
+            </div>
+            <div class="diagram">
+              <div class="lane">
+                <div class="node good">
+                  <strong>App owns policy</strong>
+                  <span>Auth, API keys, rate limits, billing, RAG, files, and workflows stay in app code.</span>
+                </div>
+                <div class="arrow">|</div>
+                <div class="node good">
+                  <strong>Agent owns durable runs</strong>
+                  <span>Threads, messages, runs, tools, approvals, and Agent event payloads stay in core.</span>
+                </div>
+                <div class="arrow">|</div>
+                <div class="node">
+                  <strong>Stream owns event transport</strong>
+                  <span>Run events use Stream for ordered storage, cursors, idempotent appends, and HTTP.</span>
+                </div>
+                <div class="arrow">|</div>
+                <div class="node">
+                  <strong>Adapters come later</strong>
+                  <span>Vercel, TanStack, AI SDK, and React wrappers map onto the run model.</span>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Boundary map</h2>
+        <div class="panel">
+          <div class="map">
+            <div class="map-card core">
+              <span class="status core">Agent core</span>
+              <h3>Runs and messages</h3>
+              <p>Threads, Agent messages, run lifecycle, tools, approvals, and Agent event payloads.</p>
+            </div>
+            <div class="map-card substrate">
+              <span class="status done">Moved</span>
+              <h3>Stream transport</h3>
+              <p>Old WebSocket delta tables and SSE loops give way to Stream: events, cursors, appendTail, HTTP.</p>
+            </div>
+            <div class="map-card app">
+              <span class="status done">Moved</span>
+              <h3>Context and RAG</h3>
+              <p>Embedding tables, memories, and hidden retrieval are gone. Apps pass context loaders.</p>
+            </div>
+            <div class="map-card app">
+              <span class="status done">Moved</span>
+              <h3>API keys and auth</h3>
+              <p>Playground API keys and auth policy stay outside Agent. Apps own request authorization.</p>
+            </div>
+            <div class="map-card app">
+              <span class="status done">Moved</span>
+              <h3>Files</h3>
+              <p>Agent no longer owns a files table, refcounts, or file helper APIs. Message parts hold app-owned refs.</p>
+            </div>
+            <div class="map-card app">
+              <span class="status done">Derived</span>
+              <h3>Tool-call cache</h3>
+              <p>Agent derives tool-call state from the run event stream instead of duplicating it on runs.</p>
+            </div>
+            <div class="map-card app">
+              <span class="status done">Composed</span>
+              <h3>Rate limits and billing</h3>
+              <p>Apps enforce quota before start/execute or expose usage through context and run metadata.</p>
+            </div>
+            <div class="map-card app">
+              <span class="status done">Composed</span>
+              <h3>Workflows and UI</h3>
+              <p>WorkflowManager, React, Vercel, TanStack, and AI SDK belong in app code or adapters.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Core API after separation</h2>
+        <div class="code-card">
+          <div class="code-label">App systems compose around Agent runs</div>
+          <pre><code>await rateLimiter.limit(ctx, { key: userId });
+await billing.reserve(ctx, { userId });
+
+const run = await supportAgent.runs.start(ctx, {
+  threadId,
+  userId,
+  prompt,
+  key: `client-message:${clientMessageId}`,
+});
+
+await supportAgent.runs.execute(ctx, {
+  runId: run.runId,
+  tools,
+  context: [loadRagContext, loadFileContext, loadBillingContext],
+});
+
+return await supportAgent.http(ctx, request, { runId: run.runId });</code></pre>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Files as one example</h2>
+        <div class="code-grid">
+          <article class="code-card">
+            <div class="code-label">Before: Agent-owned files</div>
+            <pre><code>const blob = new Blob([bytes], { type: mediaType });
+const storageId = await ctx.storage.store(blob);
+
+const { fileId } = await supportAgent.addFile(ctx, {
+  storageId,
+  hash,
+  filename: "receipt.pdf",
+  mediaType: "application/pdf",
+});
+
+await supportAgent.messages.save(ctx, {
+  threadId,
+  userId,
+  message: {
+    message: {
+      author: { type: "user", userId },
+      content: [
+        { type: "text", text: "Please read this receipt." },
+        {
+          type: "file",
+          fileId,
+          mediaType: "application/pdf",
+          filename: "receipt.pdf",
+        },
+      ],
+    },
+    fileIds: [fileId],
+  },
+});
+
+// Agent owns dedupe, refcounts, and cleanup.
+await supportAgent.getFile(ctx, { fileId });</code></pre>
+          </article>
+
+          <article class="code-card">
+            <div class="code-label">After: App-owned files</div>
+            <pre><code>// App code: store bytes wherever this app stores files.
+const blob = new Blob([bytes], { type: mediaType });
+const storageId = await ctx.storage.store(blob);
+
+const appFileId = await ctx.db.insert("files", {
+  storageId,
+  ownerId: userId,
+  hash,
+  mediaType: "application/pdf",
+  filename: "receipt.pdf",
+  createdAt: Date.now(),
+});
+
+await supportAgent.saveMessage(ctx, {
+  threadId,
+  userId,
+  message: {
+    author: { type: "user", userId },
+    content: [
+      { type: "text", text: "Please read this receipt." },
+      {
+        type: "file",
+        fileId: appFileId,
+        mediaType: "application/pdf",
+        filename: "receipt.pdf",
+      },
+    ],
+  },
+});
+
+// App owns authorization, dedupe, URLs, and cleanup.</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Optional context composition</h2>
+        <div class="code-card">
+          <div class="code-label">Resolve app file refs before model execution</div>
+          <pre><code>const loadFileContext: AgentContextLoader = async (ctx, { recentMessages }) => {
+  const fileIds = recentMessages.flatMap((message) =>
+    message.message.content.flatMap((part) =>
+      part.type === "file" && part.fileId ? [part.fileId] : [],
+    ),
+  );
+
+  const files = await ctx.runQuery(internal.files.describeForAgent, {
+    fileIds,
+  });
+
+  return files.map((file) => ({
+    type: "text",
+    name: "file",
+    text: `${file.filename}: ${file.summary}`,
+    metadata: { fileId: file._id, mediaType: file.mediaType },
+  }));
+};
+
+await supportAgent.runs.execute(ctx, {
+  runId,
+  context: [loadFileContext],
+});</code></pre>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Boundary decisions</h2>
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>Concern</th>
+              <th>Owner after cleanup</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Blob storage</td>
+              <td>App</td>
+              <td>Apps choose Convex storage, external storage, generated files, or URLs.</td>
+            </tr>
+            <tr>
+              <td>Dedupe and hashes</td>
+              <td>App</td>
+              <td>Dedupe policy depends on tenant, auth, retention, and product semantics.</td>
+            </tr>
+            <tr>
+              <td>File authorization</td>
+              <td>App</td>
+              <td>Agent cannot know which users may read or delete app files.</td>
+            </tr>
+            <tr>
+              <td>Message file parts</td>
+              <td>Agent</td>
+              <td>Agent stores typed message content exactly as the app supplied it.</td>
+            </tr>
+            <tr>
+              <td>Cleanup</td>
+              <td>App</td>
+              <td>Retention and deletion need app policy, not Agent guesses.</td>
+            </tr>
+            <tr>
+              <td>Retrieval and memory</td>
+              <td>App</td>
+              <td>RAG, embeddings, and memory use app-owned components exposed through context loaders.</td>
+            </tr>
+            <tr>
+              <td>Rate limits and API keys</td>
+              <td>App</td>
+              <td>Quota, billing, tenant policy, and auth happen before Agent APIs run.</td>
+            </tr>
+            <tr>
+              <td>Run event storage</td>
+              <td>Stream</td>
+              <td>Stream owns ordered events, cursors, idempotent tail appends, and HTTP serving.</td>
+            </tr>
+            <tr>
+              <td>WebSocket delta machinery</td>
+              <td>Removed</td>
+              <td>Agent should not keep streamDeltas, streamingMessages, or custom SSE/WebSocket protocol code.</td>
+            </tr>
+            <tr>
+              <td>Framework protocols</td>
+              <td>Adapters</td>
+              <td>React, Vercel, TanStack, and AI SDK map to Agent runs without shaping core.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="split">
+        <div class="callout">
+          <h3>Implementation cleanup completed</h3>
+          <ul class="checklist">
+            <li>Delete Agent's `files` table.</li>
+            <li>Delete `agent.addFile`, `agent.useExistingFile`, and `agent.getFile`.</li>
+            <li>Remove `messages.fileIds` and refcount updates from message mutations.</li>
+            <li>Keep file content parts as plain app-owned references.</li>
+            <li>Project tool-call state from run events into bounded internal rows.</li>
+            <li>Keep RAG, rate limits, API keys, workflows, and UI adapters outside Agent core.</li>
+            <li>Schema tests assert Agent no longer owns file storage.</li>
+          </ul>
+        </div>
+        <div class="callout">
+          <h3>What stays in Agent core</h3>
+          <p>
+            Agent still owns durable runs, thread messages, tool approval APIs,
+            model-agnostic event payloads, and materialized Agent messages.
+            Everything else composes through app functions or adapter packages.
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
