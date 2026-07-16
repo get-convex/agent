@@ -378,6 +378,12 @@ export const vMessage = v.union(
 );
 export type Message = Infer<typeof vMessage>;
 
+/**
+ * Provider-independent name for Agent's canonical persisted message format.
+ */
+export const vAgentMessage = vMessage;
+export type AgentMessage = Message;
+
 export type MessageContentParts =
   | Infer<typeof vTextPart>
   | Infer<typeof vImagePart>
@@ -439,6 +445,10 @@ export const vUsage = v.object({
 });
 export type Usage = Infer<typeof vUsage>;
 
+/** Provider-independent name for Agent's usage validator. */
+export const vAgentUsage = vUsage;
+export type AgentUsage = Usage;
+
 export const vLanguageModelCallWarning = v.union(
   v.object({
     type: v.literal("unsupported-setting"),
@@ -478,6 +488,10 @@ export const vMessageWithMetadata = v.object({
   fileIds: v.optional(v.array(v.string())),
 });
 export type MessageWithMetadata = Infer<typeof vMessageWithMetadata>;
+
+/** Provider-independent name for Agent's message input validator. */
+export const vAgentMessageInput = vMessageWithMetadata;
+export type AgentMessageInput = MessageWithMetadata;
 
 export const vMessageEmbeddingsWithDimension = v.object({
   model: v.string(),
@@ -670,6 +684,10 @@ export const vMessageDoc = v.object({
   id: v.optional(v.string()), // external id, e.g. from Vercel AI SDK
 });
 export type MessageDoc = Infer<typeof vMessageDoc>; // Public
+
+/** Provider-independent name for Agent's message document validator. */
+export const vAgentMessageDoc = vMessageDoc;
+export type AgentMessageDoc = MessageDoc;
 
 export const vThreadDoc = v.object({
   _id: v.string(),

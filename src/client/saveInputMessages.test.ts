@@ -18,12 +18,12 @@ const { mockSaveMessages, mockEmbedMessages } = vi.hoisted(() => ({
   mockEmbedMessages: vi.fn(),
 }));
 
-vi.mock("./messages.js", () => ({
+vi.mock("../vercel/client/messages.js", () => ({
   saveMessages: mockSaveMessages,
 }));
 
-vi.mock("./search.js", async () => {
-  const actual = await vi.importActual("./search.js");
+vi.mock("../vercel/client/search.js", async () => {
+  const actual = await vi.importActual("../vercel/client/search.js");
   return {
     ...actual,
     embedMessages: mockEmbedMessages,
