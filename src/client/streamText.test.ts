@@ -25,6 +25,11 @@ const agent = new Agent(components.agent, {
   }),
 });
 
+const emptyAgent = new Agent(components.agent, {
+  name: "empty-stream-test",
+  languageModel: mockModel({ content: [] }),
+});
+
 // Action that exercises streamText with saveStreamDeltas.returnImmediately=true.
 // It consumes the stream after streamText returns, simulating the HTTP response
 // path described in issue #265.
@@ -50,8 +55,44 @@ export const streamTextReturnImmediately = action({
   },
 });
 
+export const streamTextEmptyAwaited = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    await emptyAgent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      { saveStreamDeltas: true },
+    );
+    return { ok: true };
+  },
+});
+
+export const streamTextEmptyReturnImmediately = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    const result = await emptyAgent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      {
+        saveStreamDeltas: {
+          returnImmediately: true,
+          throttleMs: 0,
+        },
+      },
+    );
+    await result.consumeStream();
+    return { ok: true };
+  },
+});
+
 const testApi: ApiFromModules<{
-  fns: { streamTextReturnImmediately: typeof streamTextReturnImmediately };
+  fns: {
+    streamTextReturnImmediately: typeof streamTextReturnImmediately;
+    streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
+    streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
+  };
 }>["fns"] = anyApi["streamText.test"] as any;
 
 describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () => {
@@ -99,4 +140,47 @@ describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () =
       "stream should not be stuck in 'streaming' status",
     ).toHaveLength(0);
   });
+});
+
+describe("streamText with an empty final step (issue #274)", () => {
+  test.each([
+    ["awaited", testApi.streamTextEmptyAwaited],
+    ["returnImmediately", testApi.streamTextEmptyReturnImmediately],
+  ])(
+    "finalizes the pending assistant message in the %s path",
+    async (_, fn) => {
+      const t = initConvexTest(schema);
+      const threadId = await t.run(async (ctx) =>
+        createThread(ctx, components.agent, { userId: "u1" }),
+      );
+
+      await t.action(fn, { threadId });
+      await t.finishAllScheduledFunctions(() => {});
+
+      const messages = await t.run(async (ctx) =>
+        emptyAgent.listMessages(ctx, {
+          threadId,
+          paginationOpts: { cursor: null, numItems: 50 },
+        }),
+      );
+
+      expect(
+        messages.page.filter((message) => message.status === "pending"),
+      ).toHaveLength(0);
+      expect(messages.page).toContainEqual(
+        expect.objectContaining({
+          status: "success",
+          message: { role: "assistant", content: [] },
+        }),
+      );
+
+      const stillStreaming = await t.run(async (ctx) =>
+        ctx.runQuery(components.agent.streams.list, {
+          threadId,
+          statuses: ["streaming"],
+        }),
+      );
+      expect(stillStreaming).toHaveLength(0);
+    },
+  );
 });

@@ -309,7 +309,19 @@ export async function serializeResponseMessages<TOOLS extends ToolSet>(
   model: ModelOrMetadata | undefined,
   responseMessages: ModelMessage[],
 ): Promise<{ messages: MessageWithMetadata[] }> {
-  return serializeStepMessages(ctx, component, step, model, responseMessages);
+  // Keep at least one message in the output so a final empty streaming step
+  // still replaces its pending message before the stream is marked finished.
+  const messagesToSerialize: ModelMessage[] =
+    responseMessages.length > 0
+      ? responseMessages
+      : [{ role: "assistant" as const, content: [] }];
+  return serializeStepMessages(
+    ctx,
+    component,
+    step,
+    model,
+    messagesToSerialize,
+  );
 }
 
 /**
