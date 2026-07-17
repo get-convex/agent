@@ -1,6 +1,9 @@
 import type { GenericId, Infer } from "convex/values";
 import { expectTypeOf, test } from "vitest";
-import type { ContextOptions, StorageOptions } from "./client/types.js";
+import type {
+  ContextOptions,
+  StorageOptions,
+} from "./vercel/client/types.js";
 import { vContextOptions, vMessageDoc, vStorageOptions } from "./validators.js";
 import type { Doc } from "./component/_generated/dataModel.js";
 

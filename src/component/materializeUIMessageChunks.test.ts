@@ -7,8 +7,8 @@ import {
   type StreamMessage,
   vMessageWithMetadataInternal,
 } from "../validators.js";
-import { deriveUIMessagesFromDeltas } from "../deltas.js";
-import { fromUIMessages } from "../UIMessages.js";
+import { deriveUIMessagesFromDeltas } from "../vercel/deltas.js";
+import { fromUIMessages } from "../vercel/UIMessages.js";
 import {
   getPersistedStreamParts,
   materializeUIMessageChunks,

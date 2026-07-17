@@ -129,10 +129,6 @@ export {
 // a future version may put them all here or move these over there
 export { extractText, isTool, sorted } from "../shared.js";
 export {
-  vAgentMessage,
-  vAgentMessageDoc,
-  vAgentMessageInput,
-  vAgentUsage,
   vAssistantMessage,
   vContent,
   vContextOptions,

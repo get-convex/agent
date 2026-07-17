@@ -8,7 +8,7 @@ import {
   type GenericSchema,
   type SchemaDefinition,
 } from "convex/server";
-import { type AgentComponent } from "./index.js";
+import { type AgentComponent } from "./types.js";
 import { componentsGeneric } from "convex/server";
 import component from "../test.js";
 

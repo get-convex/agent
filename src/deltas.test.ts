@@ -5,7 +5,7 @@ import {
   emptyIncrementalStreamState,
   getParts,
   updateFromUIMessageChunks,
-} from "./deltas.js";
+} from "./vercel/deltas.js";
 import type { StreamDelta } from "./validators.js";
 import type { ToolUIPart, UIMessageChunk } from "ai";
 

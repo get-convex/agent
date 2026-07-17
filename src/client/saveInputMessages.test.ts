@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { saveInputMessages } from "./saveInputMessages.js";
+import { saveInputMessages } from "../vercel/client/saveInputMessages.js";
 import type { MessageDoc } from "../validators.js";
-import type { ActionCtx } from "./types.js";
+import type { ActionCtx } from "../vercel/client/types.js";
 import {
   defineSchema,
   type Auth,

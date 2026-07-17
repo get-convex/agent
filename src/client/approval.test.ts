@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Agent, createTool } from "./index.js";
+import { Agent, createTool } from "../vercel/index.js";
 import type {
   DataModelFromSchemaDefinition,
   ApiFromModules,
@@ -12,8 +12,8 @@ import { defineSchema } from "convex/server";
 import { stepCountIs, type LanguageModelUsage } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { z } from "zod/v4";
-import { mockModel } from "./mockModel.js";
-import type { UsageHandler } from "./types.js";
+import { mockModel } from "../vercel/client/mockModel.js";
+import type { UsageHandler } from "../vercel/client/types.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;

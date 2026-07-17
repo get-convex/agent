@@ -5,7 +5,7 @@ import {
   createTool,
   filterOutOrphanedToolMessages,
   type MessageDoc,
-} from "./index.js";
+} from "../vercel/index.js";
 import type { DataModelFromSchemaDefinition } from "convex/server";
 import {
   anyApi,
@@ -24,7 +24,7 @@ import { defineSchema } from "convex/server";
 import { stepCountIs } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { z } from "zod/v4";
-import { mockModel } from "./mockModel.js";
+import { mockModel } from "../vercel/client/mockModel.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;

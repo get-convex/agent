@@ -9,13 +9,16 @@ import {
   serializeContent,
   toModelMessageContent,
   autoDenyUnresolvedApprovals,
-} from "./mapping.js";
+} from "./vercel/mapping.js";
 import { api } from "./component/_generated/api.js";
-import type { AgentComponent, ActionCtx } from "./client/types.js";
+import type {
+  AgentComponent,
+  ActionCtx,
+} from "./vercel/client/types.js";
 import { vMessage, vToolResultPart } from "./validators.js";
 import fs from "fs";
 import path from "path";
-import type { SerializedContent } from "./mapping.js";
+import type { SerializedContent } from "./vercel/mapping.js";
 import { validate } from "convex-helpers/validators";
 import type { ModelMessage, StepResult, ToolResultPart, ToolSet } from "ai";
 import type { Infer } from "convex/values";

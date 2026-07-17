@@ -3,7 +3,7 @@ import {
   dedupeMessages,
   mergeUIMessages,
   type UIMessageLike,
-} from "./useUIMessages.js";
+} from "../vercel/react/useUIMessages.js";
 
 type TestMessage = {
   order: number;

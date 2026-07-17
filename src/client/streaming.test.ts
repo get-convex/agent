@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { createThread } from "./index.js";
+import { createThread } from "./threads.js";
 import type { GenericSchema, SchemaDefinition } from "convex/server";
 import { streamText } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
-import { mockModel } from "./mockModel.js";
-import { compressUIMessageChunks, DeltaStreamer } from "./streaming.js";
-import { getParts } from "../deltas.js";
+import { mockModel } from "../vercel/client/mockModel.js";
+import {
+  compressUIMessageChunks,
+  DeltaStreamer,
+} from "../vercel/client/streaming.js";
+import { getParts } from "../vercel/deltas.js";
 import type { TestConvex } from "convex-test";
 
 const defaultTestOptions = {

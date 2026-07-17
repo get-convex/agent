@@ -44,8 +44,8 @@
   "exports": {
     "./package.json": "./package.json",
     ".": {
-      "types": "./dist/client/index.d.ts",
-      "default": "./dist/client/index.js"
+      "types": "./dist/vercel/index.d.ts",
+      "default": "./dist/vercel/index.js"
     },
     "./validators": {
       "types": "./dist/validators.d.ts",

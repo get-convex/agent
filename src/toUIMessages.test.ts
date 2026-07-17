@@ -1,6 +1,6 @@
 import { assert } from "convex-helpers";
 import { describe, expect, it } from "vitest";
-import { toUIMessages } from "./UIMessages.js";
+import { toUIMessages } from "./vercel/UIMessages.js";
 import type { MessageDoc } from "./validators.js";
 
 // Helper to create a base message doc

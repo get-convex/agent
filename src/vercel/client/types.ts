@@ -42,7 +42,14 @@ import type {
   ThreadDoc,
 } from "../../validators.js";
 import type { StreamingOptions } from "./streaming.js";
-import type { ComponentApi } from "../../component/_generated/component.js";
+import type { ActionCtx } from "../../client/types.js";
+
+export type {
+  ActionCtx,
+  AgentComponent,
+  MutationCtx,
+  QueryCtx,
+} from "../../client/types.js";
 
 /**
  * Type-level check that ensures models are from AI SDK v6.
@@ -346,8 +353,6 @@ export type RawRequestResponseHandler = (
   },
 ) => void | Promise<void>;
 
-export type AgentComponent = ComponentApi;
-
 export type TextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
@@ -614,12 +619,3 @@ export type SyncStreamsReturnValue =
   | undefined;
 
 /* Type utils follow */
-export type QueryCtx = Pick<GenericActionCtx<GenericDataModel>, "runQuery">;
-export type MutationCtx = Pick<
-  GenericActionCtx<GenericDataModel>,
-  "runQuery" | "runMutation"
->;
-export type ActionCtx = Pick<
-  GenericActionCtx<GenericDataModel>,
-  "runQuery" | "runMutation" | "runAction" | "storage" | "auth"
->;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { combineUIMessages } from "./UIMessages.js";
+import { combineUIMessages } from "./vercel/UIMessages.js";
 
 describe("combineUIMessages", () => {
   it("combines messages spanning two pages correctly", () => {

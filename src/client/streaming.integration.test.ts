@@ -1,18 +1,21 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { createThread } from "./index.js";
+import { createThread } from "./threads.js";
 import type { GenericSchema, SchemaDefinition } from "convex/server";
 import { streamText } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
-import { mockModel } from "./mockModel.js";
+import { mockModel } from "../vercel/client/mockModel.js";
 import {
   compressUIMessageChunks,
   DeltaStreamer,
   mergeTransforms,
-} from "./streaming.js";
-import { getParts, deriveUIMessagesFromDeltas } from "../deltas.js";
+} from "../vercel/client/streaming.js";
+import {
+  getParts,
+  deriveUIMessagesFromDeltas,
+} from "../vercel/deltas.js";
 import type { TestConvex } from "convex-test";
 import type { StreamDelta, StreamMessage } from "../validators.js";
-import { dedupeMessages } from "../react/useUIMessages.js";
+import { dedupeMessages } from "../vercel/react/useUIMessages.js";
 
 const defaultTestOptions = {
   throttleMs: 0,

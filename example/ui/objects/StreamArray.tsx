@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useDeltaStreams } from "../../../src/react/useDeltaStreams";
+import { useDeltaStreams } from "../../../src/vercel/react/useDeltaStreams";
 import { api } from "../../convex/_generated/api";
 import { Toaster } from "../components/ui/toaster";
 import { useDemoThread } from "@/hooks/use-demo-thread";
