@@ -18,7 +18,7 @@ function messageDoc(overrides: Partial<MessageDoc>): MessageDoc {
 
 describe("listUIMessages", () => {
   test("converts a complete canonical order from the grouped query", async () => {
-    const groupedQuery = Symbol("listMessagesByThreadIdGroupedByOrder");
+    const messagesQuery = Symbol("listMessagesByThreadId");
     const runQuery = vi.fn().mockResolvedValue({
       page: [
         messageDoc({
@@ -66,7 +66,7 @@ describe("listUIMessages", () => {
     const ctx = { runQuery } as unknown as QueryCtx;
     const component = {
       messages: {
-        listMessagesByThreadIdGroupedByOrder: groupedQuery,
+        listMessagesByThreadId: messagesQuery,
       },
     } as unknown as AgentComponent;
 
@@ -75,8 +75,9 @@ describe("listUIMessages", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
-    expect(runQuery).toHaveBeenCalledWith(groupedQuery, {
+    expect(runQuery).toHaveBeenCalledWith(messagesQuery, {
       order: "desc",
+      paginationMode: "orders",
       threadId: "thread-1",
       paginationOpts: { cursor: null, numItems: 1 },
     });
@@ -98,7 +99,7 @@ describe("listUIMessages", () => {
   });
 
   test("gets a valid component cursor for a zero-item page", async () => {
-    const groupedQuery = Symbol("listMessagesByThreadIdGroupedByOrder");
+    const messagesQuery = Symbol("listMessagesByThreadId");
     const runQuery = vi.fn().mockResolvedValue({
       page: [],
       isDone: true,
@@ -108,7 +109,7 @@ describe("listUIMessages", () => {
       { runQuery } as unknown as QueryCtx,
       {
         messages: {
-          listMessagesByThreadIdGroupedByOrder: groupedQuery,
+          listMessagesByThreadId: messagesQuery,
         },
       } as unknown as AgentComponent,
       {
@@ -117,8 +118,9 @@ describe("listUIMessages", () => {
       },
     );
 
-    expect(runQuery).toHaveBeenCalledWith(groupedQuery, {
+    expect(runQuery).toHaveBeenCalledWith(messagesQuery, {
       order: "desc",
+      paginationMode: "orders",
       threadId: "thread-1",
       paginationOpts: { cursor: null, numItems: 0 },
     });

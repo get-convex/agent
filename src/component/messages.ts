@@ -724,6 +724,8 @@ export const listMessagesByThreadIdArgs = {
   excludeToolMessages: v.optional(v.boolean()),
   /** What order to sort the messages in. To get the latest, use "desc". */
   order: v.union(v.literal("asc"), v.literal("desc")),
+  /** Count either individual storage rows (default) or complete message orders. */
+  paginationMode: v.optional(v.union(v.literal("rows"), v.literal("orders"))),
   paginationOpts: v.optional(paginationOptsValidator),
   statuses: v.optional(v.array(vMessageStatus)),
   upToAndIncludingMessageId: v.optional(v.id("messages")),
@@ -731,7 +733,10 @@ export const listMessagesByThreadIdArgs = {
 export const listMessagesByThreadId = query({
   args: listMessagesByThreadIdArgs,
   handler: async (ctx, args) => {
-    const messages = await listMessagesByThreadIdHandler(ctx, args);
+    const messages =
+      args.paginationMode === "orders"
+        ? await listMessagesByThreadIdGroupedByOrderHandler(ctx, args)
+        : await listMessagesByThreadIdHandler(ctx, args);
     return { ...messages, page: messages.page.map(publicMessage) };
   },
   returns: vPaginationResult(vMessageDoc),
@@ -739,138 +744,132 @@ export const listMessagesByThreadId = query({
 
 /**
  * Paginate messages by their canonical order, returning every row for each
- * selected order. This keeps assistant and tool message sequences together
- * while leaving listMessagesByThreadId's row-based pagination unchanged.
+ * selected order. This keeps assistant and tool message sequences together.
  */
-export const listMessagesByThreadIdGroupedByOrder = query({
-  args: listMessagesByThreadIdArgs,
-  handler: async (ctx, args) => {
-    const paginationOpts = args.paginationOpts ?? {
-      numItems: DEFAULT_RECENT_MESSAGES,
-      cursor: null,
-    };
-    const cursor = decodeGroupedMessageCursor(paginationOpts.cursor);
-    const endCursor = decodeGroupedMessageCursor(paginationOpts.endCursor);
-    if (cursor?.done) {
-      return {
-        page: [],
-        isDone: true,
-        continueCursor: encodeGroupedMessageCursor(cursor),
-      };
-    }
-    if (endCursor?.done && !("order" in endCursor)) {
-      return {
-        page: [],
-        isDone: true,
-        continueCursor: encodeGroupedMessageCursor(endCursor),
-      };
-    }
-    if (paginationOpts.numItems === 0) {
-      return {
-        page: [],
-        isDone: true,
-        continueCursor: encodeGroupedMessageCursor(
-          cursor ?? { v: 1, done: true },
-        ),
-      };
-    }
-    if (paginationOpts.numItems < 0) {
-      throw new Error("paginationOpts.numItems must be non-negative");
-    }
-
-    const messages = await filteredMessagesByThreadIdStream(ctx, args);
-    const cursorOrder = cursor && "order" in cursor ? cursor.order : undefined;
-    const endOrder =
-      endCursor && "order" in endCursor ? endCursor.order : undefined;
-    const order = args.order ?? "desc";
-    const expandedMessages = messages.narrow({
-      lowerBound:
-        order === "asc"
-          ? cursorOrder === undefined
-            ? []
-            : [cursorOrder]
-          : endOrder === undefined
-            ? []
-            : [endOrder],
-      lowerBoundInclusive: order === "asc" ? cursorOrder === undefined : true,
-      upperBound:
-        order === "asc"
-          ? endOrder === undefined
-            ? []
-            : [endOrder]
-          : cursorOrder === undefined
-            ? []
-            : [cursorOrder],
-      upperBoundInclusive: order === "desc" ? cursorOrder === undefined : true,
-    });
-    const page: Doc<"messages">[] = [];
-    const pageOrders: number[] = [];
-    let rowsRead = 0;
-    let bytesRead = 0;
-    let currentOrder: number | undefined;
-    let hasMore = false;
-    const rowCap =
-      paginationOpts.maximumRowsRead ??
-      DEFAULT_GROUPED_MESSAGE_MAXIMUM_ROWS_READ;
-    const byteCap =
-      paginationOpts.maximumBytesRead ??
-      DEFAULT_GROUPED_MESSAGE_MAXIMUM_BYTES_READ;
-    for await (const message of expandedMessages) {
-      rowsRead += 1;
-      bytesRead += getConvexValueSize(message);
-      if (rowsRead > rowCap) {
-        throw new Error(
-          `Grouped message page exceeds maximumRowsRead (${rowCap}). ` +
-            "Increase paginationOpts.maximumRowsRead or request fewer orders.",
-        );
-      }
-      if (bytesRead > byteCap) {
-        throw new Error(
-          `Grouped message page exceeds maximumBytesRead (${byteCap}). ` +
-            "Increase paginationOpts.maximumBytesRead or request fewer orders.",
-        );
-      }
-      if (message.order !== currentOrder) {
-        if (
-          endCursor === null &&
-          pageOrders.length >= paginationOpts.numItems
-        ) {
-          hasMore = true;
-          break;
-        }
-        currentOrder = message.order;
-        pageOrders.push(message.order);
-      }
-      page.push(message);
-    }
-
-    const isDone = endCursor === null ? !hasMore : endCursor.done === true;
-    const lastOrder = pageOrders.at(-1);
-    const continueCursor =
-      lastOrder === undefined
-        ? encodeGroupedMessageCursor(endCursor ?? { v: 1, done: true })
-        : encodeGroupedMessageCursor({ v: 1, order: lastOrder, done: isDone });
-    const splitOrder =
-      pageOrders.length > paginationOpts.numItems
-        ? pageOrders[Math.floor((pageOrders.length - 1) / 2)]
-        : undefined;
-
+async function listMessagesByThreadIdGroupedByOrderHandler(
+  ctx: QueryCtx,
+  args: ObjectType<typeof listMessagesByThreadIdArgs>,
+) {
+  const paginationOpts = args.paginationOpts ?? {
+    numItems: DEFAULT_RECENT_MESSAGES,
+    cursor: null,
+  };
+  const cursor = decodeGroupedMessageCursor(paginationOpts.cursor);
+  const endCursor = decodeGroupedMessageCursor(paginationOpts.endCursor);
+  if (cursor?.done) {
     return {
-      page: page.map(publicMessage),
-      isDone,
-      continueCursor,
-      splitCursor:
-        splitOrder === undefined
-          ? undefined
-          : encodeGroupedMessageCursor({
-              v: 1,
-              order: splitOrder,
-              done: false,
-            }),
+      page: [],
+      isDone: true,
+      continueCursor: encodeGroupedMessageCursor(cursor),
     };
-  },
-  returns: vPaginationResult(vMessageDoc),
-});
+  }
+  if (endCursor?.done && !("order" in endCursor)) {
+    return {
+      page: [],
+      isDone: true,
+      continueCursor: encodeGroupedMessageCursor(endCursor),
+    };
+  }
+  if (paginationOpts.numItems === 0) {
+    return {
+      page: [],
+      isDone: true,
+      continueCursor: encodeGroupedMessageCursor(
+        cursor ?? { v: 1, done: true },
+      ),
+    };
+  }
+  if (paginationOpts.numItems < 0) {
+    throw new Error("paginationOpts.numItems must be non-negative");
+  }
+
+  const messages = await filteredMessagesByThreadIdStream(ctx, args);
+  const cursorOrder = cursor && "order" in cursor ? cursor.order : undefined;
+  const endOrder =
+    endCursor && "order" in endCursor ? endCursor.order : undefined;
+  const order = args.order ?? "desc";
+  const expandedMessages = messages.narrow({
+    lowerBound:
+      order === "asc"
+        ? cursorOrder === undefined
+          ? []
+          : [cursorOrder]
+        : endOrder === undefined
+          ? []
+          : [endOrder],
+    lowerBoundInclusive: order === "asc" ? cursorOrder === undefined : true,
+    upperBound:
+      order === "asc"
+        ? endOrder === undefined
+          ? []
+          : [endOrder]
+        : cursorOrder === undefined
+          ? []
+          : [cursorOrder],
+    upperBoundInclusive: order === "desc" ? cursorOrder === undefined : true,
+  });
+  const page: Doc<"messages">[] = [];
+  const pageOrders: number[] = [];
+  let rowsRead = 0;
+  let bytesRead = 0;
+  let currentOrder: number | undefined;
+  let hasMore = false;
+  const rowCap =
+    paginationOpts.maximumRowsRead ?? DEFAULT_GROUPED_MESSAGE_MAXIMUM_ROWS_READ;
+  const byteCap =
+    paginationOpts.maximumBytesRead ??
+    DEFAULT_GROUPED_MESSAGE_MAXIMUM_BYTES_READ;
+  for await (const message of expandedMessages) {
+    rowsRead += 1;
+    bytesRead += getConvexValueSize(message);
+    if (rowsRead > rowCap) {
+      throw new Error(
+        `Grouped message page exceeds maximumRowsRead (${rowCap}). ` +
+          "Increase paginationOpts.maximumRowsRead or request fewer orders.",
+      );
+    }
+    if (bytesRead > byteCap) {
+      throw new Error(
+        `Grouped message page exceeds maximumBytesRead (${byteCap}). ` +
+          "Increase paginationOpts.maximumBytesRead or request fewer orders.",
+      );
+    }
+    if (message.order !== currentOrder) {
+      if (endCursor === null && pageOrders.length >= paginationOpts.numItems) {
+        hasMore = true;
+        break;
+      }
+      currentOrder = message.order;
+      pageOrders.push(message.order);
+    }
+    page.push(message);
+  }
+
+  const isDone = endCursor === null ? !hasMore : endCursor.done === true;
+  const lastOrder = pageOrders.at(-1);
+  const continueCursor =
+    lastOrder === undefined
+      ? encodeGroupedMessageCursor(endCursor ?? { v: 1, done: true })
+      : encodeGroupedMessageCursor({ v: 1, order: lastOrder, done: isDone });
+  const splitOrder =
+    pageOrders.length > paginationOpts.numItems
+      ? pageOrders[Math.floor((pageOrders.length - 1) / 2)]
+      : undefined;
+
+  return {
+    page,
+    isDone,
+    continueCursor,
+    splitCursor:
+      splitOrder === undefined
+        ? undefined
+        : encodeGroupedMessageCursor({
+            v: 1,
+            order: splitOrder,
+            done: false,
+          }),
+  };
+}
 
 async function listMessagesByThreadIdHandler(
   ctx: QueryCtx,

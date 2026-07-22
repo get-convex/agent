@@ -31,13 +31,11 @@ export async function listUIMessages(
     paginationOpts: PaginationOptions;
   },
 ): Promise<PaginationResult<UIMessage>> {
-  const result = await ctx.runQuery(
-    component.messages.listMessagesByThreadIdGroupedByOrder,
-    {
-      order: "desc",
-      ...args,
-    },
-  );
+  const result = await ctx.runQuery(component.messages.listMessagesByThreadId, {
+    order: "desc",
+    paginationMode: "orders",
+    ...args,
+  });
   return { ...result, page: toUIMessages(result.page) };
 }
 
