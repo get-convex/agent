@@ -14,9 +14,21 @@ import {
   serializeObjectResult,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
-import type { ActionCtx, AgentComponent, Config, Options } from "./types.js";
-import type { Message, MessageDoc } from "../validators.js";
+import type {
+  ActionCtx,
+  AgentComponent,
+  CompactionOptions,
+  Config,
+  Options,
+} from "./types.js";
+import type {
+  Message,
+  MessageDoc,
+  ProviderOptions,
+} from "../validators.js";
 import {
+  DEFAULT_COMPACTION_RECENT_MESSAGES,
+  DEFAULT_COMPACTION_TRIGGER_TOKENS,
   getModelName,
   getProviderName,
   type ModelOrMetadata,
@@ -26,6 +38,56 @@ import type { Agent } from "./index.js";
 import { assert, omit } from "convex-helpers";
 import { saveInputMessages } from "./saveInputMessages.js";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
+
+/**
+ * Merge an Anthropic `compact_20260112` context-management edit into the
+ * existing provider options without clobbering other providers, other anthropic
+ * keys, or an already-present compact edit.
+ */
+export function withCompaction(
+  providerOptions: ProviderOptions | undefined,
+  compaction: CompactionOptions,
+): NonNullable<ProviderOptions> {
+  const triggerTokens =
+    compaction.triggerTokens ?? DEFAULT_COMPACTION_TRIGGER_TOKENS;
+  // compact_20260112 requires an integer trigger of at least 50_000.
+  if (!Number.isInteger(triggerTokens)) {
+    throw new Error(
+      `compaction.triggerTokens must be an integer, got ${triggerTokens}`,
+    );
+  }
+  if (triggerTokens < DEFAULT_COMPACTION_TRIGGER_TOKENS) {
+    throw new Error(
+      `compaction.triggerTokens must be at least ${DEFAULT_COMPACTION_TRIGGER_TOKENS}, got ${triggerTokens}`,
+    );
+  }
+  const anthropic = { ...((providerOptions?.anthropic ?? {}) as Record<string, unknown>) };
+  const contextManagement = {
+    ...((anthropic.contextManagement ?? {}) as { edits?: unknown[] }),
+  };
+  const existingEdits = Array.isArray(contextManagement.edits)
+    ? contextManagement.edits
+    : [];
+  const hasCompact = existingEdits.some(
+    (e) => (e as { type?: string } | null)?.type === "compact_20260112",
+  );
+  const edits = hasCompact
+    ? existingEdits
+    : [
+        ...existingEdits,
+        {
+          type: "compact_20260112",
+          trigger: { type: "input_tokens", value: triggerTokens },
+          ...(compaction.instructions
+            ? { instructions: compaction.instructions }
+            : {}),
+        },
+      ];
+  return {
+    ...providerOptions,
+    anthropic: { ...anthropic, contextManagement: { ...contextManagement, edits } },
+  } as NonNullable<ProviderOptions>;
+}
 
 export async function startGeneration<
   T,
@@ -124,8 +186,25 @@ export async function startGeneration<
         ?.userId) ??
     undefined;
 
+  // Compaction widens the recent-message window so history can reach the
+  // trigger — but only for Anthropic models, since the feature is Anthropic-only
+  // and a non-Anthropic run shouldn't pay for the larger reads.
+  const resolvedModel = args.model ?? opts.languageModel;
+  const providerName =
+    typeof resolvedModel === "string"
+      ? resolvedModel.split("/").at(0)
+      : resolvedModel?.provider;
+  const useCompactionWindow =
+    !!opts.contextOptions?.compaction &&
+    !!providerName?.startsWith("anthropic") &&
+    opts.contextOptions?.recentMessages === undefined;
+  const contextOptions = useCompactionWindow
+    ? { ...opts.contextOptions, recentMessages: DEFAULT_COMPACTION_RECENT_MESSAGES }
+    : opts.contextOptions;
+
   const context = await fetchContextWithPrompt(ctx, component, {
     ...opts,
+    contextOptions,
     userId,
     threadId,
     messages: args.messages,
@@ -185,10 +264,17 @@ export async function startGeneration<
     agent: opts.agentForToolCtx,
   } satisfies ToolCtx;
   const tools = wrapTools(toolCtx, args.tools) as Tools;
+  const baseProviderOptions =
+    (args as { providerOptions?: ProviderOptions }).providerOptions ??
+    opts.providerOptions;
+  const compaction = opts.contextOptions?.compaction;
+  const providerOptions = compaction
+    ? withCompaction(baseProviderOptions, compaction)
+    : baseProviderOptions;
   const aiArgs = {
     ...opts.callSettings,
-    providerOptions: opts.providerOptions,
     ...omit(args, ["promptMessageId", "messages", "prompt"]),
+    providerOptions,
     model,
     messages: context.messages,
     stopWhen:
