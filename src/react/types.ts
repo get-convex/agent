@@ -10,7 +10,11 @@ export type StreamQuery<Args = Record<string, unknown>> = FunctionReference<
     threadId: string;
     streamArgs?: StreamArgs; // required for stream query
   } & Args,
-  { streams: SyncStreamsReturnValue }
+  // `streams` is optional so that queries with a `returns` validator
+  // (e.g. `vStreamUIMessagesReturnValue`, where `streams` is `v.optional`)
+  // also count as stream queries. Queries that don't return `streams` at
+  // all still don't match, since there are no properties in common.
+  { streams?: SyncStreamsReturnValue }
 >;
 
 export type StreamQueryArgs<Query extends StreamQuery<unknown>> =

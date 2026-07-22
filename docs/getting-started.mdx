@@ -13,10 +13,22 @@ Run `npm create convex` or follow any of the
 
 ## Installation
 
-Install the component package:
+Install the component package, along with the AI SDK and the provider(s) you
+want to use:
 
-```ts
-npm install @convex-dev/agent
+```sh
+npm install @convex-dev/agent ai @ai-sdk/openai
+```
+
+Note on versions: this component requires AI SDK v6 (`ai@^6`), which pairs
+with **v3.x** of the AI SDK provider packages, e.g. `@ai-sdk/openai@^3`,
+`@ai-sdk/anthropic@^3`, `@ai-sdk/google@^3` (and `@ai-sdk/provider-utils@^4`).
+If npm reports an unresolvable peer dependency conflict on `ai`, you likely
+installed a provider major version from a different AI SDK generation - fix it
+by installing the provider at `^3`, e.g.:
+
+```sh
+npm install ai@^6 @ai-sdk/anthropic@^3
 ```
 
 Create a `convex.config.ts` file in your app's `convex/` folder and install the

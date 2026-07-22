@@ -86,15 +86,23 @@ export type UIMessagesQueryResult<
  *     streamArgs: vStreamArgs,
  *     ... other arguments you want
  *   },
+ *   returns: vStreamUIMessagesReturnValue, // optional
  *   handler: async (ctx, args) => {
- *     // await authorizeThreadAccess(ctx, threadId);
+ *     // await authorizeThreadAccess(ctx, args.threadId);
+ *     return listUIMessagesWithStreams(ctx, components.agent, args);
+ *   },
+ * });
+ * ```
+ *
+ * To filter or modify the messages & stream deltas, compose it yourself:
+ * ```ts
+ *   handler: async (ctx, args) => {
  *     // NOTE: listUIMessages returns UIMessages, not MessageDocs.
  *     const paginated = await listUIMessages(ctx, components.agent, args);
  *     const streams = await syncStreams(ctx, components.agent, args);
  *     // Here you could filter out / modify the documents & stream deltas.
  *     return { ...paginated, streams };
  *   },
- * });
  * ```
  *
  * Then the hook can be used like this:

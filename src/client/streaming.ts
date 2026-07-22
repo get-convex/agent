@@ -8,16 +8,21 @@ import {
   type UIMessageChunk,
 } from "ai";
 import { v } from "convex/values";
+import type { PaginationOptions, PaginationResult } from "convex/server";
 import {
   vMessageDoc,
   vPaginationResult,
   vStreamDelta,
   vStreamMessage,
+  type MessageDoc,
+  type MessageStatus,
   type ProviderOptions,
   type StreamArgs,
   type StreamDelta,
   type StreamMessage,
 } from "../validators.js";
+import { vUIMessage, type UIMessage } from "../UIMessages.js";
+import { listMessages, listUIMessages } from "./messages.js";
 import type {
   ActionCtx,
   AgentComponent,
@@ -26,15 +31,131 @@ import type {
   SyncStreamsReturnValue,
 } from "./types.js";
 
+/**
+ * A validator for the `streams` field returned from {@link syncStreams},
+ * to use in the `returns` validator of a streaming query.
+ * Matches the {@link SyncStreamsReturnValue} type.
+ */
+export const vSyncStreamsReturnValue = v.optional(
+  v.union(
+    v.object({ kind: v.literal("list"), messages: v.array(vStreamMessage) }),
+    v.object({ kind: v.literal("deltas"), deltas: v.array(vStreamDelta) }),
+  ),
+);
+
+/**
+ * The `returns` validator for a streaming query that returns MessageDocs,
+ * e.g. one whose handler returns {@link listMessagesWithStreams}
+ * (used with the `useThreadMessages` React hook).
+ */
 export const vStreamMessagesReturnValue = v.object({
   ...vPaginationResult(vMessageDoc).fields,
-  streams: v.optional(
-    v.union(
-      v.object({ kind: v.literal("list"), messages: v.array(vStreamMessage) }),
-      v.object({ kind: v.literal("deltas"), deltas: v.array(vStreamDelta) }),
-    ),
-  ),
+  streams: vSyncStreamsReturnValue,
 });
+
+/**
+ * The `returns` validator for a streaming query that returns UIMessages,
+ * e.g. one whose handler returns {@link listUIMessagesWithStreams}
+ * (used with the `useUIMessages` React hook).
+ */
+export const vStreamUIMessagesReturnValue = v.object({
+  ...vPaginationResult(vUIMessage).fields,
+  streams: vSyncStreamsReturnValue,
+});
+
+/**
+ * List a page of UIMessages for a thread along with any streaming message
+ * deltas: everything the `useUIMessages` React hook needs when passed
+ * `stream: true`. The return value satisfies
+ * {@link vStreamUIMessagesReturnValue}, so a complete streaming query is:
+ *
+ * ```ts
+ * export const listThreadMessages = query({
+ *   args: {
+ *     threadId: v.string(),
+ *     paginationOpts: paginationOptsValidator,
+ *     streamArgs: vStreamArgs,
+ *   },
+ *   returns: vStreamUIMessagesReturnValue,
+ *   handler: async (ctx, args) => {
+ *     // await authorizeThreadAccess(ctx, args.threadId);
+ *     return listUIMessagesWithStreams(ctx, components.agent, args);
+ *   },
+ * });
+ * ```
+ *
+ * If you want to filter or enrich the results, you can instead compose
+ * {@link listUIMessages} and {@link syncStreams} yourself and return
+ * `{ ...paginated, streams }`.
+ *
+ * @param ctx A ctx object from a query, mutation, or action.
+ * @param component The agent component, usually `components.agent`.
+ * @param args.threadId The thread to list messages & streams for.
+ * @param args.paginationOpts Pagination options (e.g. from usePaginatedQuery).
+ * @param args.streamArgs The stream arguments passed from the client hook.
+ * @param args.includeStatuses Which stream statuses to include
+ *   (defaults to only "streaming").
+ * @returns The paginated UIMessages with a `streams` field of deltas.
+ */
+export async function listUIMessagesWithStreams(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  component: AgentComponent,
+  args: {
+    threadId: string;
+    paginationOpts: PaginationOptions;
+    streamArgs?: StreamArgs | undefined;
+    includeStatuses?: ("streaming" | "finished" | "aborted")[];
+  },
+): Promise<
+  PaginationResult<UIMessage> & { streams: SyncStreamsReturnValue }
+> {
+  const [paginated, streams] = await Promise.all([
+    listUIMessages(ctx, component, args),
+    syncStreams(ctx, component, args),
+  ]);
+  return { ...paginated, streams };
+}
+
+/**
+ * List a page of MessageDocs for a thread along with any streaming message
+ * deltas: everything the `useThreadMessages` React hook needs when passed
+ * `stream: true`. The return value satisfies
+ * {@link vStreamMessagesReturnValue}.
+ *
+ * If you use the `useUIMessages` hook, use
+ * {@link listUIMessagesWithStreams} instead.
+ *
+ * @param ctx A ctx object from a query, mutation, or action.
+ * @param component The agent component, usually `components.agent`.
+ * @param args.threadId The thread to list messages & streams for.
+ * @param args.paginationOpts Pagination options (e.g. from usePaginatedQuery).
+ * @param args.streamArgs The stream arguments passed from the client hook.
+ * @param args.excludeToolMessages Whether to exclude tool messages.
+ * @param args.statuses What message statuses to include. All by default.
+ * @param args.includeStatuses Which stream statuses to include
+ *   (defaults to only "streaming").
+ * @returns The paginated MessageDocs with a `streams` field of deltas.
+ */
+export async function listMessagesWithStreams(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  component: AgentComponent,
+  args: {
+    threadId: string;
+    paginationOpts: PaginationOptions;
+    streamArgs?: StreamArgs | undefined;
+    excludeToolMessages?: boolean;
+    statuses?: MessageStatus[];
+    includeStatuses?: ("streaming" | "finished" | "aborted")[];
+  },
+): Promise<
+  PaginationResult<MessageDoc> & { streams: SyncStreamsReturnValue }
+> {
+  const [paginated, streams] = await Promise.all([
+    listMessages(ctx, component, args),
+    syncStreams(ctx, component, args),
+  ]);
+  return { ...paginated, streams };
+}
 
 /**
  * A function that handles fetching stream deltas, used with the React hooks
