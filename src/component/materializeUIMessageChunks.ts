@@ -368,6 +368,10 @@ export function materializeUIMessageChunks(
           invocation.approval = { id: stringField(chunk, "approvalId") };
           break;
         }
+        case "tool-approval-response":
+          throw new Error(
+            'materializeUIMessageChunks: persisted chunk type "tool-approval-response" is not part of the pinned AI SDK 6.0.35 UIMessageChunk wire format',
+          );
         case "tool-output-denied": {
           const invocation = requireToolPart(
             toolPart(stringField(chunk, "toolCallId")),

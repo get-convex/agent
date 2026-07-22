@@ -411,6 +411,24 @@ describe("materializeUIMessageChunks", () => {
     ).toThrow("missing tool call");
   });
 
+  it("rejects approval responses outside the pinned AI SDK 6 wire format", () => {
+    expect(() =>
+      materializeUIMessageChunks(
+        stream,
+        [
+          {
+            type: "tool-approval-response",
+            approvalId: "approval-1",
+            approved: true,
+          },
+        ],
+        { status: "failed" },
+      ),
+    ).toThrow(
+      'persisted chunk type "tool-approval-response" is not part of the pinned AI SDK 6.0.35 UIMessageChunk wire format',
+    );
+  });
+
   it("rejects a start chunk that changes the recovered message id", () => {
     expect(() =>
       materializeUIMessageChunks(
