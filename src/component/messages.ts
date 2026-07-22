@@ -4,7 +4,7 @@ import {
   paginationOptsValidator,
   type WithoutSystemFields,
 } from "convex/server";
-import type { ObjectType } from "convex/values";
+import type { ObjectType, Value } from "convex/values";
 import {
   DEFAULT_MESSAGE_RANGE,
   DEFAULT_RECENT_MESSAGES,
@@ -82,6 +82,107 @@ export const deleteByIds = mutation({
 export const messageStatuses = vMessageDoc.fields.status.members.map(
   (m) => m.value,
 );
+
+// These caps bound the canonical documents materialized for a grouped page.
+// They do not attempt to account for rows prefetched internally by merged
+// streams. Defaults remain comfortably below Convex's transaction limits.
+const DEFAULT_GROUPED_MESSAGE_MAXIMUM_ROWS_READ = 1024;
+const DEFAULT_GROUPED_MESSAGE_MAXIMUM_BYTES_READ = 8 * 1024 * 1024;
+const GROUPED_MESSAGE_CURSOR_PREFIX = "agent-message-order:";
+
+function getUtf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+/** Matches Convex's encoded Value size for already-materialized documents. */
+function getConvexValueSize(value: Value | undefined): number {
+  if (value === undefined) {
+    return 0;
+  }
+  if (value === null || typeof value === "boolean") {
+    return 1;
+  }
+  if (typeof value === "bigint" || typeof value === "number") {
+    return 9;
+  }
+  if (typeof value === "string") {
+    return 2 + getUtf8ByteLength(value);
+  }
+  if (value instanceof ArrayBuffer) {
+    return 2 + value.byteLength;
+  }
+  if (Array.isArray(value)) {
+    return (
+      2 +
+      value.reduce<number>(
+        (size, element) => size + getConvexValueSize(element),
+        0,
+      )
+    );
+  }
+  if (
+    typeof value === "object" &&
+    (Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null)
+  ) {
+    let size = 2;
+    for (const [key, fieldValue] of Object.entries(value)) {
+      if (fieldValue !== undefined) {
+        size +=
+          getUtf8ByteLength(key) + 1 + getConvexValueSize(fieldValue as Value);
+      }
+    }
+    return size;
+  }
+  throw new Error("Unsupported Convex value in grouped message page");
+}
+
+type GroupedMessageCursor =
+  | { v: 1; order: number; done: boolean }
+  | { v: 1; done: true };
+
+function encodeGroupedMessageCursor(cursor: GroupedMessageCursor): string {
+  return GROUPED_MESSAGE_CURSOR_PREFIX + JSON.stringify(cursor);
+}
+
+function decodeGroupedMessageCursor(
+  cursor: string | null | undefined,
+): GroupedMessageCursor | null {
+  if (cursor === null || cursor === undefined) {
+    return null;
+  }
+  try {
+    if (!cursor.startsWith(GROUPED_MESSAGE_CURSOR_PREFIX)) {
+      throw new Error();
+    }
+    const parsed: unknown = JSON.parse(
+      cursor.slice(GROUPED_MESSAGE_CURSOR_PREFIX.length),
+    );
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("v" in parsed) ||
+      parsed.v !== 1 ||
+      !("done" in parsed) ||
+      typeof parsed.done !== "boolean"
+    ) {
+      throw new Error();
+    }
+    if ("order" in parsed) {
+      if (typeof parsed.order !== "number" || !Number.isFinite(parsed.order)) {
+        throw new Error();
+      }
+      return { v: 1, order: parsed.order, done: parsed.done };
+    }
+    if (parsed.done === true) {
+      return { v: 1, done: true };
+    }
+  } catch {
+    // Fall through to the stable error below. The React pagination helper
+    // recognizes InvalidCursor and restarts pagination from the first page.
+  }
+  throw new Error("InvalidCursor: invalid grouped message order cursor");
+}
 
 export const deleteByOrder = mutation({
   args: {
@@ -636,7 +737,159 @@ export const listMessagesByThreadId = query({
   returns: vPaginationResult(vMessageDoc),
 });
 
+/**
+ * Paginate messages by their canonical order, returning every row for each
+ * selected order. This keeps assistant and tool message sequences together
+ * while leaving listMessagesByThreadId's row-based pagination unchanged.
+ */
+export const listMessagesByThreadIdGroupedByOrder = query({
+  args: listMessagesByThreadIdArgs,
+  handler: async (ctx, args) => {
+    const paginationOpts = args.paginationOpts ?? {
+      numItems: DEFAULT_RECENT_MESSAGES,
+      cursor: null,
+    };
+    const cursor = decodeGroupedMessageCursor(paginationOpts.cursor);
+    const endCursor = decodeGroupedMessageCursor(paginationOpts.endCursor);
+    if (cursor?.done) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: encodeGroupedMessageCursor(cursor),
+      };
+    }
+    if (endCursor?.done && !("order" in endCursor)) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: encodeGroupedMessageCursor(endCursor),
+      };
+    }
+    if (paginationOpts.numItems === 0) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: encodeGroupedMessageCursor(
+          cursor ?? { v: 1, done: true },
+        ),
+      };
+    }
+    if (paginationOpts.numItems < 0) {
+      throw new Error("paginationOpts.numItems must be non-negative");
+    }
+
+    const messages = await filteredMessagesByThreadIdStream(ctx, args);
+    const cursorOrder = cursor && "order" in cursor ? cursor.order : undefined;
+    const endOrder =
+      endCursor && "order" in endCursor ? endCursor.order : undefined;
+    const order = args.order ?? "desc";
+    const expandedMessages = messages.narrow({
+      lowerBound:
+        order === "asc"
+          ? cursorOrder === undefined
+            ? []
+            : [cursorOrder]
+          : endOrder === undefined
+            ? []
+            : [endOrder],
+      lowerBoundInclusive: order === "asc" ? cursorOrder === undefined : true,
+      upperBound:
+        order === "asc"
+          ? endOrder === undefined
+            ? []
+            : [endOrder]
+          : cursorOrder === undefined
+            ? []
+            : [cursorOrder],
+      upperBoundInclusive: order === "desc" ? cursorOrder === undefined : true,
+    });
+    const page: Doc<"messages">[] = [];
+    const pageOrders: number[] = [];
+    let rowsRead = 0;
+    let bytesRead = 0;
+    let currentOrder: number | undefined;
+    let hasMore = false;
+    const rowCap =
+      paginationOpts.maximumRowsRead ??
+      DEFAULT_GROUPED_MESSAGE_MAXIMUM_ROWS_READ;
+    const byteCap =
+      paginationOpts.maximumBytesRead ??
+      DEFAULT_GROUPED_MESSAGE_MAXIMUM_BYTES_READ;
+    for await (const message of expandedMessages) {
+      rowsRead += 1;
+      bytesRead += getConvexValueSize(message);
+      if (rowsRead > rowCap) {
+        throw new Error(
+          `Grouped message page exceeds maximumRowsRead (${rowCap}). ` +
+            "Increase paginationOpts.maximumRowsRead or request fewer orders.",
+        );
+      }
+      if (bytesRead > byteCap) {
+        throw new Error(
+          `Grouped message page exceeds maximumBytesRead (${byteCap}). ` +
+            "Increase paginationOpts.maximumBytesRead or request fewer orders.",
+        );
+      }
+      if (message.order !== currentOrder) {
+        if (
+          endCursor === null &&
+          pageOrders.length >= paginationOpts.numItems
+        ) {
+          hasMore = true;
+          break;
+        }
+        currentOrder = message.order;
+        pageOrders.push(message.order);
+      }
+      page.push(message);
+    }
+
+    const isDone = endCursor === null ? !hasMore : endCursor.done === true;
+    const lastOrder = pageOrders.at(-1);
+    const continueCursor =
+      lastOrder === undefined
+        ? encodeGroupedMessageCursor(endCursor ?? { v: 1, done: true })
+        : encodeGroupedMessageCursor({ v: 1, order: lastOrder, done: isDone });
+    const splitOrder =
+      pageOrders.length > paginationOpts.numItems
+        ? pageOrders[Math.floor((pageOrders.length - 1) / 2)]
+        : undefined;
+
+    return {
+      page: page.map(publicMessage),
+      isDone,
+      continueCursor,
+      splitCursor:
+        splitOrder === undefined
+          ? undefined
+          : encodeGroupedMessageCursor({
+              v: 1,
+              order: splitOrder,
+              done: false,
+            }),
+    };
+  },
+  returns: vPaginationResult(vMessageDoc),
+});
+
 async function listMessagesByThreadIdHandler(
+  ctx: QueryCtx,
+  args: ObjectType<typeof listMessagesByThreadIdArgs>,
+) {
+  const stream = await filteredMessagesByThreadIdStream(ctx, args);
+  const messages = await stream.paginate(
+    args.paginationOpts ?? {
+      numItems: DEFAULT_RECENT_MESSAGES,
+      cursor: null,
+    },
+  );
+  if (messages.page.length === 0) {
+    messages.isDone = true;
+  }
+  return messages;
+}
+
+async function filteredMessagesByThreadIdStream(
   ctx: QueryCtx,
   args: ObjectType<typeof listMessagesByThreadIdArgs>,
 ) {
@@ -671,16 +924,7 @@ async function listMessagesByThreadIdHandler(
         ),
     ),
   );
-  const messages = await mergedStream(streams, ["order", "stepOrder"]).paginate(
-    args.paginationOpts ?? {
-      numItems: DEFAULT_RECENT_MESSAGES,
-      cursor: null,
-    },
-  );
-  if (messages.page.length === 0) {
-    messages.isDone = true;
-  }
-  return messages;
+  return mergedStream(streams, ["order", "stepOrder"]);
 }
 
 export const getMessagesByIds = query({

@@ -8,10 +8,7 @@ import {
 } from "../../validators.js";
 import { serializeMessage } from "../mapping.js";
 import { toUIMessages, type UIMessage } from "../UIMessages.js";
-import {
-  listMessages,
-  saveMessages as saveCanonicalMessages,
-} from "../../client/messages.js";
+import { saveMessages as saveCanonicalMessages } from "../../client/messages.js";
 import type {
   AgentComponent,
   MutationCtx,
@@ -21,6 +18,11 @@ import type {
 
 export { listMessages } from "../../client/messages.js";
 
+/**
+ * List UI messages without splitting an assistant/tool sequence across pages.
+ * paginationOpts.numItems counts canonical message orders, so a page may
+ * contain more than that number of UI messages.
+ */
 export async function listUIMessages(
   ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
@@ -29,7 +31,13 @@ export async function listUIMessages(
     paginationOpts: PaginationOptions;
   },
 ): Promise<PaginationResult<UIMessage>> {
-  const result = await listMessages(ctx, component, args);
+  const result = await ctx.runQuery(
+    component.messages.listMessagesByThreadIdGroupedByOrder,
+    {
+      order: "desc",
+      ...args,
+    },
+  );
   return { ...result, page: toUIMessages(result.page) };
 }
 
