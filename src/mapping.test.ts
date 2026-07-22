@@ -5,6 +5,7 @@ import {
   toModelMessageDataOrUrl,
   serializeMessage,
   serializeNewMessagesInStep,
+  serializeResponseMessages,
   toModelMessage,
   serializeContent,
   toModelMessageContent,
@@ -349,6 +350,17 @@ describe("mapping", () => {
       if (!Array.isArray(c)) return ["text"];
       return c.map((p: { type?: string }) => p.type ?? "?");
     };
+
+    test("explicitly provided empty response messages stay empty", async () => {
+      const res = await serializeResponseMessages(
+        ctx,
+        component,
+        makeStep([]),
+        undefined,
+        [],
+      );
+      expect(res.messages).toEqual([]);
+    });
 
     test("first step (count=0) serializes all response messages", async () => {
       const res = await serializeNewMessagesInStep(

@@ -27,7 +27,10 @@ const agent = new Agent(components.agent, {
 
 const emptyAgent = new Agent(components.agent, {
   name: "empty-stream-test",
-  languageModel: mockModel({ content: [] }),
+  languageModel: mockModel({
+    content: [],
+    providerMetadata: { mock: { emptyResponse: true } },
+  }),
 });
 
 // Action that exercises streamText with saveStreamDeltas.returnImmediately=true.
@@ -171,6 +174,14 @@ describe("streamText with an empty final step (issue #274)", () => {
         expect.objectContaining({
           status: "success",
           message: { role: "assistant", content: [] },
+          model: "mock-model-id",
+          provider: "mock-provider",
+          providerMetadata: { mock: { emptyResponse: true } },
+          usage: expect.objectContaining({
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+          }),
         }),
       );
 

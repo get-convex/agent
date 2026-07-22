@@ -252,12 +252,19 @@ export async function startGeneration<
             previousResponseMessageCount,
           );
           previousResponseMessageCount = allResponseMessages.length;
+          // A completed step still needs a durable assistant result when the
+          // provider emits no response messages. Materialize that result at
+          // the save boundary so serialization preserves its explicit input.
+          const responseMessagesToSave: ModelMessage[] =
+            newResponseMessages.length > 0
+              ? newResponseMessages
+              : [{ role: "assistant", content: [] }];
           serialized = await serializeResponseMessages(
             ctx,
             component,
             toSave.step,
             activeModel,
-            newResponseMessages,
+            responseMessagesToSave,
           );
         }
         const embeddings = await embedMessages(
