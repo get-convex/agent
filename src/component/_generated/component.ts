@@ -148,6 +148,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
             model: string;
@@ -4770,6 +4771,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | string
               | string
               | string
+              | string
             >;
           },
           null,
@@ -4792,6 +4794,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
           },
@@ -4811,6 +4814,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
             vectors: Array<{
@@ -4823,6 +4827,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             }>;
           },
           Array<
+            | string
             | string
             | string
             | string
@@ -4853,12 +4858,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
           },
           {
             continueCursor: string;
             ids: Array<
+              | string
               | string
               | string
               | string
@@ -4880,6 +4887,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           {
             vectors: Array<{
               id:
+                | string
                 | string
                 | string
                 | string
