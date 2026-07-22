@@ -1094,4 +1094,124 @@ describe("agent", () => {
     );
     expect(remainingMessages.page).toHaveLength(1);
   });
+
+  // Regression test for #256: when searching across threads with
+  // searchAllMessagesForUserId, the targetMessage's order should not filter
+  // out messages from other threads (their order sequences are independent).
+  test("textSearch returns cross-thread matches even when target order is lower", async () => {
+    const t = convexTest(schema, modules);
+    const userId = "user-256";
+
+    // Old thread: build up several messages so the matching one has a high order.
+    const oldThread = await t.mutation(api.threads.createThread, { userId });
+    for (let i = 0; i < 5; i++) {
+      await t.mutation(api.messages.addMessages, {
+        threadId: oldThread._id as Id<"threads">,
+        userId,
+        messages: [
+          { message: { role: "user", content: `filler message ${i}` } },
+        ],
+      });
+    }
+    await t.mutation(api.messages.addMessages, {
+      threadId: oldThread._id as Id<"threads">,
+      userId,
+      messages: [
+        {
+          message: {
+            role: "user",
+            content:
+              "tom and jerry are both amazing high-ticket coaches and educators",
+          },
+        },
+      ],
+    });
+
+    // New thread: only one message — its order will be 0, lower than the
+    // matching message in the old thread.
+    const newThread = await t.mutation(api.threads.createThread, { userId });
+    const { messages: newMessages } = await t.mutation(
+      api.messages.addMessages,
+      {
+        threadId: newThread._id as Id<"threads">,
+        userId,
+        messages: [
+          {
+            message: {
+              role: "user",
+              content: "what do you remember about high-ticket coaches",
+            },
+          },
+        ],
+      },
+    );
+    const targetMessageId = newMessages[0]._id as Id<"messages">;
+
+    const results = await t.query(api.messages.textSearch, {
+      searchAllMessagesForUserId: userId,
+      targetMessageId,
+      text: "high-ticket coaches",
+      limit: 10,
+    });
+
+    // The cross-thread match should NOT be filtered out by the target's order.
+    expect(
+      results.some((m) =>
+        m.text?.includes("tom and jerry are both amazing high-ticket coaches"),
+      ),
+    ).toBe(true);
+    // The target message itself must still be excluded.
+    expect(results.some((m) => m._id === targetMessageId)).toBe(false);
+  });
+
+  // Regression test for #256: same-thread order filter must still work even
+  // when searching across threads.
+  test("textSearch still filters same-thread results past the target order", async () => {
+    const t = convexTest(schema, modules);
+    const userId = "user-256-same";
+
+    const thread = await t.mutation(api.threads.createThread, { userId });
+    // earlier match
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      userId,
+      messages: [
+        { message: { role: "user", content: "earlier high-ticket match" } },
+      ],
+    });
+    // target
+    const { messages: targetMessages } = await t.mutation(
+      api.messages.addMessages,
+      {
+        threadId: thread._id as Id<"threads">,
+        userId,
+        messages: [
+          { message: { role: "user", content: "target high-ticket message" } },
+        ],
+      },
+    );
+    // later match in same thread — should be filtered out
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      userId,
+      messages: [
+        { message: { role: "user", content: "later high-ticket match" } },
+      ],
+    });
+
+    const results = await t.query(api.messages.textSearch, {
+      searchAllMessagesForUserId: userId,
+      targetMessageId: targetMessages[0]._id as Id<"messages">,
+      text: "high-ticket",
+      limit: 10,
+    });
+
+    expect(results.some((m) => m.text === "earlier high-ticket match")).toBe(
+      true,
+    );
+    expect(results.some((m) => m.text === "later high-ticket match")).toBe(
+      false,
+    );
+    expect(results.some((m) => m._id === targetMessages[0]._id)).toBe(false);
+  });
 });
