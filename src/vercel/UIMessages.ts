@@ -153,6 +153,7 @@ function fromSourceParts(parts: UIMessage["parts"]): Infer<typeof vSource>[] {
           id: part.sourceId,
           providerMetadata: part.providerMetadata,
           title: part.title,
+          filename: part.filename,
         } satisfies Infer<typeof vSource>;
       }
       return undefined;

@@ -32,9 +32,9 @@ export async function listUIMessages(
   },
 ): Promise<PaginationResult<UIMessage>> {
   const result = await ctx.runQuery(component.messages.listMessagesByThreadId, {
+    ...args,
     order: "desc",
     paginationMode: "orders",
-    ...args,
   });
   return { ...result, page: toUIMessages(result.page) };
 }

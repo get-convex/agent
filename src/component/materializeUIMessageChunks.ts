@@ -522,6 +522,7 @@ function partsToMessages(
             id: part.sourceId,
             providerMetadata: part.providerMetadata,
             title: part.title,
+            filename: part.filename,
           },
     );
 

@@ -128,4 +128,35 @@ describe("listUIMessages", () => {
     expect(result.isDone).toBe(true);
     expect(result.continueCursor).toContain("agent-message-order:");
   });
+
+  test("does not allow runtime-only arguments to override grouped pagination", async () => {
+    const messagesQuery = Symbol("listMessagesByThreadId");
+    const runQuery = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: true,
+      continueCursor: "done",
+    });
+
+    await listUIMessages(
+      { runQuery } as unknown as QueryCtx,
+      {
+        messages: {
+          listMessagesByThreadId: messagesQuery,
+        },
+      } as unknown as AgentComponent,
+      {
+        threadId: "thread-1",
+        paginationOpts: { cursor: null, numItems: 1 },
+        order: "asc",
+        paginationMode: "messages",
+      } as Parameters<typeof listUIMessages>[2],
+    );
+
+    expect(runQuery).toHaveBeenCalledWith(messagesQuery, {
+      threadId: "thread-1",
+      paginationOpts: { cursor: null, numItems: 1 },
+      order: "desc",
+      paginationMode: "orders",
+    });
+  });
 });

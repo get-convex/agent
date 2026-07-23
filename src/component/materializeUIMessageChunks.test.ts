@@ -114,6 +114,12 @@ describe("materializeUIMessageChunks", () => {
     const actual = materializeUIMessageChunks(stream, chunks, metadata);
 
     expect(actual).toEqual(await materializeWithAiSdk(chunks, metadata));
+    expect(actual[0]?.sources).toContainEqual(
+      expect.objectContaining({
+        sourceType: "document",
+        filename: "document.txt",
+      }),
+    );
     expectValidMessages(actual);
   });
 
