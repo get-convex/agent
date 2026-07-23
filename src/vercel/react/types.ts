@@ -1,7 +1,7 @@
 import type { BetterOmit, Expand } from "convex-helpers";
 import type { FunctionArgs, FunctionReference } from "convex/server";
 import type { SyncStreamsReturnValue } from "../client/types.js";
-import type { StreamArgs } from "../validators.js";
+import type { StreamArgs } from "../../validators.js";
 
 export type StreamQuery<Args = Record<string, unknown>> = FunctionReference<
   "query",

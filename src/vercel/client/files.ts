@@ -5,14 +5,14 @@ import type {
   ModelMessage,
   UserContent,
 } from "ai";
-import type { Id } from "../component/_generated/dataModel.js";
+import type { Id } from "../../component/_generated/dataModel.js";
 import type {
   ActionCtx,
   AgentComponent,
   MutationCtx,
   QueryCtx,
 } from "./types.js";
-import type { Message } from "../validators.js";
+import type { Message } from "../../validators.js";
 import { assert } from "convex-helpers";
 import type { StorageReader } from "convex/server";
 

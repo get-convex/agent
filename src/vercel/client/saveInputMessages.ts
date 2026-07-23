@@ -1,5 +1,5 @@
 import { type ModelMessage } from "ai";
-import type { MessageDoc } from "../validators.js";
+import type { MessageDoc } from "../../validators.js";
 import { embedMessages, getPromptArray } from "./search.js";
 import type {
   ActionCtx,
@@ -8,9 +8,9 @@ import type {
   MutationCtx,
 } from "./types.js";
 import { saveMessages } from "./messages.js";
-import type { Message } from "../validators.js";
+import type { Message } from "../../validators.js";
 import { assert } from "convex-helpers";
-import type { VectorDimension } from "../component/vector/tables.js";
+import type { VectorDimension } from "../../component/vector/tables.js";
 
 export async function saveInputMessages(
   ctx: MutationCtx | ActionCtx,

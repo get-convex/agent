@@ -101,7 +101,7 @@ export class MockLanguageModel implements LanguageModelV3 {
     const fail =
       args.fail &&
       (args.fail === true ||
-        !args.fail.probability ||
+        args.fail.probability === undefined ||
         Math.random() < args.fail.probability);
     const error =
       (typeof args.fail === "object" && args.fail.error) ||

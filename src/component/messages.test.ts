@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
+import type { PaginationResult } from "convex/server";
 import { describe, expect, test } from "vitest";
+import type { MessageDoc } from "../validators.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { getMaxMessage } from "./messages.js";
@@ -304,6 +306,446 @@ describe("agent", () => {
     expect(allMessages.page[4]!.message!.role).toBe("assistant");
     expect(allMessages.page[5]!.message!.role).toBe("user");
     expect(allMessages.page[5]!.message!.content).toBe("bye");
+  });
+
+  test("grouped pagination keeps every canonical order complete", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "order 0" } },
+        {
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                input: { value: 1 },
+                toolCallId: "call-0",
+                toolName: "lookup",
+              },
+            ],
+          },
+        },
+        {
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call-0",
+                toolName: "lookup",
+                result: "result",
+              },
+            ],
+          },
+        },
+        { message: { role: "assistant", content: "order 0 done" } },
+      ],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "order 1" } },
+        { message: { role: "assistant", content: "order 1 done" } },
+      ],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "order 2" } },
+        { message: { role: "assistant", content: "order 2 done" } },
+      ],
+    });
+
+    const pages: PaginationResult<MessageDoc>[] = [];
+    let cursor: string | null = null;
+    let isDone = false;
+    while (!isDone) {
+      const page: PaginationResult<MessageDoc> = await t.query(
+        api.messages.listMessagesByThreadId,
+        {
+          threadId: thread._id as Id<"threads">,
+          order: "desc",
+          paginationMode: "orders",
+          paginationOpts: { cursor, numItems: 1 },
+        },
+      );
+      pages.push(page);
+      cursor = page.continueCursor;
+      isDone = page.isDone;
+    }
+
+    const nonEmptyPages = pages.filter((page) => page.page.length > 0);
+    expect(nonEmptyPages).toHaveLength(3);
+    expect(
+      nonEmptyPages.map((page) => page.page.map((message) => message.order)),
+    ).toEqual([
+      [2, 2],
+      [1, 1],
+      [0, 0, 0, 0],
+    ]);
+    expect(nonEmptyPages[0]!.continueCursor).not.toBe("");
+    expect(nonEmptyPages[1]!.continueCursor).not.toBe(
+      nonEmptyPages[0]!.continueCursor,
+    );
+
+    const pinnedDescending = await t.query(
+      api.messages.listMessagesByThreadId,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: "desc",
+        paginationMode: "orders",
+        paginationOpts: {
+          cursor: null,
+          endCursor: nonEmptyPages[0]!.continueCursor,
+          numItems: 1,
+        },
+      },
+    );
+    expect(pinnedDescending.page.map((message) => message.order)).toEqual([
+      2, 2,
+    ]);
+    expect(pinnedDescending.isDone).toBe(false);
+
+    const orderZeroRoles = [...nonEmptyPages[2]!.page]
+      .sort((a, b) => a.stepOrder - b.stepOrder)
+      .map((message) => message.message!.role);
+    expect(orderZeroRoles).toEqual(["user", "assistant", "tool", "assistant"]);
+
+    const rowPage = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "desc",
+    });
+    const groupedIds = nonEmptyPages.flatMap((page) =>
+      page.page.map((message) => message._id),
+    );
+    expect(new Set(groupedIds).size).toBe(groupedIds.length);
+    expect(groupedIds).toEqual(rowPage.page.map((message) => message._id));
+
+    const firstAscending = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(firstAscending.page.map((message) => message.order)).toEqual([
+      0, 0, 0, 0,
+    ]);
+    const secondAscending = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: {
+        cursor: firstAscending.continueCursor,
+        numItems: 1,
+      },
+    });
+    expect(secondAscending.page.map((message) => message.order)).toEqual([
+      1, 1,
+    ]);
+
+    const pinnedAscending = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: {
+        cursor: null,
+        endCursor: secondAscending.continueCursor,
+        numItems: 1,
+      },
+    });
+    expect(pinnedAscending.page.map((message) => message.order)).toEqual([
+      0, 0, 0, 0, 1, 1,
+    ]);
+    expect(pinnedAscending.isDone).toBe(false);
+    expect(pinnedAscending.splitCursor).toBeDefined();
+
+    const firstSplit = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: {
+        cursor: null,
+        endCursor: pinnedAscending.splitCursor!,
+        numItems: 1,
+      },
+    });
+    const secondSplit = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: {
+        cursor: pinnedAscending.splitCursor!,
+        endCursor: pinnedAscending.continueCursor,
+        numItems: 1,
+      },
+    });
+    expect(
+      [...firstSplit.page, ...secondSplit.page].map((message) => message.order),
+    ).toEqual([0, 0, 0, 0, 1, 1]);
+
+    const terminalAscending = await t.query(
+      api.messages.listMessagesByThreadId,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: "asc",
+        paginationMode: "orders",
+        paginationOpts: {
+          cursor: secondAscending.continueCursor,
+          numItems: 1,
+        },
+      },
+    );
+    expect(terminalAscending.page.map((message) => message.order)).toEqual([
+      2, 2,
+    ]);
+    expect(terminalAscending.isDone).toBe(true);
+
+    const pinnedTerminal = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: {
+        cursor: secondAscending.continueCursor,
+        endCursor: terminalAscending.continueCursor,
+        numItems: 1,
+      },
+    });
+    expect(pinnedTerminal.page.map((message) => message.order)).toEqual([2, 2]);
+    expect(pinnedTerminal.isDone).toBe(true);
+
+    const wideTerminalPage = await t.query(
+      api.messages.listMessagesByThreadId,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: "asc",
+        paginationMode: "orders",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+    expect(wideTerminalPage.isDone).toBe(true);
+    expect(wideTerminalPage.splitCursor).toBeUndefined();
+
+    const afterTerminal = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      paginationOpts: {
+        cursor: terminalAscending.continueCursor,
+        numItems: 1,
+      },
+    });
+    expect(afterTerminal.page).toEqual([]);
+    expect(afterTerminal.isDone).toBe(true);
+  });
+
+  test("grouped pagination rejects invalid and legacy cursors", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+
+    await expect(
+      t.query(api.messages.listMessagesByThreadId, {
+        threadId: thread._id as Id<"threads">,
+        order: "desc",
+        paginationMode: "orders",
+        paginationOpts: { cursor: "[]", numItems: 1 },
+      }),
+    ).rejects.toThrow("InvalidCursor");
+    await expect(
+      t.query(api.messages.listMessagesByThreadId, {
+        threadId: thread._id as Id<"threads">,
+        order: "asc",
+        paginationMode: "orders",
+        paginationOpts: {
+          cursor: null,
+          endCursor: "not-a-grouped-cursor",
+          numItems: 1,
+        },
+      }),
+    ).rejects.toThrow("InvalidCursor");
+
+    const emptyTerminal = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "desc",
+      paginationMode: "orders",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "later" } }],
+    });
+    const boundedByEmptyTerminal = await t.query(
+      api.messages.listMessagesByThreadId,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: "desc",
+        paginationMode: "orders",
+        paginationOpts: {
+          cursor: null,
+          endCursor: emptyTerminal.continueCursor,
+          numItems: 1,
+        },
+      },
+    );
+    expect(boundedByEmptyTerminal.page).toEqual([]);
+    expect(boundedByEmptyTerminal.isDone).toBe(true);
+  });
+
+  test("grouped pagination rejects an order expansion beyond its read caps", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "question" } },
+        { message: { role: "assistant", content: "first" } },
+        { message: { role: "assistant", content: "second" } },
+      ],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "next order" } }],
+    });
+
+    await expect(
+      t.query(api.messages.listMessagesByThreadId, {
+        threadId: thread._id as Id<"threads">,
+        order: "asc",
+        paginationMode: "orders",
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+          maximumRowsRead: 3,
+        },
+      }),
+    ).rejects.toThrow("Grouped message page exceeds maximumRowsRead (3)");
+
+    await expect(
+      t.query(api.messages.listMessagesByThreadId, {
+        threadId: thread._id as Id<"threads">,
+        order: "desc",
+        paginationMode: "orders",
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+          maximumBytesRead: 1,
+        },
+      }),
+    ).rejects.toThrow("Grouped message page exceeds maximumBytesRead (1)");
+  });
+
+  test("grouped pagination preserves message filters and zero-item reads", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "order 0" } },
+        {
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool-call",
+                input: {},
+                toolCallId: "call-0",
+                toolName: "lookup",
+              },
+            ],
+          },
+        },
+        {
+          message: {
+            role: "tool",
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "call-0",
+                toolName: "lookup",
+                result: "result",
+              },
+            ],
+          },
+        },
+        { message: { role: "assistant", content: "done" } },
+      ],
+    });
+    const { messages: orderOne } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "order 1" } },
+        {
+          message: { role: "assistant", content: "pending" },
+          status: "pending",
+        },
+      ],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "order 2" } },
+        {
+          message: { role: "assistant", content: "failed" },
+          status: "failed",
+        },
+      ],
+    });
+
+    const successful = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "desc",
+      paginationMode: "orders",
+      statuses: ["success"],
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(successful.page.map((message) => message.message!.content)).toEqual([
+      "order 2",
+    ]);
+
+    const withoutTools = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "asc",
+      paginationMode: "orders",
+      excludeToolMessages: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(withoutTools.page.map((message) => message.stepOrder)).toEqual([
+      0, 3,
+    ]);
+
+    const throughOrderOne = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "desc",
+      paginationMode: "orders",
+      upToAndIncludingMessageId: orderOne[0]!._id as Id<"messages">,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(
+      new Set(throughOrderOne.page.map((message) => message.order)),
+    ).toEqual(new Set([1]));
+    expect(throughOrderOne.page).toHaveLength(2);
+
+    const empty = await t.query(api.messages.listMessagesByThreadId, {
+      threadId: thread._id as Id<"threads">,
+      order: "desc",
+      paginationMode: "orders",
+      paginationOpts: { cursor: null, numItems: 0 },
+    });
+    expect(empty).toEqual({
+      page: [],
+      isDone: true,
+      continueCursor: expect.stringContaining("agent-message-order:"),
+    });
   });
 
   test("updateMessage updates message content", async () => {

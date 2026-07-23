@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { saveInputMessages } from "./saveInputMessages.js";
+import { saveInputMessages } from "../vercel/client/saveInputMessages.js";
 import type { MessageDoc } from "../validators.js";
-import type { ActionCtx } from "./types.js";
+import type { ActionCtx } from "../vercel/client/types.js";
 import {
   defineSchema,
   type Auth,
@@ -18,12 +18,12 @@ const { mockSaveMessages, mockEmbedMessages } = vi.hoisted(() => ({
   mockEmbedMessages: vi.fn(),
 }));
 
-vi.mock("./messages.js", () => ({
+vi.mock("../vercel/client/messages.js", () => ({
   saveMessages: mockSaveMessages,
 }));
 
-vi.mock("./search.js", async () => {
-  const actual = await vi.importActual("./search.js");
+vi.mock("../vercel/client/search.js", async () => {
+  const actual = await vi.importActual("../vercel/client/search.js");
   return {
     ...actual,
     embedMessages: mockEmbedMessages,

@@ -21,8 +21,10 @@ import { stream } from "convex-helpers/server/stream";
 import { mergedStream } from "convex-helpers/server/stream";
 import { paginator } from "convex-helpers/server/pagination";
 import type { WithoutSystemFields } from "convex/server";
-import { deriveUIMessagesFromDeltas } from "../deltas.js";
-import { fromUIMessages } from "../UIMessages.js";
+import {
+  getPersistedStreamParts,
+  materializeUIMessageChunks,
+} from "./materializeUIMessageChunks.js";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -553,39 +555,13 @@ export async function getStreamingMessagesWithMetadata(
             q.eq("streamId", streamingMessage._id),
           )
           .take(1000);
-        const uiMessages = await deriveUIMessagesFromDeltas(
-          threadId,
-          [publicStreamMessage(streamingMessage)],
-          deltas,
-        );
+        const streamMessage = publicStreamMessage(streamingMessage);
+        const { parts } = getPersistedStreamParts(deltas);
         // We don't save messages that have already been saved
         const numToSkip = stepOrder - streamingMessage.stepOrder;
-        const messages = await Promise.all(
-          (await fromUIMessages(uiMessages, streamingMessage))
-            .slice(numToSkip)
-            .filter((m) => m.message !== undefined)
-            .map(async (msg) => {
-              return {
-                ...pick(msg, [
-                  "message",
-                  "fileIds",
-                  "status",
-                  "finishReason",
-                  "model",
-                  "provider",
-                  "providerMetadata",
-                  "sources",
-                  "reasoning",
-                  "reasoningDetails",
-                  "usage",
-                  "warnings",
-                  "error",
-                ]),
-                ...metadata,
-              } as MessageWithMetadataInternal;
-            }),
+        return materializeUIMessageChunks(streamMessage, parts, metadata).slice(
+          numToSkip,
         );
-        return messages;
       }),
     )
   ).flat();

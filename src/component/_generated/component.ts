@@ -1832,6 +1832,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           excludeToolMessages?: boolean;
           order: "asc" | "desc";
+          paginationMode?: "rows" | "orders";
           paginationOpts?: {
             cursor: string | null;
             endCursor?: string | null;

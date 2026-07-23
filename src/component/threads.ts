@@ -3,8 +3,11 @@ import { paginator } from "convex-helpers/server/pagination";
 import { partial } from "convex-helpers/validators";
 import { paginationOptsValidator } from "convex/server";
 import type { ObjectType } from "convex/values";
-import { type ThreadDoc, vThreadDoc } from "../client/index.js";
-import { vPaginationResult } from "../validators.js";
+import {
+  type ThreadDoc,
+  vPaginationResult,
+  vThreadDoc,
+} from "../validators.js";
 import { api, internal } from "./_generated/api.js";
 import type { Doc } from "./_generated/dataModel.js";
 import {

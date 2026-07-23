@@ -20,8 +20,8 @@ import type {
   Output,
 } from "./types.js";
 import { startGeneration } from "./start.js";
-import type { Agent } from "./index.js";
-import { getModelName, getProviderName } from "../shared.js";
+import type { Agent } from "../index.js";
+import { getModelName, getProviderName } from "../../shared.js";
 import { errorToString, willContinue } from "./utils.js";
 
 /**

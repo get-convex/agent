@@ -18,14 +18,14 @@ import type {
 } from "convex/server";
 import { useMemo, useState, useEffect, useRef } from "react";
 import type { SyncStreamsReturnValue } from "../client/types.js";
-import { sorted } from "../shared.js";
+import { sorted } from "../../shared.js";
 import { fromUIMessages } from "../UIMessages.js";
 import type {
   Message,
   MessageDoc,
   MessageStatus,
   StreamArgs,
-} from "../validators.js";
+} from "../../validators.js";
 import type { StreamQueryArgs, StreamQuery } from "./types.js";
 import { useStreamingUIMessages } from "./useStreamingUIMessages.js";
 

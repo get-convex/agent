@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { MessageDoc } from "./client/index.js";
-import type { UIMessage } from "./UIMessages.js";
-import { fromUIMessages, toUIMessages } from "./UIMessages.js";
+import type { MessageDoc } from "./validators.js";
+import type { UIMessage } from "./vercel/UIMessages.js";
+import { fromUIMessages, toUIMessages } from "./vercel/UIMessages.js";
 
 // Helper to create a base message doc
 function baseMessageDoc<T = unknown>(

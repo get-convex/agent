@@ -1,3 +1,11 @@
+/**
+ * Internal AI SDK 6 implementation for the Agent API.
+ *
+ * Consumers continue to import this API from `@convex-dev/agent`. A public
+ * `@convex-dev/agent/vercel` entry point is intentionally deferred until its
+ * provider-adapter API is defined.
+ */
+
 import type { JSONValue } from "@ai-sdk/provider";
 import type {
   FlexibleSchema,
@@ -45,7 +53,7 @@ import {
   serializeMessage,
   serializeNewMessagesInStep,
   serializeObjectResult,
-} from "../mapping.js";
+} from "./mapping.js";
 import { getModelName, getProviderName } from "../shared.js";
 import {
   vMessageEmbeddings,
@@ -65,16 +73,16 @@ import {
   saveMessages,
   type SaveMessageArgs,
   type SaveMessagesArgs,
-} from "./messages.js";
+} from "./client/messages.js";
 import {
   embedMany,
   embedMessages,
   fetchContextMessages,
   generateAndSaveEmbeddings,
-} from "./search.js";
-import { startGeneration } from "./start.js";
-import { syncStreams, type StreamingOptions } from "./streaming.js";
-import { createThread, getThreadMetadata } from "./threads.js";
+} from "./client/search.js";
+import { startGeneration } from "./client/start.js";
+import { syncStreams, type StreamingOptions } from "./client/streaming.js";
+import { createThread, getThreadMetadata } from "../client/threads.js";
 import type {
   ActionCtx,
   AgentComponent,
@@ -97,9 +105,13 @@ import type {
   QueryCtx,
   AgentPrompt,
   Output,
-} from "./types.js";
-import { streamText } from "./streamText.js";
-import { errorToString, hasSuccessfulToolCall, willContinue } from "./utils.js";
+} from "./client/types.js";
+import { streamText } from "./client/streamText.js";
+import {
+  errorToString,
+  hasSuccessfulToolCall,
+  willContinue,
+} from "./client/utils.js";
 
 export { stepCountIs } from "ai";
 export { hasSuccessfulToolCall };
@@ -112,7 +124,7 @@ export {
   serializeDataOrUrl,
   serializeMessage,
   toUIFilePart,
-} from "../mapping.js";
+} from "./mapping.js";
 // NOTE: these are also exported via @convex-dev/agent/validators
 // a future version may put them all here or move these over there
 export { extractText, isTool, sorted } from "../shared.js";
@@ -138,13 +150,13 @@ export {
   type ThreadDoc,
   type Usage,
 } from "../validators.js";
-export { createTool, type ToolCtx } from "./createTool.js";
+export { createTool, type ToolCtx } from "./client/createTool.js";
 export {
   definePlaygroundAPI,
   type AgentsFn,
   type PlaygroundAPI,
-} from "./definePlaygroundAPI.js";
-export { getFile, storeFile } from "./files.js";
+} from "./client/definePlaygroundAPI.js";
+export { getFile, storeFile } from "./client/files.js";
 export {
   listMessages,
   listUIMessages,
@@ -152,8 +164,8 @@ export {
   saveMessages,
   type SaveMessageArgs,
   type SaveMessagesArgs,
-} from "./messages.js";
-export { mockModel } from "./mockModel.js";
+} from "./client/messages.js";
+export { mockModel } from "./client/mockModel.js";
 export {
   fetchContextMessages,
   filterOutOrphanedToolMessages,
@@ -161,8 +173,8 @@ export {
   generateAndSaveEmbeddings,
   embedMessages,
   embedMany,
-} from "./search.js";
-export { startGeneration } from "./start.js";
+} from "./client/search.js";
+export { startGeneration } from "./client/start.js";
 export {
   DEFAULT_STREAMING_OPTIONS,
   DeltaStreamer,
@@ -171,16 +183,15 @@ export {
   listStreams,
   syncStreams,
   vStreamMessagesReturnValue,
-} from "./streaming.js";
+} from "./client/streaming.js";
 export {
   createThread,
   getThreadMetadata,
   searchThreadTitles,
   updateThreadMetadata,
-} from "./threads.js";
-export type { ContextHandler } from "./types.js";
-export { toUIMessages, fromUIMessages, type UIMessage } from "../UIMessages.js";
-
+} from "../client/threads.js";
+export type { ContextHandler } from "./client/types.js";
+export { toUIMessages, fromUIMessages, type UIMessage } from "./UIMessages.js";
 export type {
   AgentComponent,
   Config,

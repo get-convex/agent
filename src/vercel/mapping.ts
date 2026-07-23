@@ -37,7 +37,7 @@ import {
   type MessageDoc,
   vToolApprovalRequest,
   vToolApprovalResponse,
-} from "./validators.js";
+} from "../validators.js";
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { MutationCtx } from "./client/types.js";
 import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
@@ -52,7 +52,7 @@ import {
   getModelName,
   getProviderName,
   type ModelOrMetadata,
-} from "./shared.js";
+} from "../shared.js";
 export type AIMessageWithoutId = Omit<AIMessage, "id">;
 
 export type SerializeUrlsAndUint8Arrays<T> = T extends URL
@@ -329,7 +329,9 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
   model: ModelOrMetadata | undefined,
   previousResponseMessageCount: number,
 ): Promise<{ messages: MessageWithMetadata[] }> {
-  const newMessages = step.response.messages.slice(previousResponseMessageCount);
+  const newMessages = step.response.messages.slice(
+    previousResponseMessageCount,
+  );
   // Keep at least one message in the output so the step still anchors an
   // order slot — downstream `addMessages` relies on each step contributing a
   // row even when AI SDK produced no response messages.
@@ -337,7 +339,13 @@ export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
     newMessages.length > 0
       ? newMessages
       : [{ role: "assistant" as const, content: [] }];
-  return serializeStepMessages(ctx, component, step, model, messagesToSerialize);
+  return serializeStepMessages(
+    ctx,
+    component,
+    step,
+    model,
+    messagesToSerialize,
+  );
 }
 
 async function serializeStepMessages<TOOLS extends ToolSet>(

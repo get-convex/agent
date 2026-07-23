@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { combineUIMessages, type UIMessage } from "./UIMessages.js";
+import {
+  combineUIMessages,
+  type UIMessage,
+} from "./vercel/UIMessages.js";
 
 describe("combineUIMessages", () => {
   it("should preserve all tool calls when combining messages", () => {

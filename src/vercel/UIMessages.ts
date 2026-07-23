@@ -21,14 +21,14 @@ import {
   isTool,
   joinText,
   sorted,
-} from "./shared.js";
+} from "../shared.js";
 import type {
   MessageDoc,
   MessageStatus,
   ProviderOptions,
   SourcePart,
   vSource,
-} from "./validators.js";
+} from "../validators.js";
 import { omit, pick } from "convex-helpers";
 
 export type UIStatus = "streaming" | MessageStatus;
@@ -153,6 +153,7 @@ function fromSourceParts(parts: UIMessage["parts"]): Infer<typeof vSource>[] {
           id: part.sourceId,
           providerMetadata: part.providerMetadata,
           title: part.title,
+          filename: part.filename,
         } satisfies Infer<typeof vSource>;
       }
       return undefined;

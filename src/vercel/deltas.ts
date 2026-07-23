@@ -9,12 +9,12 @@ import {
 } from "ai";
 import { assert } from "convex-helpers";
 import { type UIMessage } from "./UIMessages.js";
-import { joinText, sorted } from "./shared.js";
+import { joinText, sorted } from "../shared.js";
 import {
   type MessageStatus,
   type StreamDelta,
   type StreamMessage,
-} from "./validators.js";
+} from "../validators.js";
 
 export function blankUIMessage<METADATA = unknown>(
   streamMessage: StreamMessage & { metadata?: METADATA },

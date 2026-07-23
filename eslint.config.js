@@ -48,7 +48,7 @@ export default [
       "example/convex/**/*.{ts,tsx}",
       "playground/convex/**/*.{ts,tsx}",
     ],
-    ignores: ["src/react/**"],
+    ignores: ["src/react/**", "src/vercel/react/**"],
     languageOptions: {
       globals: globals.worker,
     },
@@ -82,6 +82,7 @@ export default [
   {
     files: [
       "src/react/**/*.{ts,tsx}",
+      "src/vercel/react/**/*.{ts,tsx}",
       "example/ui/**/*.{ts,tsx}",
       "playground/src/**/*.{ts,tsx}",
     ],
@@ -103,6 +104,51 @@ export default [
         {
           argsIgnorePattern: "^_",
           varsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.test.{ts,tsx}", "src/vercel/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["ai", "ai/*", "@ai-sdk/*"],
+              message:
+                "Provider SDK imports belong in the src/vercel adapter boundary.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/core/**/*.{ts,tsx}", "src/component/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "ai",
+                "ai/*",
+                "@ai-sdk/*",
+                "**/vercel/**",
+                "**/client/**",
+                "**/mapping.js",
+                "**/UIMessages.js",
+                "**/deltas.js",
+              ],
+              message:
+                "Agent core and component code cannot depend on provider adapters or their compatibility forwarders.",
+            },
+          ],
         },
       ],
     },

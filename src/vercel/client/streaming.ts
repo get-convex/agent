@@ -17,7 +17,7 @@ import {
   type StreamArgs,
   type StreamDelta,
   type StreamMessage,
-} from "../validators.js";
+} from "../../validators.js";
 import type {
   ActionCtx,
   AgentComponent,

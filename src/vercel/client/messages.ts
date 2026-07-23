@@ -1,62 +1,42 @@
+import type { ModelMessage } from "ai";
 import type { PaginationOptions, PaginationResult } from "convex/server";
-import type { MessageDoc } from "../validators.js";
-import { validateVectorDimension } from "../component/vector/tables.js";
+import type { MessageDoc } from "../../validators.js";
 import {
-  vMessageWithMetadata,
   type Message,
   type MessageEmbeddings,
-  type MessageEmbeddingsWithDimension,
-  type MessageStatus,
   type MessageWithMetadata,
-} from "../validators.js";
+} from "../../validators.js";
+import { serializeMessage } from "../mapping.js";
+import { toUIMessages, type UIMessage } from "../UIMessages.js";
+import { saveMessages as saveCanonicalMessages } from "../../client/messages.js";
 import type {
   AgentComponent,
   MutationCtx,
   QueryCtx,
   ActionCtx,
 } from "./types.js";
-import { parse } from "convex-helpers/validators";
+
+export { listMessages } from "../../client/messages.js";
 
 /**
- * List messages from a thread.
- * @param ctx A ctx object from a query, mutation, or action.
- * @param component The agent component, usually `components.agent`.
- * @param args.threadId The thread to list messages from.
- * @param args.paginationOpts Pagination options (e.g. via usePaginatedQuery).
- * @param args.excludeToolMessages Whether to exclude tool messages.
- *   False by default.
- * @param args.statuses What statuses to include. All by default.
- * @returns The MessageDoc's in a format compatible with usePaginatedQuery.
+ * List UI messages without splitting an assistant/tool sequence across pages.
+ * paginationOpts.numItems counts canonical message orders, so a page may
+ * contain more than that number of UI messages.
  */
-export async function listMessages(
+export async function listUIMessages(
   ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
-  {
-    threadId,
-    paginationOpts,
-    excludeToolMessages,
-    statuses,
-  }: {
+  args: {
     threadId: string;
     paginationOpts: PaginationOptions;
-    excludeToolMessages?: boolean;
-    statuses?: MessageStatus[];
   },
-): Promise<PaginationResult<MessageDoc>> {
-  if (paginationOpts.numItems === 0) {
-    return {
-      page: [],
-      isDone: true,
-      continueCursor: paginationOpts.cursor ?? "",
-    };
-  }
-  return ctx.runQuery(component.messages.listMessagesByThreadId, {
+): Promise<PaginationResult<UIMessage>> {
+  const result = await ctx.runQuery(component.messages.listMessagesByThreadId, {
+    ...args,
     order: "desc",
-    threadId,
-    paginationOpts,
-    excludeToolMessages,
-    statuses,
+    paginationMode: "orders",
   });
+  return { ...result, page: toUIMessages(result.page) };
 }
 
 export type SaveMessagesArgs = {
@@ -70,7 +50,7 @@ export type SaveMessagesArgs = {
   /**
    * The messages to save.
    */
-  messages: Message[];
+  messages: (ModelMessage | Message)[];
   /**
    * Metadata to save with the messages. Each element corresponds to the
    * message at the same index.
@@ -104,34 +84,28 @@ export async function saveMessages(
     agentName?: string;
   },
 ): Promise<{ messages: MessageDoc[] }> {
-  let embeddings: MessageEmbeddingsWithDimension | undefined;
-  if (args.embeddings) {
-    const dimension = args.embeddings.vectors.find((v) => v !== null)?.length;
-    if (dimension) {
-      validateVectorDimension(dimension);
-      embeddings = {
-        model: args.embeddings.model,
-        dimension,
-        vectors: args.embeddings.vectors,
-      };
-    }
-  }
-  const result = await ctx.runMutation(component.messages.addMessages, {
+  const serialized = await Promise.all(
+    args.messages.map((message) => serializeMessage(ctx, component, message)),
+  );
+  return saveCanonicalMessages(ctx, component, {
     threadId: args.threadId,
     userId: args.userId ?? undefined,
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
     pendingMessageId: args.pendingMessageId,
-    embeddings,
-    messages: args.messages.map((message, i) =>
-      parse(vMessageWithMetadata, {
-        ...args.metadata?.[i],
-        message,
-      }),
-    ),
+    embeddings: args.embeddings,
+    messages: serialized.map(({ message }) => message),
+    metadata: serialized.map(({ fileIds }, i) => {
+      const base = args.metadata?.[i];
+      const allFileIds = [...(base?.fileIds ?? [])];
+      if (fileIds) allFileIds.push(...fileIds);
+      return {
+        ...base,
+        ...(allFileIds.length > 0 ? { fileIds: allFileIds } : {}),
+      };
+    }),
     failPendingSteps: args.failPendingSteps ?? false,
   });
-  return { messages: result.messages };
 }
 
 export type SaveMessageArgs = {
@@ -161,7 +135,7 @@ export type SaveMessageArgs = {
       /**
        * The message to save.
        */
-      message: Message;
+      message: ModelMessage | Message;
     }
   | {
       /*

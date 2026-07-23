@@ -131,7 +131,11 @@ export function useStreamingUIMessages<
               }
               return [
                 streamId,
-                existing ?? { uiMessage: base, cursor: 0, streamState: prevState },
+                existing ?? {
+                  uiMessage: base,
+                  cursor: 0,
+                  streamState: prevState,
+                },
               ];
             }
 

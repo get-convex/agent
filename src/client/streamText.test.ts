@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Agent, createThread } from "./index.js";
+import { Agent, createThread } from "../vercel/index.js";
 import {
   defineSchema,
   type DataModelFromSchemaDefinition,
@@ -10,7 +10,7 @@ import {
 } from "convex/server";
 import { v } from "convex/values";
 import { components, initConvexTest } from "./setup.test.js";
-import { mockModel } from "./mockModel.js";
+import { mockModel } from "../vercel/client/mockModel.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;

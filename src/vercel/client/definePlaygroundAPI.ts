@@ -11,26 +11,27 @@ import {
 } from "convex/server";
 import { v } from "convex/values";
 import {
-  createThread as createThread_,
-  listMessages as listMessages_,
-  toModelMessage,
   vContextOptions,
   vMessage,
   vMessageDoc,
   vPaginationResult,
   vStorageOptions,
   vThreadDoc,
-  type Agent,
-  type AgentComponent,
   vStreamArgs,
-  syncStreams,
-  vStreamMessagesReturnValue,
-  isTool,
-  extractText,
   type MessageDoc,
-} from "./index.js";
-import { serializeNewMessagesInStep } from "../mapping.js";
-import { getModelName, getProviderName } from "../shared.js";
+} from "../../validators.js";
+import { createThread as createThread_ } from "../../client/threads.js";
+import {
+  extractText,
+  getModelName,
+  getProviderName,
+  isTool,
+} from "../../shared.js";
+import { serializeNewMessagesInStep, toModelMessage } from "../mapping.js";
+import type { Agent } from "../index.js";
+import { listMessages as listMessages_ } from "./messages.js";
+import { syncStreams, vStreamMessagesReturnValue } from "./streaming.js";
+import type { AgentComponent } from "./types.js";
 
 export type PlaygroundAPI = ApiFromModules<{
   playground: ReturnType<typeof definePlaygroundAPI>;

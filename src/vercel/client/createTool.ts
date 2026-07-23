@@ -8,8 +8,8 @@ import type {
 } from "ai";
 import { tool } from "ai";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
-import type { ProviderOptions } from "../validators.js";
-import type { Agent } from "./index.js";
+import type { ProviderOptions } from "../../validators.js";
+import type { Agent } from "../index.js";
 
 const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
 const warnedDeprecations = new Set<string>();

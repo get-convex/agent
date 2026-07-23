@@ -20,7 +20,7 @@ import {
   fetchContextMessages,
   filterOutOrphanedToolMessages,
   getPromptArray,
-} from "./search.js";
+} from "../vercel/client/search.js";
 import { components, initConvexTest } from "./setup.test.js";
 import { createThread } from "./threads.js";
 import { saveMessages } from "./messages.js";

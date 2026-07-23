@@ -1,17 +1,20 @@
 "use client";
 import { useMemo, useState } from "react";
-export { toUIMessages, type UIMessage } from "../UIMessages.js";
+export { toUIMessages, type UIMessage } from "../vercel/UIMessages.js";
 
-export { optimisticallySendMessage } from "./optimisticallySendMessage.js";
+export { optimisticallySendMessage } from "../vercel/react/optimisticallySendMessage.js";
 export { useSmoothText } from "./useSmoothText.js";
 export { SmoothText } from "./SmoothText.js";
 export {
   type ThreadMessagesQuery,
   useThreadMessages,
   useStreamingThreadMessages,
-} from "./useThreadMessages.js";
-export { type UIMessagesQuery, useUIMessages } from "./useUIMessages.js";
-export { useStreamingUIMessages } from "./useStreamingUIMessages.js";
+} from "../vercel/react/useThreadMessages.js";
+export {
+  type UIMessagesQuery,
+  useUIMessages,
+} from "../vercel/react/useUIMessages.js";
+export { useStreamingUIMessages } from "../vercel/react/useStreamingUIMessages.js";
 
 /**
  * @deprecated use useThreadMessages or useStreamingThreadMessages instead

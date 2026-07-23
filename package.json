@@ -44,8 +44,8 @@
   "exports": {
     "./package.json": "./package.json",
     ".": {
-      "types": "./dist/client/index.d.ts",
-      "default": "./dist/client/index.js"
+      "types": "./dist/vercel/index.d.ts",
+      "default": "./dist/vercel/index.js"
     },
     "./validators": {
       "types": "./dist/validators.d.ts",
@@ -147,8 +147,8 @@
     "vitest": "4.1.0",
     "zod": "3.25.76"
   },
-  "types": "./dist/client/index.d.ts",
-  "module": "./dist/client/index.js",
+  "types": "./dist/vercel/index.d.ts",
+  "module": "./dist/vercel/index.js",
   "optionalDependencies": {
     "@ungap/structured-clone": "^1.3.0"
   }
