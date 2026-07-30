@@ -39,10 +39,16 @@ const emptyAgent = new Agent(components.agent, {
 export const streamTextReturnImmediately = action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
+    let onStepEndCalls = 0;
     const result = await agent.streamText(
       ctx,
       { threadId },
-      { prompt: "Test" },
+      {
+        prompt: "Test",
+        onStepEnd: () => {
+          onStepEndCalls += 1;
+        },
+      },
       {
         saveStreamDeltas: {
           returnImmediately: true,
@@ -52,9 +58,9 @@ export const streamTextReturnImmediately = action({
       },
     );
     // Drain the stream the way an HTTP response would. This triggers
-    // onStepFinish for every step, including the final one.
+    // onStepEnd for every step, including the final one.
     await result.consumeStream();
-    return { ok: true };
+    return { ok: true, onStepEndCalls };
   },
 });
 
@@ -105,7 +111,10 @@ describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () =
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextReturnImmediately, { threadId });
+    const result = await t.action(testApi.streamTextReturnImmediately, {
+      threadId,
+    });
+    expect(result.onStepEndCalls).toBe(1);
 
     // Allow any background work scheduled by consumeStream to settle.
     await t.finishAllScheduledFunctions(() => {});
@@ -178,9 +187,9 @@ describe("streamText with an empty final step (issue #274)", () => {
           provider: "mock-provider",
           providerMetadata: { mock: { emptyResponse: true } },
           usage: expect.objectContaining({
-            promptTokens: 0,
-            completionTokens: 0,
-            totalTokens: 0,
+            promptTokens: 3,
+            completionTokens: 10,
+            totalTokens: 13,
           }),
         }),
       );

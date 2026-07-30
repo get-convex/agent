@@ -25,13 +25,13 @@ jobs:
       - name: Node setup
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          cache-dependency-path: package.json
-          node-version: "20.x"
+          cache-dependency-path: package-lock.json
+          node-version: "22.x"
           cache: "npm"
 
       - name: Install and build
         run: |
-          npm i
+          npm ci
           npm run build
       - name: Publish package for testing branch
         run: npx pkg-pr-new publish || echo "pkg-pr-new failed"

@@ -20,6 +20,11 @@ import {
 } from "@/components/ui/select";
 import { Agent } from "@/types";
 import MessageList from "./MessageList";
+import {
+  instructionOverrideForAgent,
+  updateInstructionOverride,
+  type AgentInstructionOverride,
+} from "./agentInstructionOverride";
 
 interface MessageComposerProps {
   agents: Agent[] | undefined;
@@ -34,7 +39,7 @@ interface MessageComposerProps {
     agentName: string,
     context: ContextOptions | undefined,
     storage: StorageOptions | undefined,
-    systemPrompt?: string,
+    instructions?: string,
   ) => Promise<{ text: string; messages: MessageDoc[] } | undefined>;
 }
 
@@ -51,23 +56,28 @@ const MessageComposer: React.FC<MessageComposerProps> = ({
   const [message, setMessage] = useState("");
   const [response, setResponse] = useState<string | null | MessageDoc[]>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
-  // System prompt state
-  const [systemPrompt, setSystemPrompt] = useState<string | undefined>(
-    undefined,
+  const [instructionOverride, setInstructionOverride] = useState<
+    AgentInstructionOverride | undefined
+  >(undefined);
+  const activeInstructionOverride = instructionOverrideForAgent(
+    instructionOverride,
+    selectedAgent?.name,
   );
-  const [isSystemPromptDirty, setIsSystemPromptDirty] = useState(false);
-  const handleResetSystemPrompt = () => {
-    setSystemPrompt(undefined);
-    setIsSystemPromptDirty(false);
+  const isInstructionOverrideDirty = activeInstructionOverride !== undefined;
+  const handleResetInstructions = () => {
+    setInstructionOverride(undefined);
   };
 
-  // When user edits system prompt
-  const handleSystemPromptChange = (
+  const handleInstructionsChange = (
     e: React.ChangeEvent<HTMLTextAreaElement>,
   ) => {
-    const isDirty = e.target.value !== (selectedAgent?.instructions || "");
-    setSystemPrompt(isDirty ? e.target.value : undefined);
-    setIsSystemPromptDirty(isDirty);
+    setInstructionOverride(
+      updateInstructionOverride(
+        selectedAgent?.name,
+        selectedAgent?.editableInstructions,
+        e.target.value,
+      ),
+    );
   };
 
   const handleSend = async () => {
@@ -83,7 +93,7 @@ const MessageComposer: React.FC<MessageComposerProps> = ({
         selectedAgent.name,
         contextOptions,
         storageOptions,
-        isSystemPromptDirty ? systemPrompt : undefined,
+        activeInstructionOverride,
       );
       if (!response || storageOptions.saveMessages !== "none") {
         setResponse(null);
@@ -183,20 +193,29 @@ const MessageComposer: React.FC<MessageComposerProps> = ({
             <div className="w-full">
               <Textarea
                 aria-label="System prompt"
-                value={systemPrompt || selectedAgent?.instructions || ""}
-                onChange={handleSystemPromptChange}
+                value={
+                  activeInstructionOverride ??
+                  selectedAgent?.editableInstructions ??
+                  ""
+                }
+                onChange={handleInstructionsChange}
                 placeholder="System prompt for the agent..."
                 className="font-mono text-sm h-24"
                 rows={3}
               />
+              {selectedAgent?.hasStructuredInstructions && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  This is an editable text projection of structured agent
+                  instructions. Editing it replaces the structured value for
+                  this request.
+                </p>
+              )}
             </div>
             <Button
-              className={`ml-2 mb-1 absolute right-0 ${
-                isSystemPromptDirty ? "visible" : "invisible"
-              }`}
+              className={`ml-2 mb-1 absolute right-0 ${isInstructionOverrideDirty ? "visible" : "invisible"}`}
               variant="secondary"
-              onClick={handleResetSystemPrompt}
-              disabled={!isSystemPromptDirty}
+              onClick={handleResetInstructions}
+              disabled={!isInstructionOverrideDirty}
               title="Reset to agent's default prompt"
             >
               Reset

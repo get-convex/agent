@@ -35,9 +35,11 @@ export const insertRawUsage = internalMutation({
       totalTokens: v.optional(v.number()),
       inputTokens: v.optional(v.number()),
       outputTokens: v.optional(v.number()),
+      /** @deprecated AI SDK 6 compatibility. */
       reasoningTokens: v.optional(v.number()),
+      /** @deprecated AI SDK 6 compatibility. */
       cachedInputTokens: v.optional(v.number()),
-      // AI SDK v6 additional fields
+      // AI SDK 7 token details.
       inputTokenDetails: v.optional(v.any()),
       outputTokenDetails: v.optional(v.any()),
       raw: v.optional(v.any()),
@@ -52,8 +54,12 @@ export const insertRawUsage = internalMutation({
         promptTokens: args.usage.inputTokens ?? 0,
         completionTokens: args.usage.outputTokens ?? 0,
         totalTokens: args.usage.totalTokens ?? 0,
-        reasoningTokens: args.usage.reasoningTokens,
-        cachedInputTokens: args.usage.cachedInputTokens,
+        reasoningTokens:
+          args.usage.outputTokenDetails?.reasoningTokens ??
+          args.usage.reasoningTokens,
+        cachedInputTokens:
+          args.usage.inputTokenDetails?.cacheReadTokens ??
+          args.usage.cachedInputTokens,
       },
     });
   },

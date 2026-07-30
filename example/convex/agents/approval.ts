@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/tool-approval
-import { Agent, createTool, stepCountIs } from "@convex-dev/agent";
+import { Agent, createTool, isStepCount } from "@convex-dev/agent";
 import { components } from "../_generated/api";
 import { defaultConfig } from "./config";
 import { z } from "zod/v4";
@@ -10,7 +10,6 @@ const deleteFileTool = createTool({
   inputSchema: z.object({
     filename: z.string().describe("The name of the file to delete"),
   }),
-  needsApproval: () => true,
   execute: async (_ctx, input) => {
     return `Successfully deleted file: ${input.filename}`;
   },
@@ -23,9 +22,6 @@ const transferMoneyTool = createTool({
     amount: z.number().describe("The amount to transfer"),
     toAccount: z.string().describe("The destination account"),
   }),
-  needsApproval: async (_ctx, input) => {
-    return input.amount > 100;
-  },
   execute: async (_ctx, input) => {
     return `Transferred $${input.amount} to account ${input.toAccount}`;
   },
@@ -52,7 +48,13 @@ export const approvalAgent = new Agent(components.agent, {
     transferMoney: transferMoneyTool,
     checkBalance: checkBalanceTool,
   },
-  stopWhen: stepCountIs(5),
+  stopWhen: isStepCount(5),
   ...defaultConfig,
   callSettings: { temperature: 0 },
 });
+
+export const approvalPolicy = {
+  deleteFile: "user-approval",
+  transferMoney: (input: { amount: number }) =>
+    input.amount > 100 ? "user-approval" : undefined,
+} as const;

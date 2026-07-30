@@ -1,4 +1,5 @@
 import type {
+  Context,
   FlexibleSchema,
   InferSchema,
   ModelMessage,
@@ -10,6 +11,8 @@ import type {
   GenerateObjectResult,
   generateText,
   GenerateTextResult,
+  Instructions,
+  LanguageModelCallOptions,
   LanguageModelRequestMetadata,
   LanguageModelResponseMetadata,
   LanguageModelUsage,
@@ -18,7 +21,7 @@ import type {
   streamText,
   StreamTextResult,
   ToolSet,
-  CallSettings,
+  RequestOptions,
   generateObject,
 } from "ai";
 
@@ -52,16 +55,21 @@ export type {
 } from "../../client/types.js";
 
 /**
- * Type-level check that ensures models are from AI SDK v6.
- * If a v5 model (LanguageModelV2) is passed, TypeScript will show the error message string.
+ * Type-level check that ensures models are from AI SDK v7.
  */
-type AssertAISDKv6<T> = T extends { specificationVersion: "v3" }
+type AssertAISDKv7<T> = T extends { specificationVersion: "v4" }
   ? T
-  : "⚠️ @convex-dev/agent v0.6.0 requires AI SDK v6. Update your dependencies: npm install ai@^6.0.35 @ai-sdk/openai@^3.0.10 (or other provider). See: node_modules/@convex-dev/agent/MIGRATION.md";
+  : "⚠️ @convex-dev/agent requires AI SDK v7. Update your dependencies: npm install ai@^7.0.0 @ai-sdk/openai@^4.0.0 (or other provider).";
 
 export type AgentPrompt = {
   /**
+   * Instructions to include in the prompt. Overwrites Agent instructions.
+   */
+  instructions?: Instructions;
+  /**
    * System message to include in the prompt. Overwrites Agent instructions.
+   *
+   * @deprecated Use `instructions` instead.
    */
   system?: string;
   /**
@@ -104,7 +112,7 @@ export type AgentPrompt = {
 export type Config = {
   /**
    * The LLM model to use for generating / streaming text and objects.
-   * Requires AI SDK v6 (@ai-sdk/* packages v3.x).
+   * Requires AI SDK v7 (@ai-sdk/* packages v4.x).
    *
    * @example
    * import { openai } from "@ai-sdk/openai"
@@ -112,7 +120,7 @@ export type Config = {
    *   languageModel: openai.chat("gpt-4o-mini"),
    * })
    */
-  languageModel?: AssertAISDKv6<LanguageModel>;
+  languageModel?: AssertAISDKv7<LanguageModel>;
   /**
    * @deprecated Use `embeddingModel` instead.
    */
@@ -168,7 +176,7 @@ export type Config = {
    * This can be overridden at each generate/stream callsite on a per-field
    * basis. To clear a default setting, you'll need to pass `undefined`.
    */
-  callSettings?: CallSettings;
+  callSettings?: AgentCallSettings;
   /**
    * The maximum number of steps to allow for a single generation.
    *
@@ -186,6 +194,14 @@ export type Config = {
    */
   maxSteps?: number;
 };
+
+/**
+ * Default model and transport settings accepted by Agent configuration.
+ * Request timeouts remain call-specific, matching the former AI SDK
+ * `CallSettings` contract.
+ */
+export type AgentCallSettings = LanguageModelCallOptions &
+  Omit<RequestOptions, "timeout">;
 
 /**
  * Options to configure what messages are fetched as context,
@@ -349,7 +365,9 @@ export type RawRequestResponseHandler = (
     threadId: string | undefined;
     agentName: string | undefined;
     request: LanguageModelRequestMetadata;
-    response: LanguageModelResponseMetadata;
+    response:
+      | LanguageModelResponseMetadata
+      | Omit<LanguageModelResponseMetadata, "messages">;
   },
 ) => void | Promise<void>;
 
@@ -357,9 +375,14 @@ export type TextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
   OUTPUT extends Output<any, any, any> = never,
+  RUNTIME_CONTEXT extends Context = Context,
 > = Omit<
   Parameters<
-    typeof generateText<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT>
+    typeof generateText<
+      TOOLS extends undefined ? AgentTools : TOOLS,
+      RUNTIME_CONTEXT,
+      OUTPUT
+    >
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -374,9 +397,14 @@ export type StreamingTextArgs<
   AgentTools extends ToolSet,
   TOOLS extends ToolSet | undefined = undefined,
   OUTPUT extends Output<any, any, any> = never,
+  RUNTIME_CONTEXT extends Context = Context,
 > = Omit<
   Parameters<
-    typeof streamText<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT>
+    typeof streamText<
+      TOOLS extends undefined ? AgentTools : TOOLS,
+      RUNTIME_CONTEXT,
+      OUTPUT
+    >
   >[0],
   "model" | "prompt" | "messages"
 > & {
@@ -452,7 +480,7 @@ export type MaybeCustomCtx<
             userId?: string | undefined;
             threadId?: string | undefined;
           },
-          llmArgs: TextArgs<AgentTools>,
+          llmArgs: TextArgs<AgentTools, AgentTools>,
         ) => CustomCtx;
       }
     : { customCtx?: never };
@@ -491,12 +519,22 @@ export interface Thread<DefaultTools extends ToolSet> {
   generateText<
     TOOLS extends ToolSet | undefined = undefined,
     OUTPUT extends Output<any, any, any> = never,
+    RUNTIME_CONTEXT extends Context = Context,
   >(
     generateTextArgs: AgentPrompt &
-      TextArgs<TOOLS extends undefined ? DefaultTools : TOOLS, TOOLS, OUTPUT>,
+      TextArgs<
+        TOOLS extends undefined ? DefaultTools : TOOLS,
+        TOOLS,
+        OUTPUT,
+        RUNTIME_CONTEXT
+      >,
     options?: Options,
   ): Promise<
-    GenerateTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
+    GenerateTextResult<
+      TOOLS extends undefined ? DefaultTools : TOOLS,
+      RUNTIME_CONTEXT,
+      OUTPUT
+    > &
       ThreadOutputMetadata
   >;
 
@@ -513,12 +551,14 @@ export interface Thread<DefaultTools extends ToolSet> {
   streamText<
     TOOLS extends ToolSet | undefined = undefined,
     OUTPUT extends Output<any, any, any> = never,
+    RUNTIME_CONTEXT extends Context = Context,
   >(
     streamTextArgs: AgentPrompt &
       StreamingTextArgs<
         TOOLS extends undefined ? DefaultTools : TOOLS,
         TOOLS,
-        OUTPUT
+        OUTPUT,
+        RUNTIME_CONTEXT
       >,
     options?: Options & {
       /**
@@ -534,7 +574,11 @@ export interface Thread<DefaultTools extends ToolSet> {
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<TOOLS extends undefined ? DefaultTools : TOOLS, OUTPUT> &
+    StreamTextResult<
+      TOOLS extends undefined ? DefaultTools : TOOLS,
+      RUNTIME_CONTEXT,
+      OUTPUT
+    > &
       ThreadOutputMetadata
   >;
   /**

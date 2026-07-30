@@ -17,6 +17,7 @@ import {
 import { v } from "convex/values";
 import { authorizeThreadAccess } from "../threads";
 import { storyAgent } from "../agents/story";
+import { createTextStreamResponse, toTextStream } from "ai";
 
 /**
  * OPTION 1:
@@ -166,7 +167,9 @@ export const streamOverHttp = httpAction(async (ctx, request) => {
   };
   const threadId = body.threadId ?? (await createThread(ctx, components.agent));
   const result = await storyAgent.streamText(ctx, { threadId }, body);
-  const response = result.toTextStreamResponse();
+  const response = createTextStreamResponse({
+    stream: toTextStream({ stream: result.stream }),
+  });
   // Set this so the client can try to de-dupe showing the streamed message and
   // the final result.
   response.headers.set("X-Message-Id", result.promptMessageId!);

@@ -1,18 +1,18 @@
 import type {
-  LanguageModelV3,
-  LanguageModelV3StreamPart,
+  LanguageModelV4,
+  LanguageModelV4StreamPart,
 } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
 import { mockModel, type MockModelArgs } from "./mockModel.js";
 
-const callOptions = {} as Parameters<LanguageModelV3["doGenerate"]>[0];
+const callOptions = {} as Parameters<LanguageModelV4["doGenerate"]>[0];
 
 async function streamParts(
-  model: LanguageModelV3,
-): Promise<LanguageModelV3StreamPart[]> {
+  model: LanguageModelV4,
+): Promise<LanguageModelV4StreamPart[]> {
   const { stream } = await model.doStream(callOptions);
   const reader = stream.getReader();
-  const parts: LanguageModelV3StreamPart[] = [];
+  const parts: LanguageModelV4StreamPart[] = [];
   while (true) {
     const result = await reader.read();
     if (result.done) return parts;
@@ -29,7 +29,10 @@ async function expectModelFailure(fail: MockModelArgs["fail"]) {
   const parts = await streamParts(model);
   expect(parts).toContainEqual({ type: "error", error: "Mock error message" });
   expect(parts).toContainEqual(
-    expect.objectContaining({ type: "finish", finishReason: "error" }),
+    expect.objectContaining({
+      type: "finish",
+      finishReason: expect.objectContaining({ unified: "error" }),
+    }),
   );
 }
 
@@ -37,12 +40,15 @@ async function expectModelSuccess(fail: MockModelArgs["fail"]) {
   const model = mockModel({ fail });
 
   await expect(model.doGenerate(callOptions)).resolves.toMatchObject({
-    finishReason: "stop",
+    finishReason: { unified: "stop" },
   });
   const parts = await streamParts(model);
   expect(parts.some((part) => part.type === "error")).toBe(false);
   expect(parts).toContainEqual(
-    expect.objectContaining({ type: "finish", finishReason: "stop" }),
+    expect.objectContaining({
+      type: "finish",
+      finishReason: expect.objectContaining({ unified: "stop" }),
+    }),
   );
 }
 

@@ -1,5 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/getting-started
-import { Agent, createTool, stepCountIs } from "@convex-dev/agent";
+import { Agent, createTool, isStepCount } from "@convex-dev/agent";
 import { components } from "../_generated/api";
 import { defaultConfig } from "./config";
 import { z } from "zod/v3";
@@ -9,7 +9,7 @@ export const storyAgent = new Agent(components.agent, {
   name: "Story Agent",
   instructions: "You tell stories with twist endings. ~ 200 words.",
   ...defaultConfig,
-  stopWhen: stepCountIs(3),
+  stopWhen: isStepCount(3),
   tools: {
     getCharacterNames: createTool({
       description:

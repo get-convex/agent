@@ -7,7 +7,10 @@ import {
 
 export interface Agent {
   name: string;
+  /** @deprecated Use `editableInstructions`. */
   instructions: string | undefined;
+  editableInstructions: string | undefined;
+  hasStructuredInstructions: boolean;
   contextOptions: ContextOptions | undefined;
   storageOptions: StorageOptions | undefined;
   maxRetries: number | undefined;

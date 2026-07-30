@@ -1,7 +1,4 @@
-import type {
-  GenericActionCtx,
-  GenericDataModel,
-} from "convex/server";
+import type { GenericActionCtx, GenericDataModel } from "convex/server";
 import type { ComponentApi } from "../component/_generated/component.js";
 
 export type AgentComponent = ComponentApi;

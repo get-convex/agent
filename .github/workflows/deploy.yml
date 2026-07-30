@@ -22,14 +22,17 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            playground/package-lock.json
 
       - name: Install root dependencies & build
         run: npm ci && npm run build
 
       - name: Install playground dependencies
-        run: cd playground && npm i
+        run: cd playground && npm ci
 
       - name: Build Vite project
         run: cd playground && VITE_BASE=/agent/ npm run build

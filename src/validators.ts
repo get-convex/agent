@@ -516,6 +516,10 @@ export const vStorageOptions = v.object({
 });
 
 const vPromptFields = {
+  instructions: v.optional(
+    v.union(v.string(), vSystemMessage, v.array(vSystemMessage)),
+  ),
+  /** @deprecated Use `instructions` instead. */
   system: v.optional(v.string()),
   prompt: v.optional(v.string()),
   messages: v.optional(v.array(vMessage)),

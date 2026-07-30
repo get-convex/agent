@@ -44,8 +44,11 @@ import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
 import type { Infer } from "convex/values";
 import {
   convertUint8ArrayToBase64,
+  type FileData,
   type ProviderOptions,
+  type ProviderReference,
   type ReasoningPart,
+  type ToolResultOutput,
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
 import {
@@ -235,8 +238,9 @@ export function serializeUsage(usage: LanguageModelUsage): Usage {
     promptTokens: usage.inputTokens ?? 0,
     completionTokens: usage.outputTokens ?? 0,
     totalTokens: usage.totalTokens ?? 0,
-    reasoningTokens: usage.reasoningTokens,
-    cachedInputTokens: usage.cachedInputTokens,
+    // AI SDK 7 nests these under the token detail objects.
+    reasoningTokens: usage.outputTokenDetails?.reasoningTokens,
+    cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
   };
 }
 
@@ -245,18 +249,16 @@ export function toModelMessageUsage(usage: Usage): LanguageModelUsage {
     inputTokens: usage.promptTokens,
     outputTokens: usage.completionTokens,
     totalTokens: usage.totalTokens,
-    reasoningTokens: usage.reasoningTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    // These detail fields are required by LanguageModelUsage type but we don't
-    // have the granular data, so we provide empty objects with undefined values.
+    // Only the two fields Agent persists round-trip; the rest of AI SDK 7's
+    // granular breakdown was never stored.
     inputTokenDetails: {
-      cacheReadTokens: undefined,
+      cacheReadTokens: usage.cachedInputTokens,
       cacheWriteTokens: undefined,
       noCacheTokens: undefined,
     },
     outputTokenDetails: {
       textTokens: undefined,
-      reasoningTokens: undefined,
+      reasoningTokens: usage.reasoningTokens,
     },
   };
 }
@@ -363,7 +365,11 @@ async function serializeStepMessages<TOOLS extends ToolSet>(
     provider: model ? getProviderName(model) : undefined,
     providerMetadata: step.providerMetadata,
     reasoning: step.reasoningText,
-    reasoningDetails: step.reasoning,
+    // AI SDK 7 adds `reasoning-file` to step.reasoning. The v1 format has no
+    // slot for it; persisting it is a durable-format change (see PR-2).
+    reasoningDetails: step.reasoning.filter(
+      (part) => part.type !== "reasoning-file",
+    ),
     usage: serializeUsage(step.usage),
     warnings: serializeWarnings(step.warnings),
     finishReason: step.finishReason,
@@ -754,11 +760,39 @@ export function normalizeToolOutput(
     };
   }
   if (validate(vToolResultOutput, result)) {
-    return result;
+    return toAISDKToolResultOutput(result);
   }
   return {
     type: "json",
     value: result ?? null,
+  };
+}
+
+/**
+ * Project a stored tool result output into the AI SDK 7 shape. v7 renamed the
+ * `media` content part to `image-data` and requires a `kind` on custom parts.
+ */
+function toAISDKToolResultOutput(
+  output: Infer<typeof vToolResultOutput>,
+): ToolResultOutput {
+  if (output.type !== "content") {
+    return output;
+  }
+  return {
+    type: "content",
+    value: output.value.map((part) => {
+      if (part.type === "media") {
+        return {
+          type: "image-data" as const,
+          data: part.data,
+          mediaType: part.mediaType,
+        };
+      }
+      if (part.type === "custom") {
+        return { ...part, kind: "agent.legacy" as const };
+      }
+      return part;
+    }),
   };
 }
 
@@ -852,12 +886,23 @@ export function guessMimeType(buf: ArrayBuffer | string): string {
 }
 
 /**
+ * AI SDK 7 content that the Agent v1 message format cannot represent. Storing
+ * these shapes is a durable-format change, so it is deliberately out of scope
+ * for the SDK upgrade itself.
+ */
+export function unsupportedV1ContentPart(type: string): Error {
+  return new Error(
+    `AI SDK 7 ${type} content cannot be persisted in the Agent v1 message format`,
+  );
+}
+
+/**
  * Serialize an AI SDK `DataContent` or `URL` to a Convex-serializable format.
  * @param dataOrUrl - The data or URL to serialize.
  * @returns The serialized data as an ArrayBuffer or the URL as a string.
  */
 export function serializeDataOrUrl(
-  dataOrUrl: DataContent | URL,
+  dataOrUrl: DataContent | URL | ProviderReference | FileData,
 ): ArrayBuffer | string {
   if (typeof dataOrUrl === "string") {
     return dataOrUrl;
@@ -868,6 +913,24 @@ export function serializeDataOrUrl(
   if (dataOrUrl instanceof URL) {
     return dataOrUrl.toString();
   }
+  // AI SDK 7 tags file data. Flatten the shapes the v1 format can hold.
+  if ("type" in dataOrUrl) {
+    switch (dataOrUrl.type) {
+      case "data":
+        return serializeDataOrUrl(dataOrUrl.data);
+      case "url":
+        return dataOrUrl.url.toString();
+      case "text":
+        return convertUint8ArrayToBase64(
+          new TextEncoder().encode(dataOrUrl.text),
+        );
+      case "reference":
+        throw unsupportedV1ContentPart("provider file reference");
+    }
+  }
+  if (!(dataOrUrl instanceof Uint8Array)) {
+    throw unsupportedV1ContentPart("provider file reference");
+  }
   return dataOrUrl.buffer.slice(
     dataOrUrl.byteOffset,
     dataOrUrl.byteOffset + dataOrUrl.byteLength,
@@ -875,8 +938,26 @@ export function serializeDataOrUrl(
 }
 
 export function toModelMessageDataOrUrl(
-  urlOrString: string | ArrayBuffer | URL | DataContent,
-): URL | DataContent {
+  urlOrString: string | ArrayBuffer | URL | DataContent | ProviderReference,
+): URL | DataContent | ProviderReference;
+export function toModelMessageDataOrUrl(
+  urlOrString:
+    | string
+    | ArrayBuffer
+    | URL
+    | DataContent
+    | ProviderReference
+    | FileData,
+): URL | DataContent | ProviderReference | FileData;
+export function toModelMessageDataOrUrl(
+  urlOrString:
+    | string
+    | ArrayBuffer
+    | URL
+    | DataContent
+    | ProviderReference
+    | FileData,
+): URL | DataContent | ProviderReference | FileData {
   if (urlOrString instanceof URL) {
     return urlOrString;
   }

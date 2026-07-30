@@ -21,10 +21,10 @@ import type {
 } from "convex/server";
 import { v } from "convex/values";
 import { defineSchema } from "convex/server";
-import { stepCountIs } from "ai";
+import { isStepCount } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { z } from "zod/v4";
-import { mockModel } from "../vercel/client/mockModel.js";
+import { MockLanguageModel, mockModel } from "../vercel/client/mockModel.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;
@@ -86,7 +86,72 @@ const saveStepAgent = new Agent(components.agent, {
       [{ type: "text", text: "done" }],
     ],
   }),
-  stopWhen: stepCountIs(5),
+  stopWhen: isStepCount(5),
+});
+
+let boundaryOnStepEndCalls = 0;
+let boundaryOnStepFinishCalls = 0;
+let boundaryThrowingCallbackCalls = 0;
+let boundaryRawRequestBody: unknown;
+let boundaryRawResponseBody: unknown;
+const boundaryModel = new MockLanguageModel({
+  doGenerate: async () => ({
+    content: [{ type: "text", text: "boundary-ok" }],
+    finishReason: { unified: "stop", raw: undefined },
+    usage: {
+      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+      outputTokens: { total: 1, text: 1, reasoning: 0 },
+    },
+    warnings: [],
+    request: { body: { requestIncluded: true } },
+    response: {
+      headers: {},
+      body: { responseIncluded: true },
+    },
+  }),
+});
+const boundaryAgent = new Agent(components.agent, {
+  name: "v7-boundary",
+  instructions: "agent instructions",
+  languageModel: boundaryModel,
+  rawRequestResponseHandler: async (_ctx, { request, response }) => {
+    boundaryRawRequestBody = request.body;
+    boundaryRawResponseBody = response.body;
+  },
+});
+
+let observedToolContext: string | undefined;
+let observedRuntimeContext: string | undefined;
+const contextualTool = createTool({
+  inputSchema: z.object({ value: z.string() }),
+  contextSchema: z.object({ tenantId: z.string() }),
+  execute: async (_ctx, input, { context }) => {
+    observedToolContext = `${context.tenantId}:${input.value}`;
+    return observedToolContext;
+  },
+});
+const contextAgent = new Agent(components.agent, {
+  name: "v7-context",
+  languageModel: mockModel({
+    contentSteps: [
+      [
+        {
+          type: "tool-call",
+          toolCallId: "context-call",
+          toolName: "contextualTool",
+          input: JSON.stringify({ value: "hello" }),
+        },
+      ],
+      [{ type: "text", text: "context-ok" }],
+    ],
+  }),
+  tools: { contextualTool },
+  stopWhen: isStepCount(2),
+});
+
+const emptyResponseAgent = new Agent(components.agent, {
+  name: "empty-response-test",
+  languageModel: mockModel({ content: [] }),
 });
 
 export const replayStepsViaSaveStep = action({
@@ -101,11 +166,14 @@ export const replayStepsViaSaveStep = action({
     const { threadId } = await saveStepAgent.createThread(ctx, {
       userId: "ss-replay",
     });
-    const { messageId: promptMessageId } = await saveStepAgent.saveMessage(ctx, {
-      threadId,
-      message: { role: "user", content: "echo hi" },
-      skipEmbeddings: true,
-    });
+    const { messageId: promptMessageId } = await saveStepAgent.saveMessage(
+      ctx,
+      {
+        threadId,
+        message: { role: "user", content: "echo hi" },
+        skipEmbeddings: true,
+      },
+    );
     let previousStep: (typeof steps)[number] | undefined;
     for (const step of steps) {
       await saveStepAgent.saveStep(ctx, {
@@ -128,6 +196,151 @@ export const replayStepsViaSaveStep = action({
         : ["text"],
     );
     return { stepCount: steps.length, contentTypes };
+  },
+});
+
+export const persistMultiStep = action({
+  args: { stream: v.boolean() },
+  handler: async (ctx, { stream }) => {
+    const { threadId, thread } = await saveStepAgent.createThread(ctx, {
+      userId: stream ? "ss-stream" : "ss-generate",
+    });
+    if (stream) {
+      const result = await thread.streamText({ prompt: "echo hi" });
+      await result.consumeStream();
+    } else {
+      await thread.generateText({ prompt: "echo hi" });
+    }
+
+    const persisted = await saveStepAgent.listMessages(ctx, {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 50 },
+      statuses: ["success", "pending", "failed"],
+    });
+    return persisted.page.flatMap((message) =>
+      Array.isArray(message.message?.content)
+        ? message.message.content.map((part) => part.type)
+        : [message.message?.role === "assistant" ? "text" : "user"],
+    );
+  },
+});
+
+export const persistEmptyResponse = action({
+  args: {},
+  handler: async (ctx) => {
+    const { threadId, thread } = await emptyResponseAgent.createThread(ctx, {
+      userId: "empty-response",
+    });
+    await thread.generateText({ prompt: "return nothing" });
+    const persisted = await emptyResponseAgent.listMessages(ctx, {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 10 },
+      statuses: ["success", "pending", "failed"],
+    });
+    return persisted.page.map((message) => ({
+      role: message.message?.role,
+      content: message.message?.content,
+      status: message.status,
+    }));
+  },
+});
+
+export const exerciseV7Boundary = action({
+  args: {},
+  handler: async (ctx) => {
+    boundaryOnStepEndCalls = 0;
+    boundaryOnStepFinishCalls = 0;
+    boundaryThrowingCallbackCalls = 0;
+    boundaryRawRequestBody = undefined;
+    boundaryRawResponseBody = undefined;
+    boundaryModel.doGenerateCalls.length = 0;
+
+    const { threadId, thread } = await boundaryAgent.createThread(ctx, {
+      userId: "v7-boundary",
+    });
+    await boundaryAgent.saveMessage(ctx, {
+      threadId,
+      message: { role: "system", content: "stored instructions" },
+      skipEmbeddings: true,
+    });
+    await thread.generateText({
+      prompt: "hello",
+      instructions: "request instructions",
+      onStepEnd: () => {
+        boundaryOnStepEndCalls += 1;
+      },
+    });
+    const providerPrompt = boundaryModel.doGenerateCalls.at(-1)?.prompt ?? [];
+    await thread.generateText({
+      prompt: "legacy callback",
+      onStepFinish: () => {
+        boundaryOnStepFinishCalls += 1;
+      },
+    });
+    try {
+      await thread.generateText({
+        prompt: "callback error",
+        onStepEnd: () => {
+          boundaryThrowingCallbackCalls += 1;
+          throw new Error("onStepEnd failed");
+        },
+      });
+    } catch {
+      // Callback errors may propagate depending on the AI SDK callback policy.
+    }
+    const messages = await boundaryAgent.listMessages(ctx, {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 20 },
+      statuses: ["success", "pending", "failed"],
+    });
+    return {
+      boundaryOnStepEndCalls,
+      boundaryOnStepFinishCalls,
+      boundaryThrowingCallbackCalls,
+      hasStoredSystemMessage: providerPrompt.some(
+        (message) =>
+          message.role === "system" &&
+          message.content === "stored instructions",
+      ),
+      hasRequestInstructions: providerPrompt.some(
+        (message) =>
+          message.role === "system" &&
+          message.content === "request instructions",
+      ),
+      rawRequestIncluded:
+        (boundaryRawRequestBody as { requestIncluded?: boolean } | undefined)
+          ?.requestIncluded === true,
+      rawResponseIncluded:
+        (boundaryRawResponseBody as { responseIncluded?: boolean } | undefined)
+          ?.responseIncluded === true,
+      assistantMessages: messages.page.filter(
+        (message) => message.message?.role === "assistant",
+      ).length,
+      pendingMessages: messages.page.filter(
+        (message) => message.status === "pending",
+      ).length,
+    };
+  },
+});
+
+export const exerciseV7Contexts = action({
+  args: {},
+  handler: async (ctx) => {
+    observedToolContext = undefined;
+    observedRuntimeContext = undefined;
+    const { thread } = await contextAgent.createThread(ctx, {
+      userId: "v7-context",
+    });
+    await thread.generateText({
+      prompt: "use context",
+      runtimeContext: { requestId: "request-ctx" },
+      toolsContext: { contextualTool: { tenantId: "tenant-ctx" } },
+      prepareStep: ({ runtimeContext }) => {
+        observedRuntimeContext = runtimeContext.requestId;
+        return {};
+      },
+    });
+    return { observedToolContext, observedRuntimeContext };
   },
 });
 
@@ -232,6 +445,10 @@ const testApi: ApiFromModules<{
     generateObjectAction: typeof generateObjectAction;
     saveMessageMutation: typeof saveMessageMutation;
     replayStepsViaSaveStep: typeof replayStepsViaSaveStep;
+    persistMultiStep: typeof persistMultiStep;
+    persistEmptyResponse: typeof persistEmptyResponse;
+    exerciseV7Boundary: typeof exerciseV7Boundary;
+    exerciseV7Contexts: typeof exerciseV7Contexts;
   };
 }>["fns"] = anyApi["index.test"] as any;
 
@@ -260,13 +477,63 @@ describe("Agent thick client", () => {
     expect(toolCalls).toBe(1);
     expect(toolResults).toBe(1);
   });
-  test("saveStep without previousStep duplicates prior messages", async () => {
+  test("saveStep does not need previousStep with AI SDK v7", async () => {
     const t = initConvexTest(schema);
     const res = await t.action(testApi.replayStepsViaSaveStep, {
       withWatermark: false,
     });
     const toolCalls = res.contentTypes.filter((t) => t === "tool-call").length;
-    expect(toolCalls).toBeGreaterThan(1);
+    expect(toolCalls).toBe(1);
+  });
+  test.each([
+    ["generateText", false],
+    ["streamText", true],
+  ])(
+    "%s persists every multi-step response exactly once",
+    async (_, stream) => {
+      const t = initConvexTest(schema);
+      const contentTypes = await t.action(testApi.persistMultiStep, { stream });
+      expect(contentTypes.filter((type) => type === "tool-call")).toHaveLength(
+        1,
+      );
+      expect(
+        contentTypes.filter((type) => type === "tool-result"),
+      ).toHaveLength(1);
+      expect(contentTypes.filter((type) => type === "text")).toHaveLength(1);
+    },
+  );
+  test("an empty response finalizes its pending assistant row", async () => {
+    const t = initConvexTest(schema);
+    const messages = await t.action(testApi.persistEmptyResponse, {});
+    expect(messages.filter((message) => message.status === "pending")).toEqual(
+      [],
+    );
+    expect(messages.filter((message) => message.role === "assistant")).toEqual([
+      { role: "assistant", content: [], status: "success" },
+    ]);
+  });
+  test("AI SDK v7 lifecycle, instructions, and raw metadata preserve Agent behavior", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.exerciseV7Boundary, {});
+    expect(result).toEqual({
+      boundaryOnStepEndCalls: 1,
+      boundaryOnStepFinishCalls: 1,
+      boundaryThrowingCallbackCalls: 1,
+      hasStoredSystemMessage: true,
+      hasRequestInstructions: true,
+      rawRequestIncluded: true,
+      rawResponseIncluded: true,
+      assistantMessages: 3,
+      pendingMessages: 0,
+    });
+  });
+  test("AI SDK v7 runtime and tool contexts flow through Agent", async () => {
+    const t = initConvexTest(schema);
+    const result = await t.action(testApi.exerciseV7Contexts, {});
+    expect(result).toEqual({
+      observedToolContext: "tenant-ctx:hello",
+      observedRuntimeContext: "request-ctx",
+    });
   });
 });
 
@@ -350,7 +617,7 @@ describe("Agent option variations and normal behavior", () => {
       instructions: "Test instructions",
       contextOptions: { recentMessages: 5 },
       storageOptions: { saveMessages: "all" },
-      stopWhen: stepCountIs(2),
+      stopWhen: isStepCount(2),
       callSettings: { maxRetries: 1 },
       usageHandler: async () => {},
       rawRequestResponseHandler: async () => {},

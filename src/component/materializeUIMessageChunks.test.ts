@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { pick } from "convex-helpers";
 import { validate } from "convex-helpers/validators";
 import {
+  type MessageContentParts,
   type MessageWithMetadataInternal,
   type StreamDelta,
   type StreamMessage,
@@ -201,7 +202,22 @@ describe("materializeUIMessageChunks", () => {
     const metadata = { status: "failed" as const, error: "tool failure" };
     const actual = materializeUIMessageChunks(stream, chunks, metadata);
 
-    expect(actual).toEqual(await materializeWithAiSdk(chunks, metadata));
+    // This decoder is pinned to the AI SDK 6.0.35 wire format that wrote
+    // these rows. AI SDK 7 changed its denial text, so comparing against the
+    // installed SDK would silently redefine the legacy persisted format.
+    const denial = actual
+      .flatMap((message) =>
+        Array.isArray(message.message?.content)
+          ? (message.message.content as MessageContentParts[])
+          : [],
+      )
+      .find((part) => part.type === "tool-result" && part.output);
+    expect(denial).toMatchObject({
+      type: "tool-result",
+      toolCallId: "dynamic-call",
+      toolName: "dynamic_lookup",
+      output: { type: "error-text", value: "Tool execution denied." },
+    });
     expectValidMessages(actual);
   });
 

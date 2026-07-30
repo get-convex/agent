@@ -4,7 +4,7 @@ import {
   Agent,
   createThread,
   createTool,
-  stepCountIs,
+  isStepCount,
 } from "@convex-dev/agent";
 import z from "zod/v3";
 import { action } from "../_generated/server";
@@ -35,7 +35,7 @@ export const runAgentAsTool = action({
           },
         }),
       },
-      stopWhen: stepCountIs(20),
+      stopWhen: isStepCount(20),
       ...defaultConfig,
     });
     const agentWithToolsAsTool = createTool({
@@ -72,7 +72,7 @@ export const runAgentAsTool = action({
       instructions:
         "You can call agentWithToolsAsTool as many times as told with the argument whatToDo.",
       tools: { agentWithToolsAsTool },
-      stopWhen: stepCountIs(5),
+      stopWhen: isStepCount(5),
       ...defaultConfig,
     });
 

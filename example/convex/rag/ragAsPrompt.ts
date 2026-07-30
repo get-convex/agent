@@ -54,8 +54,8 @@ export const answerQuestionViaRAG = internalAction({
     // Note: for gemini / claude, using `<context>` and `<question>` tags is
     // recommended instead of the markdown format below.
     const prompt = `# Context:\n\n ${context.text}\n\n---\n\n# Question:\n\n"""${rawPrompt}\n"""`;
-    // Override the system prompt for demo purposes.
-    const system =
+    // Override the instructions for demo purposes.
+    const instructions =
       "Answer the user's question and explain what context you used to answer it.";
 
     const result = await agent.streamText(
@@ -64,7 +64,7 @@ export const answerQuestionViaRAG = internalAction({
       // By providing both prompt and promptMessageId, it will use the prompt
       // in place of the promptMessageId's message, but still be considered
       // a response to the promptMessageId message (raw prompt).
-      { prompt, promptMessageId, system },
+      { prompt, promptMessageId, instructions },
       { saveStreamDeltas: true }, // to enable streaming the response via websockets.
     );
     // To show the context in the demo UI, we record the context used

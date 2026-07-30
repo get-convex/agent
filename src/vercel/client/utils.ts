@@ -1,4 +1,5 @@
-import type { StepResult, StopCondition } from "ai";
+import type { Context } from "@ai-sdk/provider-utils";
+import type { StepResult, StopCondition, ToolSet } from "ai";
 
 /**
  * A stop condition that only matches tool calls which completed
@@ -14,10 +15,16 @@ export function hasSuccessfulToolCall(toolName: string): StopCondition<any> {
     ) ?? false;
 }
 
-export async function willContinue(
-  steps: StepResult<any>[],
+export async function willContinue<
+  TOOLS extends ToolSet,
+  RUNTIME_CONTEXT extends Context,
+>(
+  steps: StepResult<TOOLS, RUNTIME_CONTEXT>[],
 
-  stopWhen: StopCondition<any> | Array<StopCondition<any>> | undefined,
+  stopWhen:
+    | StopCondition<TOOLS, RUNTIME_CONTEXT>
+    | Array<StopCondition<TOOLS, RUNTIME_CONTEXT>>
+    | undefined,
 ): Promise<boolean> {
   const step = steps.at(-1)!;
   // we aren't doing another round after a tool result

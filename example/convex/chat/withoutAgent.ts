@@ -40,6 +40,7 @@ export const generateAsync = internalAction({
         threadId,
         ...defaultConfig, // the same Config you'd use for the Agent.
       },
+      "generateText",
     );
 
     try {
@@ -50,7 +51,7 @@ export const generateAsync = internalAction({
         //   generation.updateModel(model);
         //   return { model };
         // },
-        onStepFinish: async (step) => {
+        onStepEnd: async (step) => {
           // determine if you're going to keep generating, e.g. by calling
           // your stopWhen function(s) with the steps so far.
           const createPendingMessage = false;

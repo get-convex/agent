@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { describe, expect, test } from "vitest";
-import { Agent, createTool, stepCountIs, mockModel } from "@convex-dev/agent";
+import { Agent, createTool, isStepCount, mockModel } from "@convex-dev/agent";
 import { anyApi, actionGeneric, mutationGeneric } from "convex/server";
 import type {
   ApiFromModules,
@@ -24,7 +24,6 @@ const deleteFileTool = createTool({
   inputSchema: z.object({
     filename: z.string().describe("The name of the file to delete"),
   }),
-  needsApproval: () => true,
   execute: async (_ctx, input) => {
     return `Successfully deleted file: ${input.filename}`;
   },
@@ -36,13 +35,16 @@ const transferMoneyTool = createTool({
     amount: z.number().describe("The amount to transfer"),
     toAccount: z.string().describe("The destination account"),
   }),
-  needsApproval: async (_ctx, input) => {
-    return input.amount > 100;
-  },
   execute: async (_ctx, input) => {
     return `Transferred $${input.amount} to account ${input.toAccount}`;
   },
 });
+
+const toolApproval = {
+  deleteFile: "user-approval",
+  transferMoney: (input: { amount: number }) =>
+    input.amount > 100 ? "user-approval" : undefined,
+} as const;
 
 // Agent that mirrors the real example config: same tools, same usageHandler,
 // same rawRequestResponseHandler — but with a mock model that produces tool calls.
@@ -67,7 +69,7 @@ const testApprovalAgent = new Agent(components.agent, {
       [{ type: "text", text: "I deleted the file important.txt." }],
     ],
   }),
-  stopWhen: stepCountIs(5),
+  stopWhen: isStepCount(5),
   // These are the real handlers from the example — the exact code that runs in prod
   usageHandler,
   rawRequestResponseHandler,
@@ -94,7 +96,7 @@ const testDenialAgent = new Agent(components.agent, {
       [{ type: "text", text: "Understood, I won't delete that file." }],
     ],
   }),
-  stopWhen: stepCountIs(5),
+  stopWhen: isStepCount(5),
   usageHandler,
   rawRequestResponseHandler,
 });
@@ -130,7 +132,7 @@ const testMultiToolApprovalAgent = new Agent(components.agent, {
       [{ type: "text", text: "Done! Deleted data.csv and transferred $500." }],
     ],
   }),
-  stopWhen: stepCountIs(5),
+  stopWhen: isStepCount(5),
   usageHandler,
   rawRequestResponseHandler,
 });
@@ -148,7 +150,7 @@ export const testApproveE2E = action({
     const result1 = await testApprovalAgent.streamText(
       ctx,
       { threadId: thread.threadId },
-      { prompt: "Delete important.txt" },
+      { prompt: "Delete important.txt", toolApproval },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result1.consumeStream();
@@ -175,7 +177,7 @@ export const testApproveE2E = action({
     const result2 = await testApprovalAgent.streamText(
       ctx,
       { threadId: thread.threadId },
-      { promptMessageId: messageId },
+      { promptMessageId: messageId, toolApproval },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result2.consumeStream();
@@ -203,7 +205,7 @@ export const testDenyE2E = action({
     const result1 = await testDenialAgent.streamText(
       ctx,
       { threadId: thread.threadId },
-      { prompt: "Delete secret.txt" },
+      { prompt: "Delete secret.txt", toolApproval },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result1.consumeStream();
@@ -230,7 +232,7 @@ export const testDenyE2E = action({
     const result2 = await testDenialAgent.streamText(
       ctx,
       { threadId: thread.threadId },
-      { promptMessageId: messageId },
+      { promptMessageId: messageId, toolApproval },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result2.consumeStream();
@@ -258,7 +260,10 @@ export const testMultiToolApproveE2E = action({
     const result1 = await testMultiToolApprovalAgent.streamText(
       ctx,
       { threadId: thread.threadId },
-      { prompt: "Delete data.csv and transfer $500 to savings" },
+      {
+        prompt: "Delete data.csv and transfer $500 to savings",
+        toolApproval,
+      },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result1.consumeStream();
@@ -298,7 +303,7 @@ export const testMultiToolApproveE2E = action({
     const result2 = await testMultiToolApprovalAgent.streamText(
       ctx,
       { threadId: thread.threadId },
-      { promptMessageId: lastMessageId! },
+      { promptMessageId: lastMessageId!, toolApproval },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result2.consumeStream();

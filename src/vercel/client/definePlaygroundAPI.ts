@@ -10,12 +10,14 @@ import {
   type GenericQueryCtx,
 } from "convex/server";
 import { v } from "convex/values";
+import type { Instructions } from "ai";
 import {
   vContextOptions,
   vMessage,
   vMessageDoc,
   vPaginationResult,
   vStorageOptions,
+  vSystemMessage,
   vThreadDoc,
   vStreamArgs,
   type MessageDoc,
@@ -27,7 +29,7 @@ import {
   getProviderName,
   isTool,
 } from "../../shared.js";
-import { serializeNewMessagesInStep, toModelMessage } from "../mapping.js";
+import { serializeResponseMessages, toModelMessage } from "../mapping.js";
 import type { Agent } from "../index.js";
 import { listMessages as listMessages_ } from "./messages.js";
 import { syncStreams, vStreamMessagesReturnValue } from "./streaming.js";
@@ -41,6 +43,28 @@ export type AgentsFn<DataModel extends GenericDataModel> = (
   ctx: GenericActionCtx<DataModel> | GenericQueryCtx<DataModel>,
   args: { userId: string | undefined; threadId: string | undefined },
 ) => Agent[] | Promise<Agent[]>;
+
+/**
+ * Convert an Agent's instructions to the plain-text format the Playground can
+ * edit. The original structured value stays on the Agent and is used unless
+ * the user explicitly submits an override.
+ */
+export function instructionsToEditableText(
+  instructions: Instructions | undefined,
+): string | undefined {
+  if (instructions === undefined || typeof instructions === "string") {
+    return instructions;
+  }
+  const messages = Array.isArray(instructions) ? instructions : [instructions];
+  return messages.map(({ content }) => content).join("\n\n");
+}
+
+export function resolvePlaygroundInstructions(
+  instructions: Instructions | undefined,
+  system: string | undefined,
+): Instructions | undefined {
+  return instructions ?? system;
+}
 
 // Playground API definition
 export function definePlaygroundAPI<DataModel extends GenericDataModel>(
@@ -113,14 +137,24 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         threadId: args.threadId,
       });
       await validateApiKey(ctx, args.apiKey);
-      return agents.map(({ name, agent }) => ({
-        name,
-        instructions: agent.options.instructions,
-        contextOptions: agent.options.contextOptions,
-        storageOptions: agent.options.storageOptions,
-        maxRetries: agent.options.callSettings?.maxRetries,
-        tools: agent.options.tools ? Object.keys(agent.options.tools) : [],
-      }));
+      return agents.map(({ name, agent }) => {
+        const editableInstructions = instructionsToEditableText(
+          agent.options.instructions,
+        );
+        return {
+          name,
+          /** @deprecated Use `editableInstructions`. */
+          instructions: editableInstructions,
+          editableInstructions,
+          hasStructuredInstructions:
+            agent.options.instructions !== undefined &&
+            typeof agent.options.instructions !== "string",
+          contextOptions: agent.options.contextOptions,
+          storageOptions: agent.options.storageOptions,
+          maxRetries: agent.options.callSettings?.maxRetries,
+          tools: agent.options.tools ? Object.keys(agent.options.tools) : [],
+        };
+      });
     },
   });
 
@@ -249,6 +283,10 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
       // Args passed through to generateText
       prompt: v.optional(v.string()),
       messages: v.optional(v.array(vMessage)),
+      instructions: v.optional(
+        v.union(v.string(), vSystemMessage, v.array(vSystemMessage)),
+      ),
+      /** @deprecated Use `instructions` instead. */
       system: v.optional(v.string()),
     },
     handler: async (ctx: GenericActionCtx<DataModel>, args) => {
@@ -259,6 +297,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         threadId,
         contextOptions,
         storageOptions,
+        instructions,
         system,
         messages,
         ...rest
@@ -271,20 +310,25 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
       const namedAgent = agents.find(({ name }) => name === agentName);
       if (!namedAgent) throw new Error(`Unknown agent: ${agentName}`);
       const { agent } = namedAgent;
+      const resolvedInstructions = resolvePlaygroundInstructions(
+        instructions,
+        system,
+      );
       const { text, steps } = await agent.streamText(
         ctx,
         { threadId, userId },
         {
           ...rest,
-          ...(system ? { system } : {}),
+          ...(resolvedInstructions !== undefined
+            ? { instructions: resolvedInstructions }
+            : {}),
           ...(messages ? { messages: messages.map(toModelMessage) } : {}),
         },
         { contextOptions, storageOptions, saveStreamDeltas: true },
       );
       const outputMessages: MessageDoc[][] = [];
-      let previousResponseMessageCount = 0;
       for (const step of await steps) {
-        const { messages } = await serializeNewMessagesInStep(
+        const { messages } = await serializeResponseMessages(
           ctx,
           component,
           step,
@@ -292,9 +336,8 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
             model: getModelName(agent.options.languageModel),
             provider: getProviderName(agent.options.languageModel),
           },
-          previousResponseMessageCount,
+          step.response.messages,
         );
-        previousResponseMessageCount = step.response.messages.length;
         outputMessages.push(
           messages.map((messageWithMetadata, i) => {
             return {

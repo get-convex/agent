@@ -1,20 +1,27 @@
 import {
-  stepCountIs,
-  type CallSettings,
+  isStepCount,
   type GenerateObjectResult,
   type IdGenerator,
   type LanguageModel,
+  type Instructions,
   type ModelMessage,
   type StepResult,
   type StopCondition,
   type ToolSet,
 } from "ai";
+import type { Context } from "@ai-sdk/provider-utils";
 import {
   serializeResponseMessages,
   serializeObjectResult,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
-import type { ActionCtx, AgentComponent, Config, Options } from "./types.js";
+import type {
+  ActionCtx,
+  AgentCallSettings,
+  AgentComponent,
+  Config,
+  Options,
+} from "./types.js";
 import type { Message, MessageDoc } from "../../validators.js";
 import {
   getModelName,
@@ -31,6 +38,7 @@ export async function startGeneration<
   T,
   Tools extends ToolSet = ToolSet,
   CustomCtx extends object = object,
+  RUNTIME_CONTEXT extends Context = Context,
 >(
   ctx: ActionCtx & CustomCtx,
   component: AgentComponent,
@@ -74,13 +82,24 @@ export async function startGeneration<
      *   the promptMessageId message, if provided.
      */
     messages?: (ModelMessage | Message)[];
+    /** Canonical AI SDK instructions for the request. */
+    instructions?: Instructions;
+    /** @deprecated Use `instructions`. */
+    system?: Instructions;
+    /** Whether system messages may remain in the message history. */
+    allowSystemInMessages?: boolean;
+    /** Optional AI SDK result/body inclusion controls. */
+    include?: Record<string, boolean | undefined>;
     /**
      * The abort signal to be passed to the LLM call. If triggered, it will
      * mark the pending message as failed. If the generation is asynchronously
      * aborted, it will trigger this signal when detected.
      */
     abortSignal?: AbortSignal;
-    stopWhen?: StopCondition<Tools> | Array<StopCondition<Tools>>;
+    runtimeContext?: RUNTIME_CONTEXT;
+    stopWhen?:
+      | StopCondition<Tools, RUNTIME_CONTEXT>
+      | Array<StopCondition<Tools, RUNTIME_CONTEXT>>;
     _internal?: { generateId?: IdGenerator };
   },
   {
@@ -94,14 +113,21 @@ export async function startGeneration<
       agentName: string;
       agentForToolCtx?: Agent;
     },
+  /**
+   * The AI SDK operation that will consume the returned arguments. This lets
+   * Agent request the raw bodies supported by that operation. Existing callers
+   * default to `generateText`; pass `streamText` for streaming calls.
+   */
+  operation?: "generateText" | "streamText" | "generateObject" | "streamObject",
 ): Promise<{
   args: T & {
-    system?: string;
+    instructions?: Instructions;
     model: LanguageModel;
     messages: ModelMessage[];
     prompt?: never;
+    runtimeContext?: RUNTIME_CONTEXT;
     tools?: Tools;
-  } & CallSettings;
+  } & AgentCallSettings;
   order: number;
   stepOrder: number;
   userId: string | undefined;
@@ -109,7 +135,7 @@ export async function startGeneration<
   updateModel: (model: ModelOrMetadata | undefined) => void;
   save: <TOOLS extends ToolSet>(
     toSave:
-      | { step: StepResult<TOOLS> }
+      | { step: StepResult<TOOLS, RUNTIME_CONTEXT> }
       | { object: GenerateObjectResult<unknown> },
     createPendingMessage?: boolean,
     finishStreamId?: string,
@@ -185,34 +211,49 @@ export async function startGeneration<
     agent: opts.agentForToolCtx,
   } satisfies ToolCtx;
   const tools = wrapTools(toolCtx, args.tools) as Tools;
+  const resolvedOperation = operation ?? "generateText";
+  const include =
+    opts.rawRequestResponseHandler &&
+    (resolvedOperation === "generateText" || resolvedOperation === "streamText")
+      ? {
+          ...(args as { include?: Record<string, boolean> }).include,
+          requestBody: true,
+          ...(resolvedOperation === "generateText"
+            ? { responseBody: true }
+            : {}),
+        }
+      : (args as { include?: Record<string, boolean> }).include;
   const aiArgs = {
     ...opts.callSettings,
     providerOptions: opts.providerOptions,
-    ...omit(args, ["promptMessageId", "messages", "prompt"]),
+    ...omit(args, [
+      "promptMessageId",
+      "messages",
+      "prompt",
+      "instructions",
+      "system",
+      "include",
+    ]),
     model,
     messages: context.messages,
+    instructions: args.instructions ?? args.system,
+    allowSystemInMessages: args.allowSystemInMessages ?? true,
+    ...(include ? { include } : {}),
     stopWhen:
-      args.stopWhen ?? (opts.maxSteps ? stepCountIs(opts.maxSteps) : undefined),
+      args.stopWhen ?? (opts.maxSteps ? isStepCount(opts.maxSteps) : undefined),
     tools,
-  } as T & {
+  } as unknown as T & {
     model: LanguageModel;
     messages: ModelMessage[];
     prompt?: never;
     tools?: Tools;
     _internal?: { generateId?: IdGenerator };
-  } & CallSettings;
+  } & AgentCallSettings;
   // NOTE: We intentionally do NOT override _internal.generateId here.
   // The AI SDK uses generateId() for many internal IDs (approval IDs,
   // tool execution IDs, message IDs, etc.) and they must be unique.
   // The pending message is linked via the explicit `pendingMessageId`
   // parameter passed to addMessages in the save closure.
-  // Track how many response messages we've already saved across steps.
-  // step.response.messages is cumulative — each step appends to it.
-  // We need to know which messages are new in each step to serialize
-  // only the new ones (important for tool approval flows where the SDK
-  // may add extra messages like approval tool-results).
-  let previousResponseMessageCount = 0;
-
   return {
     args: aiArgs,
     order: order ?? 0,
@@ -228,7 +269,7 @@ export async function startGeneration<
     fail,
     save: async <TOOLS extends ToolSet>(
       toSave:
-        | { step: StepResult<TOOLS> }
+        | { step: StepResult<TOOLS, RUNTIME_CONTEXT> }
         | { object: GenerateObjectResult<unknown> },
       createPendingMessage?: boolean,
       /**
@@ -247,24 +288,18 @@ export async function startGeneration<
             activeModel,
           );
         } else {
-          const allResponseMessages = toSave.step.response.messages;
-          const newResponseMessages = allResponseMessages.slice(
-            previousResponseMessageCount,
-          );
-          previousResponseMessageCount = allResponseMessages.length;
           // A completed step still needs a durable assistant result when the
           // provider emits no response messages. Materialize that result at
           // the save boundary so serialization preserves its explicit input.
-          const responseMessagesToSave: ModelMessage[] =
-            newResponseMessages.length > 0
-              ? newResponseMessages
-              : [{ role: "assistant", content: [] }];
+          const responseMessages = toSave.step.response.messages;
           serialized = await serializeResponseMessages(
             ctx,
             component,
             toSave.step,
             activeModel,
-            responseMessagesToSave,
+            responseMessages.length > 0
+              ? responseMessages
+              : [{ role: "assistant", content: [] }],
           );
         }
         const embeddings = await embedMessages(

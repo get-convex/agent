@@ -1,10 +1,13 @@
+import type { Context } from "@ai-sdk/provider-utils";
 import type {
+  AsyncIterableStream,
   StepResult,
   StreamTextResult,
   ToolSet,
+  UIMessageChunk,
   UIMessage as AIUIMessage,
 } from "ai";
-import { streamText as streamTextAi } from "ai";
+import { streamText as streamTextAi, toUIMessageStream } from "ai";
 import {
   compressUIMessageChunks,
   DeltaStreamer,
@@ -34,6 +37,7 @@ import { errorToString, willContinue } from "./utils.js";
 export async function streamText<
   TOOLS extends ToolSet,
   OUTPUT extends Output<any, any, any> = never,
+  RUNTIME_CONTEXT extends Context = Context,
 >(
   ctx: ActionCtx,
   component: AgentComponent,
@@ -43,7 +47,7 @@ export async function streamText<
    */
   streamTextArgs: AgentPrompt &
     Omit<
-      Parameters<typeof streamTextAi<TOOLS, OUTPUT>>[0],
+      Parameters<typeof streamTextAi<TOOLS, RUNTIME_CONTEXT, OUTPUT>>[0],
       "model" | "prompt" | "messages"
     > & {
       /**
@@ -73,22 +77,30 @@ export async function streamText<
     saveStreamDeltas?: boolean | StreamingOptions;
     agentForToolCtx?: Agent;
   },
-): Promise<StreamTextResult<TOOLS, OUTPUT> & GenerationOutputMetadata> {
+): Promise<
+  StreamTextResult<TOOLS, RUNTIME_CONTEXT, OUTPUT> & GenerationOutputMetadata
+> {
   const { threadId } = options ?? {};
   const { args, userId, order, stepOrder, promptMessageId, ...call } =
-    await startGeneration(ctx, component, streamTextArgs, options);
+    await startGeneration(
+      ctx,
+      component,
+      streamTextArgs,
+      options,
+      "streamText",
+    );
 
-  const steps: StepResult<TOOLS>[] = [];
+  const steps: StepResult<TOOLS, RUNTIME_CONTEXT>[] = [];
 
   // Track the final step for atomic save with stream finish (issue #181).
   // Only used when streamText awaits stream consumption itself; the
-  // `returnImmediately` path saves inline instead (see onStepFinish below).
-  let pendingFinalStep: StepResult<TOOLS> | undefined;
+  // `returnImmediately` path saves inline instead (see onStepEnd below).
+  let pendingFinalStep: StepResult<TOOLS, RUNTIME_CONTEXT> | undefined;
 
   // Whether streamText will await stream consumption before returning.
   // When false (saveStreamDeltas.returnImmediately === true), we cannot
   // defer the final-step save to a post-await block — the function has
-  // already returned by the time onStepFinish fires. See issue #265.
+  // already returned by the time onStepEnd fires. See issue #265.
   const willAwaitStream =
     Boolean(threadId) &&
     (options.saveStreamDeltas === true ||
@@ -123,7 +135,7 @@ export async function streamText<
         )
       : undefined;
 
-  const result = streamTextAi({
+  const result = streamTextAi<TOOLS, RUNTIME_CONTEXT, OUTPUT>({
     ...args,
     abortSignal: streamer?.abortController.signal ?? args.abortSignal,
     experimental_transform: mergeTransforms(
@@ -150,7 +162,7 @@ export async function streamText<
       }
       return undefined;
     },
-    onStepFinish: async (step) => {
+    onStepEnd: async (step) => {
       steps.push(step);
       const createPendingMessage = await willContinue(steps, args.stopWhen);
       if (!createPendingMessage && streamer) {
@@ -170,18 +182,20 @@ export async function streamText<
       } else {
         await call.save({ step }, createPendingMessage);
       }
-      return args.onStepFinish?.(step);
+      return (streamTextArgs.onStepEnd ?? streamTextArgs.onStepFinish)?.(step);
     },
-  }) as StreamTextResult<TOOLS, OUTPUT>;
+  } as Parameters<typeof streamTextAi<TOOLS, RUNTIME_CONTEXT, OUTPUT>>[0]);
   const stream = streamer?.consumeStream(
-    result.toUIMessageStream<AIUIMessage<TOOLS>>(),
+    toUIMessageStream<TOOLS, AIUIMessage<TOOLS>>({
+      stream: result.stream,
+    }) as AsyncIterableStream<UIMessageChunk>,
   );
   if (willAwaitStream) {
     try {
       await stream;
       await result.consumeStream();
     } catch (e) {
-      // If the stream errored (e.g. onStepFinish threw), the DeltaStreamer's
+      // If the stream errored (e.g. onStepEnd threw), the DeltaStreamer's
       // finish() was never called, leaving the streaming message stuck in
       // "streaming" state. Clean it up by marking it as aborted.
       await streamer?.fail(e instanceof Error ? e.message : String(e));

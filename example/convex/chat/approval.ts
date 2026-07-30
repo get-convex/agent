@@ -1,7 +1,7 @@
 // See the docs at https://docs.convex.dev/agents/tool-approval
 //
 // Tool Approval Flow:
-// 1. User sends message → model calls a tool with needsApproval
+// 1. User sends message → model calls a tool covered by toolApproval
 // 2. Generation stops with a tool-approval-request in the response
 // 3. Client shows Approve/Deny buttons to the user
 // 4. User clicks Approve or Deny → saves response, schedules continuation
@@ -12,12 +12,12 @@ import { listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
 import { components, internal } from "../_generated/api";
 import { internalAction, mutation, query } from "../_generated/server";
 import { v } from "convex/values";
-import { approvalAgent } from "../agents/approval";
+import { approvalAgent, approvalPolicy } from "../agents/approval";
 import { authorizeThreadAccess } from "../threads";
 
 /**
  * Send a message and start generation.
- * If the model calls a tool that needs approval, generation will pause
+ * If the model calls a tool covered by the approval policy, generation pauses
  * and the tool-approval-request will appear in the thread messages.
  */
 export const sendMessage = mutation({
@@ -47,7 +47,7 @@ export const generateResponse = internalAction({
     const result = await approvalAgent.streamText(
       ctx,
       { threadId },
-      { promptMessageId },
+      { promptMessageId, toolApproval: approvalPolicy },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result.consumeStream();
@@ -93,7 +93,10 @@ export const continueAfterApprovals = internalAction({
     const result = await approvalAgent.streamText(
       ctx,
       { threadId },
-      { promptMessageId: lastApprovalMessageId },
+      {
+        promptMessageId: lastApprovalMessageId,
+        toolApproval: approvalPolicy,
+      },
       { saveStreamDeltas: { chunking: "word", throttleMs: 100 } },
     );
     await result.consumeStream();
