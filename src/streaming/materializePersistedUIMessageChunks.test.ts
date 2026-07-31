@@ -51,6 +51,39 @@ describe("projectPersistedUIMessageChunks", () => {
     expect(validate(vMessageWithMetadataInternal, actual[1])).toBe(true);
   });
 
+  it("attaches materialized canonical tool-result files during recovery", () => {
+    const url = "https://files.example/tool-result";
+    const actual = projectPersistedUIMessageChunks(
+      stream,
+      [
+        {
+          type: "tool-input-available",
+          toolCallId: "call-1",
+          toolName: "render",
+          input: {},
+        },
+        {
+          type: "tool-output-available",
+          toolCallId: "call-1",
+          output: {
+            type: "content",
+            value: [
+              {
+                type: "file",
+                data: { type: "url", url },
+                mediaType: "application/octet-stream",
+              },
+            ],
+          },
+        },
+      ],
+      { status: "success" },
+      [{ url, fileId: "file-1" }],
+    );
+
+    expect(actual[1]).toMatchObject({ fileIds: ["file-1"] });
+  });
+
   it("keeps persisted sources on the step that produced them", () => {
     const chunks = [
       { type: "start-step" },

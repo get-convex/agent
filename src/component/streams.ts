@@ -25,6 +25,7 @@ import {
   getPersistedUIMessageChunkParts,
   projectPersistedUIMessageChunks,
 } from "../streaming/materializePersistedUIMessageChunks.js";
+import { changeRefcount } from "./files.js";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -35,9 +36,16 @@ const TIMEOUT_INTERVAL = 10 * MINUTE;
 const DELETE_STREAM_DELAY = MINUTE * 5; // 5 minutes
 
 const deltaValidator = schema.tables.streamDeltas.validator;
+const streamFileRefValidator = v.object({
+  url: v.string(),
+  fileId: v.id("files"),
+});
 
 export const addDelta = mutation({
-  args: deltaValidator,
+  args: {
+    ...deltaValidator.fields,
+    fileRefs: v.optional(v.array(streamFileRefValidator)),
+  },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const stream = await ctx.db.get("streamingMessages", args.streamId);
@@ -48,7 +56,30 @@ export const addDelta = mutation({
     if (stream.state.kind !== "streaming") {
       return false;
     }
-    await ctx.db.insert("streamDeltas", args);
+    const { fileRefs, ...delta } = args;
+    if (fileRefs?.length) {
+      const previous = stream.fileRefs ?? [];
+      // The persisted chunks refer to files by URL. Several URLs can still
+      // resolve to one durable file, but a URL must resolve to exactly one.
+      const refsByUrl = new Map(previous.map((ref) => [ref.url, ref] as const));
+      for (const ref of fileRefs) {
+        const existing = refsByUrl.get(ref.url);
+        if (existing && existing.fileId !== ref.fileId) {
+          throw new Error(`Stream file URL maps to multiple files: ${ref.url}`);
+        }
+        refsByUrl.set(ref.url, ref);
+      }
+      const next = [...refsByUrl.values()];
+      await changeRefcount(
+        ctx,
+        previous.map(({ fileId }) => fileId),
+        next.map(({ fileId }) => fileId),
+      );
+      await ctx.db.patch("streamingMessages", args.streamId, {
+        fileRefs: next,
+      });
+    }
+    await ctx.db.insert("streamDeltas", delta);
     await heartbeatStream(ctx, { streamId: args.streamId });
     return true;
   },
@@ -89,7 +120,10 @@ export const listDeltas = query({
 });
 
 export const create = mutation({
-  args: omit(schema.tables.streamingMessages.validator.fields, ["state"]),
+  args: omit(schema.tables.streamingMessages.validator.fields, [
+    "state",
+    "fileRefs",
+  ]),
   returns: v.id("streamingMessages"),
   handler: async (ctx, args) => {
     const state = { kind: "streaming" as const, lastHeartbeat: Date.now() };
@@ -212,8 +246,9 @@ async function abortById(
     return false;
   }
   await cleanupTimeoutFn(ctx, stream);
+  const cleanupFnId = await scheduleStreamDeletion(ctx, args.streamId);
   await ctx.db.patch("streamingMessages", args.streamId, {
-    state: { kind: "aborted", reason: args.reason },
+    state: { kind: "aborted", reason: args.reason, cleanupFnId },
   });
   return true;
 }
@@ -264,11 +299,7 @@ export async function finishHandler(
     return;
   }
   await cleanupTimeoutFn(ctx, stream);
-  const cleanupFnId = await ctx.scheduler.runAfter(
-    DELETE_STREAM_DELAY,
-    api.streams.deleteStreamAsync,
-    { streamId: args.streamId },
-  );
+  const cleanupFnId = await scheduleStreamDeletion(ctx, args.streamId);
   await ctx.db.patch("streamingMessages", args.streamId, {
     state: { kind: "finished", endedAt: Date.now(), cleanupFnId },
   });
@@ -281,6 +312,29 @@ export const heartbeat = mutation({
   returns: v.null(),
   handler: heartbeatStream,
 });
+
+async function releaseStreamFileOwnership(
+  ctx: MutationCtx,
+  stream: Doc<"streamingMessages">,
+) {
+  if (!stream.fileRefs?.length) return;
+  await changeRefcount(
+    ctx,
+    stream.fileRefs.map(({ fileId }) => fileId),
+    [],
+  );
+}
+
+async function scheduleStreamDeletion(
+  ctx: MutationCtx,
+  streamId: Id<"streamingMessages">,
+) {
+  return ctx.scheduler.runAfter(
+    DELETE_STREAM_DELAY,
+    api.streams.deleteStreamAsync,
+    { streamId },
+  );
+}
 
 async function heartbeatStream(
   ctx: MutationCtx,
@@ -325,17 +379,23 @@ async function heartbeatStream(
 export const timeoutStream = internalMutation({
   args: { streamId: v.id("streamingMessages") },
   returns: v.null(),
-  handler: async (ctx, args) => {
-    const stream = await ctx.db.get("streamingMessages", args.streamId);
-    if (!stream || stream.state.kind !== "streaming") {
-      console.warn("Stream not found", args.streamId);
-      return;
-    }
-    await ctx.db.patch("streamingMessages", args.streamId, {
-      state: { kind: "aborted", reason: "timeout" },
-    });
-  },
+  handler: timeoutStreamHandler,
 });
+
+export async function timeoutStreamHandler(
+  ctx: MutationCtx,
+  args: { streamId: Id<"streamingMessages"> },
+) {
+  const stream = await ctx.db.get("streamingMessages", args.streamId);
+  if (!stream || stream.state.kind !== "streaming") {
+    console.warn("Stream not found", args.streamId);
+    return;
+  }
+  const cleanupFnId = await scheduleStreamDeletion(ctx, args.streamId);
+  await ctx.db.patch("streamingMessages", args.streamId, {
+    state: { kind: "aborted", reason: "timeout", cleanupFnId },
+  });
+}
 
 async function deletePageForStreamId(
   ctx: MutationCtx,
@@ -354,8 +414,12 @@ async function deletePageForStreamId(
   if (deltas.isDone) {
     const stream = await ctx.db.get("streamingMessages", args.streamId);
     if (stream) {
+      await releaseStreamFileOwnership(ctx, stream);
       await cleanupTimeoutFn(ctx, stream);
-      if (stream.state.kind === "finished" && stream.state.cleanupFnId) {
+      if (
+        (stream.state.kind === "finished" || stream.state.kind === "aborted") &&
+        stream.state.cleanupFnId
+      ) {
         const scheduledFunction = await ctx.db.system.get(
           "_scheduled_functions",
           stream.state.cleanupFnId,
@@ -368,6 +432,18 @@ async function deletePageForStreamId(
     }
   }
   return deltas;
+}
+
+export async function releaseStreamFileOwnershipByIds(
+  ctx: MutationCtx,
+  streamIds: Id<"streamingMessages">[],
+) {
+  for (const streamId of new Set(streamIds)) {
+    const stream = await ctx.db.get("streamingMessages", streamId);
+    if (!stream?.fileRefs?.length) continue;
+    await releaseStreamFileOwnership(ctx, stream);
+    await ctx.db.patch("streamingMessages", streamId, { fileRefs: undefined });
+  }
 }
 
 export async function deleteStreamsPageForThreadId(
@@ -544,6 +620,7 @@ export async function getStreamingMessagesWithMetadata(
     streamId: Id<"streamingMessages">;
     reason: string;
   }>;
+  streamsToRelease: Id<"streamingMessages">[];
 }> {
   // See if there are any streaming messages for this order
   const streamingMessages = await getStreamingMessages(
@@ -570,8 +647,10 @@ export async function getStreamingMessagesWithMetadata(
             streamMessage,
             parts,
             metadata,
+            streamingMessage.fileRefs,
           ).slice(numToSkip),
           failure: undefined,
+          streamToRelease: streamingMessage._id,
         };
       } catch (error) {
         return {
@@ -580,6 +659,7 @@ export async function getStreamingMessagesWithMetadata(
             streamId: streamingMessage._id,
             reason: error instanceof Error ? error.message : String(error),
           },
+          streamToRelease: undefined,
         };
       }
     }),
@@ -588,6 +668,9 @@ export async function getStreamingMessagesWithMetadata(
     messages: materializedStreams.flatMap(({ messages }) => messages),
     materializationFailures: materializedStreams.flatMap(({ failure }) =>
       failure ? [failure] : [],
+    ),
+    streamsToRelease: materializedStreams.flatMap(({ streamToRelease }) =>
+      streamToRelease ? [streamToRelease] : [],
     ),
   };
 }

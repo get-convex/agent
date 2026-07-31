@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import schema from "./schema.js";
 import { modules } from "./setup.test.js";
@@ -9,7 +9,8 @@ import type { Doc } from "./_generated/dataModel.js";
 import type { PaginationResult } from "convex/server";
 
 describe("files", () => {
-  test("addFile increments refcount and does not create a new entry", async () => {
+  afterEach(() => vi.useRealTimers());
+  test("addFile registers and reuses a file without acquiring ownership", async () => {
     const t = convexTest(schema, modules);
     const storageId = "storage-1";
     const hash = "hash-1";
@@ -34,6 +35,9 @@ describe("files", () => {
       mimeType: "text/plain",
     });
     expect(fileId2).toBe(fileId);
+    await expect(t.query(api.files.get, { fileId })).resolves.toMatchObject({
+      refcount: 0,
+    });
     // Add the same file with a different filename (should create a new entry)
     const { fileId: fileId3 } = await t.mutation(api.files.addFile, {
       storageId,
@@ -83,7 +87,31 @@ describe("files", () => {
     expect(fileId4).toBeNull();
   });
 
+  test("reuses a legacy file row with no media type", async () => {
+    const t = convexTest(schema, modules);
+    const fileId = await t.run((ctx) =>
+      ctx.db.insert("files", {
+        storageId: "legacy-storage",
+        hash: "legacy-hash",
+        filename: "legacy.txt",
+        refcount: 0,
+        lastTouchedAt: Date.now(),
+      }),
+    );
+
+    await expect(
+      t.mutation(api.files.addFile, {
+        storageId: "new-storage",
+        hash: "legacy-hash",
+        filename: "legacy.txt",
+        mediaType: "text/plain",
+      }),
+    ).resolves.toEqual({ fileId, storageId: "legacy-storage" });
+  });
+
   test("getFilesToDelete paginates through files with refcount 0 one at a time", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const t = convexTest(schema, modules);
     // Add 3 files with refcount 0
     const files = [];
@@ -94,12 +122,9 @@ describe("files", () => {
         filename: `file-del-${i}.txt`,
         mimeType: "text/plain",
       });
-      // Manually set refcount to 0
-      await t.run(async (ctx) => {
-        await ctx.db.patch("files", fileId, { refcount: 0 });
-      });
       files.push(fileId);
     }
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
     // Paginate through files to delete one at a time
     let cursor: string | null = null;
     const seen: string[] = [];
@@ -126,5 +151,55 @@ describe("files", () => {
     expect(isDone).toBe(true);
     // All fileIds should be seen
     expect(seen.sort()).toEqual(files.sort());
+  });
+
+  test("does not expose or delete freshly registered files", async () => {
+    const t = convexTest(schema, modules);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { fileId } = await t.mutation(api.files.addFile, {
+      storageId: "storage-fresh",
+      hash: "hash-fresh",
+      filename: "fresh.txt",
+      mimeType: "text/plain",
+    });
+
+    await expect(
+      t.query(api.files.getFilesToDelete, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ).resolves.toMatchObject({ page: [] });
+    await expect(
+      t.mutation(api.files.deleteFiles, { fileIds: [fileId] }),
+    ).resolves.toEqual([]);
+    await expect(t.query(api.files.get, { fileId })).resolves.not.toBeNull();
+    error.mockRestore();
+  });
+
+  test("refreshes a cache hit before the cleanup grace period expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const t = convexTest(schema, modules);
+    const { fileId } = await t.mutation(api.files.addFile, {
+      storageId: "storage-cache-hit",
+      hash: "cache-hit-hash",
+      filename: "cache-hit.txt",
+      mediaType: "text/plain",
+    });
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 - 60 * 1000);
+    await expect(
+      t.mutation(api.files.useExistingFile, {
+        hash: "cache-hit-hash",
+        filename: "cache-hit.txt",
+        mediaType: "text/plain",
+      }),
+    ).resolves.toMatchObject({ fileId });
+
+    vi.advanceTimersByTime(60 * 1000);
+    await expect(
+      t.query(api.files.getFilesToDelete, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ).resolves.toMatchObject({ page: [] });
   });
 });

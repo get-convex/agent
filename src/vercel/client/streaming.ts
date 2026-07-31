@@ -204,6 +204,12 @@ export class DeltaStreamer<T> {
     throttleMs: number;
     onAsyncAbort: (reason: string) => Promise<void>;
     compress: ((parts: T[]) => T[]) | null;
+    materialize:
+      | ((parts: T[]) => Promise<{
+          parts: T[];
+          fileRefs: Array<{ url: string; fileId: string }>;
+        }>)
+      | null;
   };
   #nextParts: T[] = [];
   #latestWrite: number = 0;
@@ -223,6 +229,10 @@ export class DeltaStreamer<T> {
       onAsyncAbort: (reason: string) => Promise<void>;
       abortSignal: AbortSignal | undefined;
       compress: ((parts: T[]) => T[]) | null;
+      materialize?: (parts: T[]) => Promise<{
+        parts: T[];
+        fileRefs: Array<{ url: string; fileId: string }>;
+      }>;
     },
     public readonly metadata: {
       threadId: string;
@@ -240,6 +250,7 @@ export class DeltaStreamer<T> {
       throttleMs: config.throttleMs ?? DEFAULT_STREAMING_OPTIONS.throttleMs,
       onAsyncAbort: config.onAsyncAbort,
       compress: config.compress,
+      materialize: config.materialize ?? null,
     };
     this.#nextParts = [];
     this.abortController = new AbortController();
@@ -300,8 +311,18 @@ export class DeltaStreamer<T> {
   }
 
   public async consumeStream(stream: AsyncIterableStream<T>) {
-    for await (const chunk of stream) {
-      await this.addParts([chunk]);
+    try {
+      for await (const chunk of stream) {
+        await this.addParts([chunk]);
+      }
+    } catch (error) {
+      // A provider can throw while responding to an abort. Join the durable
+      // abort transition here, outside the active delta writer, before
+      // preserving the provider error for the caller.
+      await this.#abort(
+        error instanceof Error ? error.message : "stream consumption failed",
+      ).catch(() => {});
+      throw error;
     }
     // Skip finish if it will be handled externally (atomically with message save)
     // or if the stream was aborted (e.g., due to a failed delta write).
@@ -335,21 +356,19 @@ export class DeltaStreamer<T> {
     if (this.abortController.signal.aborted) {
       return;
     }
-    const delta = this.#createDelta();
-    if (!delta) {
-      return;
-    }
-    this.#latestWrite = Date.now();
     let success: boolean;
     try {
+      const delta = await this.#createDelta();
+      if (!delta) {
+        return;
+      }
+      this.#latestWrite = Date.now();
       success = await this.ctx.runMutation(
         this.component.streams.addDelta,
         delta,
       );
     } catch (e) {
-      await this.#abortDelta(
-        e instanceof Error ? e.message : "unknown error",
-      );
+      await this.#abortDelta(e instanceof Error ? e.message : "unknown error");
       return;
     }
     if (!success) {
@@ -375,21 +394,36 @@ export class DeltaStreamer<T> {
     }
   }
 
-  #createDelta(): StreamDelta | undefined {
+  async #createDelta(): Promise<
+    | (StreamDelta & { fileRefs?: Array<{ url: string; fileId: string }> })
+    | undefined
+  > {
     if (this.#nextParts.length === 0) {
       return undefined;
     }
     const start = this.#cursor;
-    const end = start + this.#nextParts.length;
+    const pendingParts = this.#nextParts;
+    const end = start + pendingParts.length;
     this.#cursor = end;
-    const parts = this.config.compress
-      ? this.config.compress(this.#nextParts)
-      : this.#nextParts;
     this.#nextParts = [];
+    const materialized = this.config.materialize
+      ? await this.config.materialize(pendingParts)
+      : { parts: pendingParts, fileRefs: [] };
+    const parts = this.config.compress
+      ? this.config.compress(materialized.parts)
+      : materialized.parts;
     if (!this.streamId) {
       throw new Error("Creating a delta before the stream is created");
     }
-    return { streamId: this.streamId, start, end, parts };
+    return {
+      streamId: this.streamId,
+      start,
+      end,
+      parts,
+      ...(materialized.fileRefs.length > 0
+        ? { fileRefs: materialized.fileRefs }
+        : {}),
+    };
   }
 
   public async finish() {
