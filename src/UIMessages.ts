@@ -13,7 +13,7 @@ import {
   type UIDataTypes,
   type UITools,
 } from "ai";
-import type { Infer } from "convex/values";
+import { v, type Infer } from "convex/values";
 import { toModelMessage, fromModelMessage, toUIFilePart } from "./mapping.js";
 import {
   extractReasoning,
@@ -22,12 +22,13 @@ import {
   joinText,
   sorted,
 } from "./shared.js";
-import type {
-  MessageDoc,
-  MessageStatus,
-  ProviderOptions,
-  SourcePart,
-  vSource,
+import {
+  vMessageStatus,
+  type MessageDoc,
+  type MessageStatus,
+  type ProviderOptions,
+  type SourcePart,
+  type vSource,
 } from "./validators.js";
 import { omit, pick } from "convex-helpers";
 
@@ -47,6 +48,37 @@ export type UIMessage<
   text: string;
   _creationTime: number;
 };
+
+/**
+ * A validator matching the {@link UIMessage} type, e.g. to use in the
+ * `returns` validator of a query that returns UIMessages
+ * (see {@link vStreamUIMessagesReturnValue} for the common paginated +
+ * streaming shape).
+ *
+ * Note: the AI SDK's message `parts` (and `metadata`) are generic over the
+ * app's tools and data parts, so they can't be expressed precisely as Convex
+ * validators and are validated as `any`.
+ */
+export const vUIMessage = v.object({
+  // Fields from the AI SDK's UIMessage:
+  id: v.string(),
+  role: v.union(
+    v.literal("system"),
+    v.literal("user"),
+    v.literal("assistant"),
+  ),
+  parts: v.array(v.any()),
+  metadata: v.optional(v.any()),
+  // Fields added by the Agent component:
+  key: v.string(),
+  order: v.number(),
+  stepOrder: v.number(),
+  status: v.union(v.literal("streaming"), vMessageStatus),
+  agentName: v.optional(v.string()),
+  userId: v.optional(v.string()),
+  text: v.string(),
+  _creationTime: v.number(),
+});
 
 /**
  * Converts a list of UIMessages to MessageDocs, along with extra metadata that

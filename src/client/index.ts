@@ -168,9 +168,13 @@ export {
   DeltaStreamer,
   abortStream,
   compressUIMessageChunks,
+  listMessagesWithStreams,
   listStreams,
+  listUIMessagesWithStreams,
   syncStreams,
   vStreamMessagesReturnValue,
+  vStreamUIMessagesReturnValue,
+  vSyncStreamsReturnValue,
 } from "./streaming.js";
 export {
   createThread,
@@ -179,7 +183,12 @@ export {
   updateThreadMetadata,
 } from "./threads.js";
 export type { ContextHandler } from "./types.js";
-export { toUIMessages, fromUIMessages, type UIMessage } from "../UIMessages.js";
+export {
+  toUIMessages,
+  fromUIMessages,
+  vUIMessage,
+  type UIMessage,
+} from "../UIMessages.js";
 
 export type {
   AgentComponent,

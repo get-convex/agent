@@ -64,10 +64,16 @@ stream deltas. This is very similar to
 [retrieving messages](./messages.mdx#retrieving-messages), with a few changes:
 
 ```ts
+import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 // highlight-next-line
-import { vStreamArgs, listUIMessages, syncStreams } from "@convex-dev/agent";
+import {
+  listUIMessagesWithStreams,
+  vStreamArgs,
+  vStreamUIMessagesReturnValue,
+} from "@convex-dev/agent";
 import { components } from "./_generated/api";
+import { query } from "./_generated/server";
 
 export const listThreadMessages = query({
   args: {
@@ -77,20 +83,47 @@ export const listThreadMessages = query({
     // highlight-next-line
     streamArgs: vStreamArgs,
   },
+  // Validates the paginated messages and stream deltas being returned.
+  // highlight-next-line
+  returns: vStreamUIMessagesReturnValue,
   handler: async (ctx, args) => {
-    await authorizeThreadAccess(ctx, threadId);
+    await authorizeThreadAccess(ctx, args.threadId);
+
+    // Fetches both the regular non-streaming messages (as UIMessages)
+    // and the stream deltas, in the shape `useUIMessages` expects.
+    // highlight-next-line
+    return listUIMessagesWithStreams(ctx, components.agent, args);
+  },
+});
+```
+
+If you want to filter or modify the messages or deltas, you can compose the
+underlying functions yourself and return `{ ...paginated, streams }`:
+
+```ts
+export const listThreadMessagesCustom = query({
+  args: {
+    threadId: v.string(),
+    paginationOpts: paginationOptsValidator,
+    streamArgs: vStreamArgs,
+  },
+  handler: async (ctx, args) => {
+    await authorizeThreadAccess(ctx, args.threadId);
 
     // Fetches the regular non-streaming messages.
     const paginated = await listUIMessages(ctx, components.agent, args);
 
-    // highlight-next-line
     const streams = await syncStreams(ctx, components.agent, args);
 
-    // highlight-next-line
+    // Here you could filter out / modify the messages & stream deltas.
     return { ...paginated, streams };
   },
 });
 ```
+
+Note: if you return `MessageDoc`s (from `listMessagesWithStreams` or
+`listMessages`) instead of `UIMessage`s, use `vStreamMessagesReturnValue` as
+the `returns` validator and the `useThreadMessages` hook on the client.
 
 Similar to with [non-streaming messages](./messages.mdx#useuimessages-hook), you
 can use the `useUIMessages` hook to fetch the messages, passing in
