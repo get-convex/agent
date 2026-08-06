@@ -184,6 +184,18 @@ export type Config = {
  * Options to configure what messages are fetched as context,
  * automatically with thread.generateText, or directly via search.
  */
+export type CompactionOptions = {
+  /**
+   * Input-token threshold at which the model compacts earlier context.
+   * Default: 50_000 (the documented minimum for `compact_20260112`).
+   */
+  triggerTokens?: number;
+  /**
+   * Optional instructions steering what the compaction summary should preserve.
+   */
+  instructions?: string;
+};
+
 export type ContextOptions = {
   /**
    * Whether to include tool messages in the context.
@@ -193,9 +205,18 @@ export type ContextOptions = {
   /**
    * How many recent messages to include. These are added after the search
    * messages, and do not count against the search limit.
-   * Default: 100
+   * Default: 100 (or, when `compaction` is enabled and this is left unset, a
+   * larger window so the full history can reach the compaction trigger).
    */
   recentMessages?: number;
+  /**
+   * Opt in to Anthropic server-side compaction. When set, the model summarizes
+   * earlier context once the thread crosses the token trigger, and the summary
+   * is stored and replayed on later turns instead of re-summarizing. Requires
+   * an Anthropic model (passed through as `providerOptions.anthropic`; ignored
+   * by other providers). Leave unset to keep the existing truncation behavior.
+   */
+  compaction?: CompactionOptions;
   /**
    * Options for searching messages.
    */

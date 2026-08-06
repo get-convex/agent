@@ -17,6 +17,15 @@ import type { Message, MessageContentParts } from "./validators.js";
 
 export const DEFAULT_RECENT_MESSAGES = 100;
 
+/** Default input-token trigger for Anthropic compaction (documented minimum). */
+export const DEFAULT_COMPACTION_TRIGGER_TOKENS = 50_000;
+/**
+ * Recent-message window used when compaction is enabled but `recentMessages` is
+ * left unset: large enough for the full history to reach the compaction trigger
+ * and to retain the stored compaction summary on later turns.
+ */
+export const DEFAULT_COMPACTION_RECENT_MESSAGES = 1000;
+
 export function isTool(message: Message | ModelMessage) {
   return (
     message.role === "tool" ||

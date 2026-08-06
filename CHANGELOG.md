@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add opt-in Anthropic context compaction via `contextOptions.compaction`
+  (`triggerTokens` / `instructions`); summarizes earlier context server-side and
+  replays the summary on later turns. Widens the recent-message window for
+  Anthropic runs so history can reach the trigger. (#287)
+- Bump `@ai-sdk/anthropic` to 3.0.62 (adds `compact_20260112`) and `ai` to
+  6.0.209, with matching `@ai-sdk/provider-utils` 4.0.30 / `@ai-sdk/provider`
+  3.0.10.
+
 ## 0.6.4
 
 - Fix streaming UI message dedupe (#281)
