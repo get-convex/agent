@@ -38,6 +38,19 @@ export type PersistedFilePart = {
   providerMetadata?: ProviderMetadata;
 };
 
+export type PersistedReasoningFilePart = {
+  type: "reasoning-file";
+  url: string;
+  mediaType: string;
+  providerMetadata?: ProviderMetadata;
+};
+
+export type PersistedCustomPart = {
+  type: "custom";
+  kind: string;
+  providerMetadata?: ProviderMetadata;
+};
+
 export type PersistedSourcePart =
   | {
       type: "source-url";
@@ -81,6 +94,8 @@ export type PersistedToolPart = {
     id: string;
     approved?: boolean;
     reason?: string;
+    isAutomatic?: boolean;
+    signature?: string;
   };
 };
 
@@ -94,6 +109,8 @@ export type PersistedUIMessagePart =
   | PersistedTextPart
   | PersistedReasoningPart
   | PersistedFilePart
+  | PersistedReasoningFilePart
+  | PersistedCustomPart
   | PersistedSourcePart
   | PersistedToolPart
   | PersistedDataPart
@@ -338,6 +355,8 @@ export function reducePersistedUIMessageChunks(
         Object.assign(part, {
           state: "output-error" as const,
           errorText: stringField(chunk, "errorText"),
+          output: undefined,
+          preliminary: undefined,
           providerExecuted:
             optionalBoolean(chunk.providerExecuted) ?? part.providerExecuted,
           resultProviderMetadata:
@@ -373,9 +392,39 @@ export function reducePersistedUIMessageChunks(
         part.state = "approval-requested";
         part.approval = {
           id: stringField(chunk, "approvalId"),
+          isAutomatic: optionalBoolean(chunk.isAutomatic),
+          signature: optionalString(chunk.signature),
         };
         break;
       }
+      case "tool-approval-response": {
+        const approvalId = stringField(chunk, "approvalId");
+        const part = parts.find(
+          (candidate): candidate is PersistedToolPart =>
+            isToolPart(candidate) && candidate.approval?.id === approvalId,
+        );
+        if (!part) {
+          break chunkLoop;
+        }
+        part.state = "approval-responded";
+        part.approval = {
+          ...part.approval!,
+          approved: booleanField(chunk, "approved"),
+          reason: optionalString(chunk.reason),
+        };
+        part.providerExecuted =
+          optionalBoolean(chunk.providerExecuted) ?? part.providerExecuted;
+        part.callProviderMetadata =
+          providerMetadata(chunk.providerMetadata) ?? part.callProviderMetadata;
+        break;
+      }
+      case "custom":
+        parts.push({
+          type: "custom",
+          kind: stringField(chunk, "kind"),
+          providerMetadata: providerMetadata(chunk.providerMetadata),
+        });
+        break;
       case "source-url":
         parts.push({
           type: "source-url",
@@ -401,6 +450,14 @@ export function reducePersistedUIMessageChunks(
           mediaType: stringField(chunk, "mediaType"),
           url: stringField(chunk, "url"),
           filename: optionalString(chunk.filename),
+          providerMetadata: providerMetadata(chunk.providerMetadata),
+        });
+        break;
+      case "reasoning-file":
+        parts.push({
+          type: "reasoning-file",
+          mediaType: stringField(chunk, "mediaType"),
+          url: stringField(chunk, "url"),
           providerMetadata: providerMetadata(chunk.providerMetadata),
         });
         break;
@@ -528,18 +585,21 @@ const supportedChunkTypes = new Set([
   "reasoning-start",
   "reasoning-delta",
   "reasoning-end",
+  "custom",
   "error",
   "tool-input-start",
   "tool-input-delta",
   "tool-input-available",
   "tool-input-error",
   "tool-approval-request",
+  "tool-approval-response",
   "tool-output-available",
   "tool-output-error",
   "tool-output-denied",
   "source-url",
   "source-document",
   "file",
+  "reasoning-file",
   "start-step",
   "finish-step",
   "start",
@@ -563,6 +623,14 @@ function stringField(record: Record<string, unknown>, field: string): string {
   const value = record[field];
   if (typeof value !== "string") {
     throw new Error(`Persisted UIMessageChunk field ${field} must be a string`);
+  }
+  return value;
+}
+
+function booleanField(record: Record<string, unknown>, field: string): boolean {
+  const value = record[field];
+  if (typeof value !== "boolean") {
+    throw new Error(`Persisted UIMessageChunk field ${field} must be a boolean`);
   }
   return value;
 }
