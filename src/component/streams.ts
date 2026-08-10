@@ -21,8 +21,10 @@ import { stream } from "convex-helpers/server/stream";
 import { mergedStream } from "convex-helpers/server/stream";
 import { paginator } from "convex-helpers/server/pagination";
 import type { WithoutSystemFields } from "convex/server";
-import { deriveUIMessagesFromDeltas } from "../deltas.js";
-import { fromUIMessages } from "../UIMessages.js";
+import {
+  getPersistedUIMessageChunkParts,
+  projectPersistedUIMessageChunks,
+} from "../streaming/materializePersistedUIMessageChunks.js";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -536,7 +538,13 @@ export async function getStreamingMessagesWithMetadata(
     stepOrder,
   }: { threadId: Id<"threads">; order: number; stepOrder: number },
   metadata: { status: "success" | "failed"; error?: string },
-): Promise<MessageWithMetadataInternal[]> {
+): Promise<{
+  messages: MessageWithMetadataInternal[];
+  materializationFailures: Array<{
+    streamId: Id<"streamingMessages">;
+    reason: string;
+  }>;
+}> {
   // See if there are any streaming messages for this order
   const streamingMessages = await getStreamingMessages(
     ctx,
@@ -544,50 +552,42 @@ export async function getStreamingMessagesWithMetadata(
     order,
     stepOrder,
   );
-  const messages = (
-    await Promise.all(
-      streamingMessages.map(async (streamingMessage) => {
-        const deltas = await ctx.db
-          .query("streamDeltas")
-          .withIndex("streamId_start_end", (q) =>
-            q.eq("streamId", streamingMessage._id),
-          )
-          .take(1000);
-        const uiMessages = await deriveUIMessagesFromDeltas(
-          threadId,
-          [publicStreamMessage(streamingMessage)],
-          deltas,
-        );
+  const materializedStreams = await Promise.all(
+    streamingMessages.map(async (streamingMessage) => {
+      const deltas = await ctx.db
+        .query("streamDeltas")
+        .withIndex("streamId_start_end", (q) =>
+          q.eq("streamId", streamingMessage._id),
+        )
+        .take(1000);
+      try {
+        const streamMessage = publicStreamMessage(streamingMessage);
+        const { parts } = getPersistedUIMessageChunkParts(deltas);
         // We don't save messages that have already been saved
         const numToSkip = stepOrder - streamingMessage.stepOrder;
-        const messages = await Promise.all(
-          (await fromUIMessages(uiMessages, streamingMessage))
-            .slice(numToSkip)
-            .filter((m) => m.message !== undefined)
-            .map(async (msg) => {
-              return {
-                ...pick(msg, [
-                  "message",
-                  "fileIds",
-                  "status",
-                  "finishReason",
-                  "model",
-                  "provider",
-                  "providerMetadata",
-                  "sources",
-                  "reasoning",
-                  "reasoningDetails",
-                  "usage",
-                  "warnings",
-                  "error",
-                ]),
-                ...metadata,
-              } as MessageWithMetadataInternal;
-            }),
-        );
-        return messages;
-      }),
-    )
-  ).flat();
-  return messages;
+        return {
+          messages: projectPersistedUIMessageChunks(
+            streamMessage,
+            parts,
+            metadata,
+          ).slice(numToSkip),
+          failure: undefined,
+        };
+      } catch (error) {
+        return {
+          messages: [],
+          failure: {
+            streamId: streamingMessage._id,
+            reason: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+    }),
+  );
+  return {
+    messages: materializedStreams.flatMap(({ messages }) => messages),
+    materializationFailures: materializedStreams.flatMap(({ failure }) =>
+      failure ? [failure] : [],
+    ),
+  };
 }

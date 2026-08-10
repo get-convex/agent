@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { getMaxMessage } from "./messages.js";
@@ -771,5 +771,157 @@ describe("agent", () => {
       false,
     );
     expect(results.some((m) => m._id === targetMessages[0]._id)).toBe(false);
+  });
+
+  test("finalizeMessage commits a failed pending message when stream recovery is malformed", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "recovery-user",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        {
+          message: { role: "assistant", content: [] },
+          status: "pending",
+        },
+      ],
+    });
+    const pending = messages[0];
+    const streamId = await t.run(async (ctx) =>
+      ctx.db.insert("streamingMessages", {
+        threadId: thread._id as Id<"threads">,
+        order: pending.order,
+        stepOrder: pending.stepOrder,
+        format: "UIMessageChunk",
+        state: { kind: "aborted", reason: "interrupted" },
+      }),
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("streamDeltas", {
+        streamId,
+        start: 0,
+        end: 1,
+        parts: [{ type: "text-delta", id: "missing", delta: "partial" }],
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await expect(
+        t.mutation(api.messages.finalizeMessage, {
+          messageId: pending._id as Id<"messages">,
+          result: { status: "success" },
+        }),
+      ).resolves.toBeNull();
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const finalized = await t.run((ctx) =>
+      ctx.db.get("messages", pending._id as Id<"messages">),
+    );
+    expect(finalized).toMatchObject({
+      status: "failed",
+      error: "Failed to recover persisted assistant stream output",
+      message: { role: "assistant", content: [] },
+    });
+  });
+
+  test("finalizeMessage discards all recovered output when any stream is malformed", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "mixed-recovery-user",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        {
+          message: { role: "assistant", content: [] },
+          status: "pending",
+        },
+      ],
+    });
+    const pending = messages[0];
+    const embeddingId = await t.run(async (ctx) =>
+      ctx.db.insert("embeddings_128", {
+        model: "embedding-model",
+        table: "messages",
+        threadId: thread._id,
+        vector: Array.from({ length: 128 }, () => 0),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.patch("messages", pending._id as Id<"messages">, { embeddingId }),
+    );
+
+    const validStreamId = await t.run(async (ctx) =>
+      ctx.db.insert("streamingMessages", {
+        threadId: thread._id as Id<"threads">,
+        order: pending.order,
+        stepOrder: pending.stepOrder,
+        format: "UIMessageChunk",
+        state: { kind: "finished", endedAt: Date.now() },
+      }),
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("streamDeltas", {
+        streamId: validStreamId,
+        start: 0,
+        end: 3,
+        parts: [
+          { type: "text-start", id: "valid" },
+          { type: "text-delta", id: "valid", delta: "must not be inserted" },
+          { type: "text-end", id: "valid" },
+        ],
+      }),
+    );
+    const malformedStreamId = await t.run(async (ctx) =>
+      ctx.db.insert("streamingMessages", {
+        threadId: thread._id as Id<"threads">,
+        order: pending.order,
+        stepOrder: pending.stepOrder,
+        format: "UIMessageChunk",
+        state: { kind: "aborted", reason: "interrupted" },
+      }),
+    );
+    await t.run(async (ctx) =>
+      ctx.db.insert("streamDeltas", {
+        streamId: malformedStreamId,
+        start: 0,
+        end: 1,
+        parts: [
+          {
+            type: "tool-input-delta",
+            toolCallId: "missing",
+            inputTextDelta: "{}",
+          },
+        ],
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await t.mutation(api.messages.finalizeMessage, {
+        messageId: pending._id as Id<"messages">,
+        result: { status: "failed", error: "provider failed" },
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const state = await t.run(async (ctx) => ({
+      messages: await ctx.db.query("messages").collect(),
+      embedding: await ctx.db.get("embeddings_128", embeddingId),
+    }));
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]).toMatchObject({
+      _id: pending._id,
+      status: "failed",
+      error: "provider failed",
+      message: { role: "assistant", content: [] },
+    });
+    expect(state.messages[0].embeddingId).toBeUndefined();
+    expect(state.embedding).toBeNull();
   });
 });

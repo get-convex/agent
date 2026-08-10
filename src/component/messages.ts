@@ -83,6 +83,25 @@ export const messageStatuses = vMessageDoc.fields.status.members.map(
   (m) => m.value,
 );
 
+const STREAM_RECOVERY_FAILURE =
+  "Failed to recover persisted assistant stream output";
+
+async function markPendingMessageFailed(
+  ctx: MutationCtx,
+  message: Doc<"messages">,
+  error: string,
+) {
+  if (message.embeddingId) {
+    const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
+    await ctx.db.delete(tableName, message.embeddingId);
+  }
+  await ctx.db.patch("messages", message._id, {
+    status: "failed",
+    error,
+    embeddingId: undefined,
+  });
+}
+
 export const deleteByOrder = mutation({
   args: {
     threadId: v.id("threads"),
@@ -390,11 +409,20 @@ export const finalizeMessage = mutation({
     }
     // See if we can add any in-progress data
     if (!message.message?.content.length) {
-      const messages = await getStreamingMessagesWithMetadata(
-        ctx,
-        message,
-        result,
-      );
+      const { messages, materializationFailures } =
+        await getStreamingMessagesWithMetadata(ctx, message, result);
+      if (materializationFailures.length > 0) {
+        console.error(
+          "Failed to materialize persisted assistant streams",
+          materializationFailures,
+        );
+        await markPendingMessageFailed(
+          ctx,
+          message,
+          result.status === "failed" ? result.error : STREAM_RECOVERY_FAILURE,
+        );
+        return;
+      }
       if (messages.length > 0) {
         await addMessagesHandler(ctx, {
           messages,
@@ -409,15 +437,7 @@ export const finalizeMessage = mutation({
       }
     }
     if (result.status === "failed") {
-      if (message.embeddingId) {
-        const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
-        await ctx.db.delete(tableName, message.embeddingId);
-      }
-      await ctx.db.patch("messages", messageId, {
-        status: "failed",
-        error: result.error,
-        embeddingId: undefined,
-      });
+      await markPendingMessageFailed(ctx, message, result.error);
     } else {
       await ctx.db.patch("messages", messageId, { status: "success" });
     }
