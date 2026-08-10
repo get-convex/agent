@@ -4,7 +4,6 @@ import {
   blankUIMessage,
   emptyIncrementalStreamState,
   getParts,
-  updateFromUIMessageChunks,
 } from "./deltas.js";
 import type { StreamDelta } from "../validators.js";
 import type { ToolUIPart, UIMessageChunk } from "ai";
@@ -24,80 +23,84 @@ describe("UIMessageChunks", () => {
     );
     expect(uiMessage.text).toBe("");
     expect(uiMessage.parts).toEqual([]);
-    const updatedMessage = await updateFromUIMessageChunks(uiMessage, [
-      { type: "start" },
-      { type: "start-step" },
-      { type: "reasoning-start", id: "reasoning-0" },
-      { type: "reasoning-delta", id: "reasoning-0", delta: "Okay" },
-      {
-        type: "reasoning-delta",
-        id: "reasoning-0",
-        delta: ", the user is asking...",
-      },
-      { type: "text-start", id: "txt-1" },
-      {
-        type: "text-delta",
-        id: "txt-1",
-        delta: "Hey ho.",
-      },
-      { type: "reasoning-end", id: "reasoning-0" },
-      { type: "text-end", id: "txt-1" },
-      { type: "tool-input-start", toolCallId: "0ychh9k6f", toolName: "say" },
-      {
-        type: "tool-input-delta",
-        toolCallId: "0ychh9k6f",
-        inputTextDelta:
-          '{"question":"What is your favorite flavor of ice cream?"}',
-      },
-      {
-        type: "tool-input-available",
-        toolCallId: "0ychh9k6f",
-        toolName: "say",
-        input: { question: "What is your favorite flavor of ice cream?" },
-        providerMetadata: { openai: { itemId: "123" } },
-      },
-      {
-        type: "tool-output-available",
-        toolCallId: "0ychh9k6f",
-        output: "I'm sorry I can't help you. Stop asking me questions.",
-      },
-      { type: "finish-step" },
-      { type: "start-step" },
-      { type: "tool-input-start", toolCallId: "1ychh9k6f", toolName: "say" },
-      {
-        type: "tool-input-delta",
-        toolCallId: "1ychh9k6f",
-        inputTextDelta:
-          '{"question":"What is your favorite flavor of ice cream?"}',
-      },
-      {
-        type: "tool-input-available",
-        toolCallId: "1ychh9k6f",
-        toolName: "say",
-        input: { question: "What is your favorite flavor of ice cream?" },
-      },
-      {
-        type: "tool-output-available",
-        toolCallId: "1ychh9k6f",
-        output: "I'm serious.",
-      },
-      { type: "finish-step" },
-      { type: "start-step" },
-      { type: "text-start", id: "msg_0" },
-      {
-        type: "text-delta",
-        id: "msg_0",
-        delta: "The best ice cream flavor is vanilla",
-      },
-      {
-        type: "text-delta",
-        id: "msg_0",
-        delta: ".",
-      },
-      { type: "text-end", id: "msg_0" },
-      { type: "finish-step" },
-      { type: "finish" },
-    ]);
+    const updatedMessage = applyUIMessageChunksIncremental(
+      uiMessage,
+      [
+        { type: "start" },
+        { type: "start-step" },
+        { type: "reasoning-start", id: "reasoning-0" },
+        { type: "reasoning-delta", id: "reasoning-0", delta: "Okay" },
+        {
+          type: "reasoning-delta",
+          id: "reasoning-0",
+          delta: ", the user is asking...",
+        },
+        { type: "text-start", id: "txt-1" },
+        {
+          type: "text-delta",
+          id: "txt-1",
+          delta: "Hey ho.",
+        },
+        { type: "reasoning-end", id: "reasoning-0" },
+        { type: "text-end", id: "txt-1" },
+        { type: "tool-input-start", toolCallId: "0ychh9k6f", toolName: "say" },
+        {
+          type: "tool-input-delta",
+          toolCallId: "0ychh9k6f",
+          inputTextDelta:
+            '{"question":"What is your favorite flavor of ice cream?"}',
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "0ychh9k6f",
+          toolName: "say",
+          input: { question: "What is your favorite flavor of ice cream?" },
+          providerMetadata: { openai: { itemId: "123" } },
+        },
+        {
+          type: "tool-output-available",
+          toolCallId: "0ychh9k6f",
+          output: "I'm sorry I can't help you. Stop asking me questions.",
+        },
+        { type: "finish-step" },
+        { type: "start-step" },
+        { type: "tool-input-start", toolCallId: "1ychh9k6f", toolName: "say" },
+        {
+          type: "tool-input-delta",
+          toolCallId: "1ychh9k6f",
+          inputTextDelta:
+            '{"question":"What is your favorite flavor of ice cream?"}',
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "1ychh9k6f",
+          toolName: "say",
+          input: { question: "What is your favorite flavor of ice cream?" },
+        },
+        {
+          type: "tool-output-available",
+          toolCallId: "1ychh9k6f",
+          output: "I'm serious.",
+        },
+        { type: "finish-step" },
+        { type: "start-step" },
+        { type: "text-start", id: "msg_0" },
+        {
+          type: "text-delta",
+          id: "msg_0",
+          delta: "The best ice cream flavor is vanilla",
+        },
+        {
+          type: "text-delta",
+          id: "msg_0",
+          delta: ".",
+        },
+        { type: "text-end", id: "msg_0" },
+        { type: "finish-step" },
+        { type: "finish" },
+      ],
+      emptyIncrementalStreamState(),
+    ).message;
     expect(updatedMessage.text).toBe(
       "Hey ho. The best ice cream flavor is vanilla.",
     );
@@ -163,9 +166,8 @@ describe("UIMessageChunks - continuation stream", () => {
     // User approves
     // Stream B: tool-result (referencing tool-call from Stream A) -> this test
     //
-    // The AI SDK's readUIMessageStream expects tool-call before tool-result,
-    // but they're in different streams. The onError handler should gracefully
-    // ignore this error since stored messages provide the fallback.
+    // The continuation stream does not repeat the prior tool call. The reducer
+    // tolerates the orphan result because stored messages provide that context.
     const uiMessage = blankUIMessage(
       {
         streamId: "continuation-stream",
@@ -180,17 +182,21 @@ describe("UIMessageChunks - continuation stream", () => {
 
     // Send a tool-result without the corresponding tool-call in this stream
     // This would normally throw "No tool invocation found" error
-    const updatedMessage = await updateFromUIMessageChunks(uiMessage, [
-      { type: "start" },
-      { type: "start-step" },
-      {
-        type: "tool-output-available",
-        toolCallId: "call_from_previous_stream",
-        output: "Tool execution result",
-      },
-      { type: "finish-step" },
-      { type: "finish" },
-    ]);
+    const updatedMessage = applyUIMessageChunksIncremental(
+      uiMessage,
+      [
+        { type: "start" },
+        { type: "start-step" },
+        {
+          type: "tool-output-available",
+          toolCallId: "call_from_previous_stream",
+          output: "Tool execution result",
+        },
+        { type: "finish-step" },
+        { type: "finish" },
+      ],
+      emptyIncrementalStreamState(),
+    ).message;
 
     // The message should NOT be marked as failed - the error should be suppressed
     expect(updatedMessage.status).not.toBe("failed");
@@ -370,6 +376,276 @@ describe("mergeDeltas", () => {
     expect((toolPart as { providerExecuted?: boolean }).providerExecuted).toBe(
       true,
     );
+
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
+      msg,
+      [
+        {
+          type: "tool-output-available",
+          toolCallId: "c1",
+          output: { result: "final" },
+        },
+      ] as UIMessageChunk[],
+      state,
+    ));
+    const completedToolPart = msg.parts.find(
+      (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === "c1",
+    );
+    expect(
+      (completedToolPart as { preliminary?: boolean }).preliminary,
+    ).toBeUndefined();
+
+    ({ message: msg, streamState: state } = applyUIMessageChunksIncremental(
+      msg,
+      [
+        {
+          type: "tool-output-error",
+          toolCallId: "c1",
+          errorText: "final failure",
+        },
+      ] as UIMessageChunk[],
+      state,
+    ));
+
+    const failedToolPart = msg.parts.find(
+      (p): p is ToolUIPart => "toolCallId" in p && p.toolCallId === "c1",
+    );
+    expect(failedToolPart).toMatchObject({ state: "output-error" });
+    expect((failedToolPart as { output?: unknown }).output).toBeUndefined();
+    expect(
+      (failedToolPart as { preliminary?: boolean }).preliminary,
+    ).toBeUndefined();
+  });
+
+  it("keeps a denied approval distinct from its later denied output", () => {
+    const streamMessage = {
+      streamId: "s-tool-approval",
+      status: "streaming" as const,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk" as const,
+      agentName: "a",
+    };
+    let message = blankUIMessage(streamMessage, "thread-tool-approval");
+    let streamState = emptyIncrementalStreamState();
+    ({ message, streamState } = applyUIMessageChunksIncremental(
+      message,
+      [
+        {
+          type: "tool-input-start",
+          toolCallId: "call-1",
+          toolName: "deleteFile",
+          providerExecuted: true,
+          providerMetadata: { openai: { request: "call-1" } },
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "call-1",
+          toolName: "deleteFile",
+          input: { path: "/tmp/file" },
+        },
+        {
+          type: "tool-approval-request",
+          toolCallId: "call-1",
+          approvalId: "approval-1",
+        },
+        {
+          type: "tool-approval-response",
+          approvalId: "approval-1",
+          approved: false,
+          reason: "User declined",
+        },
+      ] as UIMessageChunk[],
+      streamState,
+    ));
+
+    expect(message.parts).toContainEqual(
+      expect.objectContaining({
+        toolCallId: "call-1",
+        state: "approval-responded",
+        approval: {
+          id: "approval-1",
+          approved: false,
+          reason: "User declined",
+        },
+        providerExecuted: true,
+        callProviderMetadata: { openai: { request: "call-1" } },
+      }),
+    );
+
+    ({ message, streamState } = applyUIMessageChunksIncremental(
+      message,
+      [{ type: "tool-output-denied", toolCallId: "call-1" }],
+      streamState,
+    ));
+
+    expect(message.parts).toContainEqual(
+      expect.objectContaining({
+        toolCallId: "call-1",
+        state: "output-denied",
+      }),
+    );
+  });
+
+  it("matches SDK 7 provider metadata replacement and dynamic tool initialization", () => {
+    const streamMessage = {
+      streamId: "s-metadata",
+      status: "streaming" as const,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk" as const,
+      agentName: "a",
+    };
+    const { message } = applyUIMessageChunksIncremental(
+      blankUIMessage(streamMessage, "thread-metadata"),
+      [
+        {
+          type: "text-start",
+          id: "t",
+          providerMetadata: { openai: { first: true } },
+        },
+        {
+          type: "text-delta",
+          id: "t",
+          delta: "x",
+          providerMetadata: { openai: { second: true } },
+        },
+        {
+          type: "tool-input-start",
+          toolCallId: "dynamic-1",
+          toolName: "runtimeTool",
+          dynamic: true,
+          providerExecuted: true,
+          title: "Runtime tool",
+          toolMetadata: { source: "provider" },
+          providerMetadata: { openai: { itemId: "item-1" } },
+        },
+      ] as UIMessageChunk[],
+      emptyIncrementalStreamState(),
+    );
+
+    expect(message.parts.find((part) => part.type === "text")).toMatchObject({
+      providerMetadata: { openai: { second: true } },
+    });
+    expect(
+      message.parts.find(
+        (part) => "toolCallId" in part && part.toolCallId === "dynamic-1",
+      ),
+    ).toMatchObject({
+      type: "dynamic-tool",
+      providerExecuted: true,
+      title: "Runtime tool",
+      toolMetadata: { source: "provider" },
+      callProviderMetadata: { openai: { itemId: "item-1" } },
+    });
+  });
+
+  it("creates tool parts from standalone tool-input-available chunks", () => {
+    const { message } = applyUIMessageChunksIncremental(
+      blankUIMessage(
+        {
+          streamId: "s-available",
+          status: "streaming",
+          order: 0,
+          stepOrder: 0,
+          format: "UIMessageChunk",
+          agentName: "a",
+        },
+        "thread-available",
+      ),
+      [
+        {
+          type: "tool-input-available",
+          toolCallId: "static-call",
+          toolName: "weather",
+          input: { city: "Boston" },
+          providerExecuted: true,
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "dynamic-call",
+          toolName: "runtimeTool",
+          dynamic: true,
+          input: { id: 1 },
+        },
+      ] as UIMessageChunk[],
+      emptyIncrementalStreamState(),
+    );
+
+    expect(message.parts).toMatchObject([
+      {
+        type: "tool-weather",
+        toolCallId: "static-call",
+        state: "input-available",
+        input: { city: "Boston" },
+        providerExecuted: true,
+      },
+      {
+        type: "dynamic-tool",
+        toolCallId: "dynamic-call",
+        toolName: "runtimeTool",
+        state: "input-available",
+        input: { id: 1 },
+      },
+    ]);
+  });
+
+  it("creates output-error parts from standalone tool-input-error chunks", () => {
+    const { message } = applyUIMessageChunksIncremental(
+      blankUIMessage(
+        {
+          streamId: "s-error",
+          status: "streaming",
+          order: 0,
+          stepOrder: 0,
+          format: "UIMessageChunk",
+          agentName: "a",
+        },
+        "thread-error",
+      ),
+      [
+        {
+          type: "tool-input-error",
+          toolCallId: "static-error",
+          toolName: "weather",
+          input: { city: "Boston" },
+          errorText: "Invalid weather request",
+          providerExecuted: true,
+          providerMetadata: { openai: { result: "static" } },
+        },
+        {
+          type: "tool-input-error",
+          toolCallId: "dynamic-error",
+          toolName: "runtimeTool",
+          dynamic: true,
+          input: { id: 1 },
+          errorText: "Invalid runtime request",
+          providerMetadata: { anthropic: { result: "dynamic" } },
+        },
+      ] as UIMessageChunk[],
+      emptyIncrementalStreamState(),
+    );
+
+    expect(message.parts).toMatchObject([
+      {
+        type: "tool-weather",
+        toolCallId: "static-error",
+        state: "output-error",
+        rawInput: { city: "Boston" },
+        errorText: "Invalid weather request",
+        providerExecuted: true,
+        resultProviderMetadata: { openai: { result: "static" } },
+      },
+      {
+        type: "dynamic-tool",
+        toolCallId: "dynamic-error",
+        toolName: "runtimeTool",
+        state: "output-error",
+        input: { id: 1 },
+        errorText: "Invalid runtime request",
+        resultProviderMetadata: { anthropic: { result: "dynamic" } },
+      },
+    ]);
   });
 
   it("applyUIMessageChunksIncremental: tool-input-error sets rawInput and clears input for static tools", async () => {
@@ -388,7 +664,15 @@ describe("mergeDeltas", () => {
       [
         { type: "start" },
         { type: "start-step" },
-        { type: "tool-input-start", toolCallId: "c2", toolName: "myTool" },
+        {
+          type: "tool-input-start",
+          toolCallId: "c2",
+          toolName: "myTool",
+          providerExecuted: true,
+          title: "My tool",
+          toolMetadata: { source: "test" },
+          providerMetadata: { openai: { itemId: "call-1" } },
+        },
       ] as UIMessageChunk[],
       state,
     ));
@@ -416,6 +700,12 @@ describe("mergeDeltas", () => {
     expect(toolPart?.input).toBeUndefined();
     expect((toolPart as { rawInput?: unknown }).rawInput).toEqual({
       bad: "args",
+    });
+    expect(toolPart).toMatchObject({
+      providerExecuted: true,
+      title: "My tool",
+      toolMetadata: { source: "test" },
+      callProviderMetadata: { openai: { itemId: "call-1" } },
     });
   });
 
@@ -588,10 +878,11 @@ describe("mergeDeltas", () => {
     ];
 
     // SDK: process the entire stream at once.
-    const sdkMsg = await updateFromUIMessageChunks(
+    const sdkMsg = applyUIMessageChunksIncremental(
       blankUIMessage(streamMessage, "thread-equiv"),
       batches.flat(),
-    );
+      emptyIncrementalStreamState(),
+    ).message;
 
     // Incremental: process batch by batch, threading state.
     let incMsg = blankUIMessage(streamMessage, "thread-equiv");

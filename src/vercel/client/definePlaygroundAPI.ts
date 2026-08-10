@@ -27,7 +27,7 @@ import {
   getProviderName,
   isTool,
 } from "../../shared.js";
-import { serializeNewMessagesInStep, toModelMessage } from "../mapping.js";
+import { serializeResponseMessages, toModelMessage } from "../mapping.js";
 import type { Agent } from "../index.js";
 import { listMessages as listMessages_ } from "./messages.js";
 import { syncStreams, vStreamMessagesReturnValue } from "./streaming.js";
@@ -282,9 +282,8 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         { contextOptions, storageOptions, saveStreamDeltas: true },
       );
       const outputMessages: MessageDoc[][] = [];
-      let previousResponseMessageCount = 0;
       for (const step of await steps) {
-        const { messages } = await serializeNewMessagesInStep(
+        const { messages } = await serializeResponseMessages(
           ctx,
           component,
           step,
@@ -292,9 +291,8 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
             model: getModelName(agent.options.languageModel),
             provider: getProviderName(agent.options.languageModel),
           },
-          previousResponseMessageCount,
+          step.response.messages,
         );
-        previousResponseMessageCount = step.response.messages.length;
         outputMessages.push(
           messages.map((messageWithMetadata, i) => {
             return {

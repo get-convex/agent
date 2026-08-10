@@ -52,8 +52,8 @@ export const generateInvoices = internalMutation({
       const cachedPromptTokens =
         doc.providerMetadata?.openai?.cachedPromptTokens ?? 0;
       const tokens = {
-        inputTokens: doc.usage.promptTokens - cachedPromptTokens,
-        outputTokens: doc.usage.completionTokens,
+        inputTokens: (doc.usage.promptTokens ?? 0) - cachedPromptTokens,
+        outputTokens: doc.usage.completionTokens ?? 0,
         cachedInputTokens: cachedPromptTokens,
       };
       if (!currentInvoice) {

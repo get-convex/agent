@@ -39,6 +39,7 @@ import {
   type MessageDoc,
   vToolApprovalRequest,
   vToolApprovalResponse,
+  vProviderReference,
 } from "../validators.js";
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { MutationCtx } from "./client/types.js";
@@ -46,8 +47,12 @@ import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
 import type { Infer } from "convex/values";
 import {
   convertUint8ArrayToBase64,
+  type FileData,
   type ProviderOptions,
+  type ProviderReference,
+  type ReasoningFilePart,
   type ReasoningPart,
+  type ToolResultOutput,
 } from "@ai-sdk/provider-utils";
 import { parse, validate } from "convex-helpers/validators";
 import {
@@ -234,32 +239,15 @@ export function autoDenyUnresolvedApprovals(
 
 export function serializeUsage(usage: LanguageModelUsage): Usage {
   return {
-    promptTokens: usage.inputTokens ?? 0,
-    completionTokens: usage.outputTokens ?? 0,
-    totalTokens: usage.totalTokens ?? 0,
-    reasoningTokens: usage.reasoningTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-  };
-}
-
-export function toModelMessageUsage(usage: Usage): LanguageModelUsage {
-  return {
-    inputTokens: usage.promptTokens,
-    outputTokens: usage.completionTokens,
+    promptTokens: usage.inputTokens,
+    completionTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
-    reasoningTokens: usage.reasoningTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    // These detail fields are required by LanguageModelUsage type but we don't
-    // have the granular data, so we provide empty objects with undefined values.
-    inputTokenDetails: {
-      cacheReadTokens: undefined,
-      cacheWriteTokens: undefined,
-      noCacheTokens: undefined,
-    },
-    outputTokenDetails: {
-      textTokens: undefined,
-      reasoningTokens: undefined,
-    },
+    reasoningTokens: usage.outputTokenDetails?.reasoningTokens,
+    cachedInputTokens: usage.inputTokenDetails?.cacheReadTokens,
+    nonCachedInputTokens: usage.inputTokenDetails?.noCacheTokens,
+    cacheWriteInputTokens: usage.inputTokenDetails?.cacheWriteTokens,
+    textOutputTokens: usage.outputTokenDetails?.textTokens,
+    raw: usage.raw,
   };
 }
 
@@ -270,33 +258,24 @@ export function serializeWarnings(
     return undefined;
   }
   return warnings.map((warning) => {
-    if (warning.type === "compatibility") {
-      return {
-        type: "unsupported-setting",
-        setting: warning.feature,
-        details: warning.details,
-      };
+    switch (warning.type) {
+      case "unsupported":
+      case "compatibility":
+        return {
+          type: warning.type,
+          feature: warning.feature,
+          details: warning.details,
+        };
+      case "deprecated":
+        return {
+          type: warning.type,
+          setting: warning.setting,
+          message: warning.message,
+        };
+      case "other":
+        return { type: warning.type, message: warning.message };
     }
-    return warning;
-  }) as any;
-}
-
-export function toModelMessageWarnings(
-  warnings: MessageWithMetadata["warnings"],
-): CallWarning[] | undefined {
-  if (!warnings) {
-    return undefined;
-  }
-  return warnings.map((warning) => {
-    if (warning.type === "unsupported-setting") {
-      return {
-        type: "compatibility",
-        feature: warning.setting,
-        details: warning.details,
-      };
-    }
-    return warning;
-  }) as any;
+  });
 }
 
 /**
@@ -314,42 +293,6 @@ export async function serializeResponseMessages<TOOLS extends ToolSet>(
   return serializeStepMessages(ctx, component, step, model, responseMessages);
 }
 
-/**
- * Serialize the new response messages produced by this step.
- *
- * `step.response.messages` is cumulative across steps in AI SDK v6 — each
- * step's array contains all messages from prior steps too. Pass
- * `previousResponseMessageCount` (the prior step's `response.messages.length`,
- * or `0` for the first step) so we slice only the new tail. The parameter is
- * required: defaulting it would silently duplicate every prior message on
- * every multi-step save.
- */
-export async function serializeNewMessagesInStep<TOOLS extends ToolSet>(
-  ctx: ActionCtx,
-  component: AgentComponent,
-  step: StepResult<TOOLS>,
-  model: ModelOrMetadata | undefined,
-  previousResponseMessageCount: number,
-): Promise<{ messages: MessageWithMetadata[] }> {
-  const newMessages = step.response.messages.slice(
-    previousResponseMessageCount,
-  );
-  // Keep at least one message in the output so the step still anchors an
-  // order slot — downstream `addMessages` relies on each step contributing a
-  // row even when AI SDK produced no response messages.
-  const messagesToSerialize: ModelMessage[] =
-    newMessages.length > 0
-      ? newMessages
-      : [{ role: "assistant" as const, content: [] }];
-  return serializeStepMessages(
-    ctx,
-    component,
-    step,
-    model,
-    messagesToSerialize,
-  );
-}
-
 async function serializeStepMessages<TOOLS extends ToolSet>(
   ctx: ActionCtx,
   component: AgentComponent,
@@ -360,12 +303,15 @@ async function serializeStepMessages<TOOLS extends ToolSet>(
   // If there are tool results, there's another message with the tool results
   // ref: https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/to-response-messages.ts#L120
   const hasToolMessage = step.response.messages.at(-1)?.role === "tool";
+  const resolvedModel = step.model ?? model;
   const assistantFields = {
-    model: model ? getModelName(model) : undefined,
-    provider: model ? getProviderName(model) : undefined,
+    model: resolvedModel ? getModelName(resolvedModel) : undefined,
+    provider: resolvedModel ? getProviderName(resolvedModel) : undefined,
     providerMetadata: step.providerMetadata,
     reasoning: step.reasoningText,
-    reasoningDetails: step.reasoning,
+    reasoningDetails: step.reasoning.filter(
+      (part) => part.type !== "reasoning-file",
+    ),
     usage: serializeUsage(step.usage),
     warnings: serializeWarnings(step.warnings),
     finishReason: step.finishReason,
@@ -457,7 +403,9 @@ export async function serializeContent(
           } satisfies Infer<typeof vTextPart>;
         }
         case "image": {
-          let image = serializeDataOrUrl(part.image);
+          let image =
+            toStoredProviderReference(part.image) ??
+            serializeDataOrUrl(part.image);
           if (
             image instanceof ArrayBuffer &&
             image.byteLength > MAX_FILE_SIZE
@@ -480,7 +428,9 @@ export async function serializeContent(
           } satisfies Infer<typeof vImagePart>;
         }
         case "file": {
-          let data = serializeDataOrUrl(part.data);
+          let data =
+            toStoredProviderReference(part.data) ??
+            serializeDataOrUrl(part.data);
           if (data instanceof ArrayBuffer && data.byteLength > MAX_FILE_SIZE) {
             const { file } = await storeFile(
               ctx,
@@ -516,30 +466,23 @@ export async function serializeContent(
           } satisfies Infer<typeof vToolCallPart>;
         }
         case "tool-result": {
-          return normalizeToolResult(part, metadata);
+          return serializeToolResult(part, metadata);
         }
         case "reasoning": {
           return {
             type: part.type,
             text: part.text,
+            signature:
+              "signature" in part && typeof part.signature === "string"
+                ? part.signature
+                : undefined,
             ...metadata,
           } satisfies Infer<typeof vReasoningPart>;
         }
         case "reasoning-file": {
-          if ("url" in part && part.url !== undefined) {
-            return {
-              type: part.type,
-              url: part.url,
-              mediaType: part.mediaType,
-              ...metadata,
-            } satisfies Infer<typeof vReasoningFilePart>;
-          }
-          if (part.data === undefined) {
-            throw new Error("reasoning-file requires data or url");
-          }
           return {
             type: part.type,
-            data: serializeDataOrUrl(part.data),
+            ...serializeReasoningFile(part),
             mediaType: part.mediaType,
             ...metadata,
           } satisfies Infer<typeof vReasoningFilePart>;
@@ -567,8 +510,7 @@ export async function serializeContent(
             type: part.type,
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
-            isAutomatic:
-              "isAutomatic" in part ? part.isAutomatic : undefined,
+            isAutomatic: "isAutomatic" in part ? part.isAutomatic : undefined,
             signature: "signature" in part ? part.signature : undefined,
             ...metadata,
           } satisfies Infer<typeof vToolApprovalRequest>;
@@ -618,12 +560,16 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             type: part.type,
             mediaType: getMimeOrMediaType(part),
             ...metadata,
-            image: serializeDataOrUrl(part.image),
+            image:
+              toStoredProviderReference(part.image) ??
+              serializeDataOrUrl(part.image),
           } satisfies Infer<typeof vImagePart>;
         case "file":
           return {
             type: part.type,
-            data: serializeDataOrUrl(part.data),
+            data:
+              toStoredProviderReference(part.data) ??
+              serializeDataOrUrl(part.data),
             filename: part.filename,
             mediaType: getMimeOrMediaType(part)!,
             ...metadata,
@@ -641,18 +587,38 @@ export function fromModelMessageContent(content: Content): Message["content"] {
             ...metadata,
           } satisfies Infer<typeof vToolCallPart>;
         case "tool-result":
-          return normalizeToolResult(part, metadata);
+          return serializeToolResult(part, metadata);
         case "reasoning":
           return {
             type: part.type,
             text: part.text,
+            signature:
+              "signature" in part && typeof part.signature === "string"
+                ? part.signature
+                : undefined,
             ...metadata,
           } satisfies Infer<typeof vReasoningPart>;
+        case "reasoning-file": {
+          return {
+            type: part.type,
+            ...serializeReasoningFile(part),
+            mediaType: part.mediaType,
+            ...metadata,
+          } satisfies Infer<typeof vReasoningFilePart>;
+        }
+        case "custom":
+          return {
+            type: part.type,
+            kind: part.kind,
+            ...metadata,
+          } satisfies Infer<typeof vCustomContentPart>;
         case "tool-approval-request":
           return {
             type: part.type,
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
+            isAutomatic: "isAutomatic" in part ? part.isAutomatic : undefined,
+            signature: "signature" in part ? part.signature : undefined,
             ...metadata,
           } satisfies Infer<typeof vToolApprovalRequest>;
         case "tool-approval-response":
@@ -700,14 +666,18 @@ export function toModelMessageContent(
         case "image":
           return {
             type: part.type,
-            image: toModelMessageDataOrUrl(part.image),
+            image: (isStoredProviderReference(part.image)
+              ? part.image.reference
+              : toModelMessageDataOrUrl(part.image)) as ImagePart["image"],
             mediaType: getMimeOrMediaType(part),
             ...metadata,
           } satisfies ImagePart;
         case "file":
           return {
             type: part.type,
-            data: toModelMessageDataOrUrl(part.data),
+            data: (isStoredProviderReference(part.data)
+              ? { type: "reference" as const, reference: part.data.reference }
+              : toModelMessageDataOrUrl(part.data)) as FilePart["data"],
             filename: part.filename,
             mediaType: getMimeOrMediaType(part)!,
             ...metadata,
@@ -725,7 +695,7 @@ export function toModelMessageContent(
           } satisfies ToolCallPart;
         }
         case "tool-result": {
-          return normalizeToolResult(part, metadata);
+          return deserializeToolResult(part, metadata);
         }
         case "reasoning":
           return {
@@ -734,8 +704,16 @@ export function toModelMessageContent(
             ...metadata,
           } satisfies ReasoningPart;
         case "reasoning-file":
+          return {
+            type: "reasoning-file",
+            data: deserializeReasoningFile(
+              part as Infer<typeof vReasoningFilePart>,
+            ),
+            mediaType: part.mediaType,
+            ...metadata,
+          } satisfies ReasoningFilePart;
         case "custom":
-          return null;
+          return { type: "custom", kind: part.kind, ...metadata };
         case "redacted-reasoning":
           // Legacy v5 part: round-trip the redacted payload via providerOptions.
           return {
@@ -743,16 +721,14 @@ export function toModelMessageContent(
             text: "",
             ...metadata,
             providerOptions: metadata.providerOptions
-              ? {
-                  ...Object.fromEntries(
-                    Object.entries(metadata.providerOptions ?? {}).map(
-                      ([key, value]) => [
-                        key,
-                        { ...value, redactedData: part.data },
-                      ],
-                    ),
+              ? Object.fromEntries(
+                  Object.entries(metadata.providerOptions ?? {}).map(
+                    ([key, value]) => [
+                      key,
+                      { ...value, redactedData: part.data },
+                    ],
                   ),
-                }
+                )
               : undefined,
           } satisfies ReasoningPart;
         case "source":
@@ -762,6 +738,8 @@ export function toModelMessageContent(
             type: part.type,
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
+            isAutomatic: "isAutomatic" in part ? part.isAutomatic : undefined,
+            signature: "signature" in part ? part.signature : undefined,
             ...metadata,
           } satisfies Infer<typeof vToolApprovalRequest>;
         case "tool-approval-response":
@@ -790,7 +768,7 @@ export function normalizeToolOutput(
     };
   }
   if (validate(vToolResultOutput, result)) {
-    return result;
+    return result as unknown as ToolResultOutput;
   }
   return {
     type: "json",
@@ -798,26 +776,275 @@ export function normalizeToolOutput(
   };
 }
 
-function normalizeToolResult(
+function serializeToolResult(
   part: ToolResultPart | Infer<typeof vToolResultPart>,
   metadata: {
     providerOptions?: ProviderOptions;
     providerMetadata?: ProviderMetadata;
   },
-): ToolResultPart & Infer<typeof vToolResultPart> {
+): Infer<typeof vToolResultPart> {
   return {
     type: part.type,
-    output: part.output
-      ? validate(vToolResultOutput, part.output)
-        ? (part.output as any)
-        : normalizeToolOutput(JSON.stringify(part.output))
-      : normalizeToolOutput("result" in part ? part.result : undefined),
+    output:
+      "output" in part && part.output !== undefined
+        ? serializeToolResultOutput(part.output)
+        : (normalizeToolOutput(
+            "result" in part ? part.result : undefined,
+          ) as Infer<typeof vToolResultOutput>),
     toolCallId: part.toolCallId,
     toolName: part.toolName,
+    ...("providerExecuted" in part
+      ? { providerExecuted: part.providerExecuted }
+      : {}),
     // Preserve isError flag for error reporting
     ...("isError" in part && part.isError ? { isError: true } : {}),
     ...metadata,
+  } as Infer<typeof vToolResultPart>;
+}
+
+function deserializeToolResult(
+  part: ToolResultPart | Infer<typeof vToolResultPart>,
+  metadata: {
+    providerOptions?: ProviderOptions;
+    providerMetadata?: ProviderMetadata;
+  },
+): ToolResultPart {
+  return {
+    type: part.type,
+    output:
+      "output" in part && part.output !== undefined
+        ? deserializeToolResultOutput(part.output)
+        : normalizeToolOutput("result" in part ? part.result : undefined),
+    toolCallId: part.toolCallId,
+    toolName: part.toolName,
+    ...("isError" in part && part.isError ? { isError: true } : {}),
+    ...metadata,
   } satisfies ToolResultPart;
+}
+
+function serializeToolResultOutput(
+  output: unknown,
+): Infer<typeof vToolResultOutput> {
+  if (output === undefined) {
+    return normalizeToolOutput(undefined) as Infer<typeof vToolResultOutput>;
+  }
+  if (!isRecord(output) || typeof output.type !== "string") {
+    return normalizeToolOutput(output as JSONValue) as Infer<
+      typeof vToolResultOutput
+    >;
+  }
+  if (output.type !== "content") {
+    if (validate(vToolResultOutput, output)) {
+      return output as Infer<typeof vToolResultOutput>;
+    }
+    throw new Error(`Invalid AI SDK 7 tool-result output: ${output.type}`);
+  }
+  if (!Array.isArray(output.value)) {
+    throw new Error("Invalid AI SDK 7 tool-result content output");
+  }
+  const serialized = {
+    ...output,
+    value: output.value.map(serializeToolResultContentPart),
+  };
+  if (!validate(vToolResultOutput, serialized)) {
+    throw new Error("Invalid AI SDK 7 tool-result content part");
+  }
+  return serialized as Infer<typeof vToolResultOutput>;
+}
+
+function serializeToolResultContentPart(part: unknown): unknown {
+  if (!isRecord(part) || typeof part.type !== "string") {
+    throw new Error("Invalid AI SDK 7 tool-result content part");
+  }
+  if (part.type !== "file") return part;
+  if (!isRecord(part.data) || typeof part.data.type !== "string") {
+    throw new Error("Invalid AI SDK 7 tool-result file data");
+  }
+
+  const common = {
+    type: "file" as const,
+    mediaType: part.mediaType,
+    ...(typeof part.filename === "string" ? { filename: part.filename } : {}),
+    ...(isRecord(part.providerOptions)
+      ? { providerOptions: part.providerOptions }
+      : {}),
+  };
+  switch (part.data.type) {
+    case "data":
+      return {
+        ...common,
+        data: {
+          type: "data" as const,
+          data: serializeDataOrUrl(part.data.data as DataContent),
+        },
+      };
+    case "url": {
+      const { url } = part.data;
+      if (typeof url !== "string" && !(url instanceof URL)) {
+        throw new Error("Invalid AI SDK 7 tool-result file URL");
+      }
+      return { ...common, data: { type: "url" as const, url: url.toString() } };
+    }
+    case "text":
+      if (typeof part.data.text !== "string") {
+        throw new Error("Invalid AI SDK 7 tool-result file text");
+      }
+      return {
+        ...common,
+        data: { type: "text" as const, text: part.data.text },
+      };
+    case "reference":
+      if (!isProviderReference(part.data.reference)) {
+        throw new Error("Invalid AI SDK 7 tool-result file reference");
+      }
+      return {
+        ...common,
+        data: { type: "reference" as const, reference: part.data.reference },
+      };
+    default:
+      throw new Error(
+        `Invalid AI SDK 7 tool-result file data: ${part.data.type}`,
+      );
+  }
+}
+
+function deserializeToolResultOutput(output: unknown): ToolResultOutput {
+  if (!validate(vToolResultOutput, output)) {
+    return normalizeToolOutput(output as JSONValue);
+  }
+  const stored = output as Infer<typeof vToolResultOutput>;
+  if (stored.type !== "content") return stored as unknown as ToolResultOutput;
+  return {
+    type: "content",
+    value: stored.value.map(deserializeToolResultContentPart),
+  } as ToolResultOutput;
+}
+
+function deserializeToolResultContentPart(
+  part: Extract<
+    Infer<typeof vToolResultOutput>,
+    { type: "content" }
+  >["value"][number],
+) {
+  if (part.type === "file") {
+    return {
+      ...part,
+      data:
+        part.data.type === "url"
+          ? { type: "url" as const, url: new URL(part.data.url) }
+          : part.data,
+    };
+  }
+  switch (part.type) {
+    case "media":
+      return {
+        type: "file" as const,
+        data: { type: "data" as const, data: part.data },
+        mediaType: part.mediaType,
+      };
+    case "file-data":
+      return {
+        type: "file" as const,
+        data: { type: "data" as const, data: part.data },
+        mediaType: part.mediaType,
+        ...(part.filename !== undefined ? { filename: part.filename } : {}),
+        ...(part.providerOptions !== undefined
+          ? { providerOptions: part.providerOptions }
+          : {}),
+      };
+    case "file-url":
+      return {
+        type: "file" as const,
+        data: { type: "url" as const, url: new URL(part.url) },
+        mediaType: part.mediaType ?? "application/octet-stream",
+        ...(part.providerOptions !== undefined
+          ? { providerOptions: part.providerOptions }
+          : {}),
+      };
+    case "file-id":
+    case "image-file-id":
+      if (typeof part.fileId === "string") return part;
+      return {
+        type: "file" as const,
+        data: {
+          type: "reference" as const,
+          reference: part.fileId,
+        },
+        mediaType:
+          part.type === "image-file-id" ? "image" : "application/octet-stream",
+        ...(part.providerOptions !== undefined
+          ? { providerOptions: part.providerOptions }
+          : {}),
+      };
+    case "file-reference":
+    case "image-file-reference":
+      return {
+        type: "file" as const,
+        data: { type: "reference" as const, reference: part.providerReference },
+        mediaType:
+          part.type === "image-file-reference"
+            ? "image"
+            : "application/octet-stream",
+        ...(part.providerOptions !== undefined
+          ? { providerOptions: part.providerOptions }
+          : {}),
+      };
+    case "image-data":
+      return {
+        type: "file" as const,
+        data: { type: "data" as const, data: part.data },
+        mediaType: part.mediaType,
+        ...(part.providerOptions !== undefined
+          ? { providerOptions: part.providerOptions }
+          : {}),
+      };
+    case "image-url":
+      return {
+        type: "file" as const,
+        data: { type: "url" as const, url: new URL(part.url) },
+        mediaType: "image",
+        ...(part.providerOptions !== undefined
+          ? { providerOptions: part.providerOptions }
+          : {}),
+      };
+    default:
+      return part;
+  }
+}
+
+function serializeReasoningFile(
+  part: ReasoningFilePart | Infer<typeof vReasoningFilePart>,
+): Pick<Infer<typeof vReasoningFilePart>, "url" | "data"> {
+  if ("url" in part && part.url !== undefined) {
+    return { url: part.url.toString() };
+  }
+  if (!("data" in part) || part.data === undefined) {
+    throw new Error("reasoning-file requires data or url");
+  }
+  const { data } = part;
+  if (data instanceof URL) return { url: data.toString() };
+  if (isRecord(data) && data.type === "url" && data.url instanceof URL) {
+    return { url: data.url.toString() };
+  }
+  if (isRecord(data) && data.type === "data") {
+    return { data: serializeDataOrUrl(data.data as DataContent) };
+  }
+  if (isRecord(data) && "type" in data) {
+    throw new Error("Invalid AI SDK 7 reasoning-file data");
+  }
+  return { data: serializeDataOrUrl(data) };
+}
+
+function deserializeReasoningFile(
+  part: Infer<typeof vReasoningFilePart>,
+): Extract<ReasoningFilePart["data"], { type: string }> {
+  if (part.url !== undefined) {
+    return { type: "url", url: new URL(part.url) };
+  }
+  if (part.data !== undefined) {
+    return { type: "data", data: part.data };
+  }
+  throw new Error("reasoning-file requires data or url");
 }
 
 /**
@@ -893,7 +1120,7 @@ export function guessMimeType(buf: ArrayBuffer | string): string {
  * @returns The serialized data as an ArrayBuffer or the URL as a string.
  */
 export function serializeDataOrUrl(
-  dataOrUrl: DataContent | URL,
+  dataOrUrl: DataContent | URL | ProviderReference | FileData,
 ): ArrayBuffer | string {
   if (typeof dataOrUrl === "string") {
     return dataOrUrl;
@@ -904,6 +1131,23 @@ export function serializeDataOrUrl(
   if (dataOrUrl instanceof URL) {
     return dataOrUrl.toString();
   }
+  if ("type" in dataOrUrl) {
+    switch (dataOrUrl.type) {
+      case "data":
+        return serializeDataOrUrl(dataOrUrl.data);
+      case "url":
+        return dataOrUrl.url.toString();
+      case "text":
+        return convertUint8ArrayToBase64(
+          new TextEncoder().encode(dataOrUrl.text),
+        );
+      case "reference":
+        throw new Error("Provider references must be stored as references");
+    }
+  }
+  if (!(dataOrUrl instanceof Uint8Array)) {
+    throw new Error("Unsupported provider reference");
+  }
   return dataOrUrl.buffer.slice(
     dataOrUrl.byteOffset,
     dataOrUrl.byteOffset + dataOrUrl.byteLength,
@@ -911,8 +1155,14 @@ export function serializeDataOrUrl(
 }
 
 export function toModelMessageDataOrUrl(
-  urlOrString: string | ArrayBuffer | URL | DataContent,
-): URL | DataContent {
+  urlOrString:
+    | string
+    | ArrayBuffer
+    | URL
+    | DataContent
+    | ProviderReference
+    | FileData,
+): URL | DataContent | ProviderReference | FileData {
   if (urlOrString instanceof URL) {
     return urlOrString;
   }
@@ -928,19 +1178,107 @@ export function toModelMessageDataOrUrl(
   return urlOrString;
 }
 
+type StoredProviderReference = Infer<typeof vProviderReference>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isProviderReference(value: unknown): value is ProviderReference {
+  return (
+    isRecord(value) &&
+    !(value instanceof ArrayBuffer) &&
+    !(value instanceof Uint8Array) &&
+    !(value instanceof URL) &&
+    !("type" in value) &&
+    Object.values(value).every((id) => typeof id === "string")
+  );
+}
+
+function isStoredProviderReference(
+  value: unknown,
+): value is StoredProviderReference {
+  return (
+    isRecord(value) &&
+    value.type === "reference" &&
+    isProviderReference(value.reference)
+  );
+}
+
+function toStoredProviderReference(
+  value: unknown,
+): StoredProviderReference | undefined {
+  if (isStoredProviderReference(value)) return value;
+  if (isProviderReference(value))
+    return { type: "reference", reference: value };
+  if (
+    isRecord(value) &&
+    value.type === "reference" &&
+    isProviderReference(value.reference)
+  ) {
+    return { type: "reference", reference: value.reference };
+  }
+  return undefined;
+}
+
+function isFileReference(
+  value: unknown,
+): value is { type: "reference"; reference: ProviderReference } {
+  return (
+    isRecord(value) &&
+    value.type === "reference" &&
+    isProviderReference(value.reference)
+  );
+}
+
 export function toUIFilePart(part: ImagePart | FilePart): FileUIPart {
   const dataOrUrl = part.type === "image" ? part.image : part.data;
-  const url =
-    dataOrUrl instanceof ArrayBuffer
-      ? convertUint8ArrayToBase64(new Uint8Array(dataOrUrl))
-      : dataOrUrl.toString();
+  const providerReference = isProviderReference(dataOrUrl)
+    ? dataOrUrl
+    : isFileReference(dataOrUrl)
+      ? dataOrUrl.reference
+      : undefined;
+  const url = providerReference
+    ? ""
+    : toUIFileUrl(dataOrUrl, part.mediaType ?? "application/octet-stream");
 
   return {
     type: "file",
     mediaType: part.mediaType!,
     filename: part.type === "file" ? part.filename : undefined,
     url,
+    ...(providerReference !== undefined ? { providerReference } : {}),
     providerMetadata: part.providerOptions,
   };
 }
 
+function toUIFileUrl(data: unknown, mediaType: string): string {
+  if (isFileReference(data)) return "";
+  if (isRecord(data) && typeof data.type === "string") {
+    switch (data.type) {
+      case "url":
+        return (data.url as URL).toString();
+      case "data":
+        return toUIFileDataUrl(data.data as DataContent, mediaType);
+      case "text":
+        return toUIFileDataUrl(
+          new TextEncoder().encode(data.text as string),
+          mediaType,
+        );
+    }
+  }
+  if (data instanceof URL) return data.toString();
+  if (typeof data === "string") return data;
+  return toUIFileDataUrl(data as DataContent, mediaType);
+}
+
+function toUIFileDataUrl(data: DataContent, mediaType: string): string {
+  if (typeof data === "string") {
+    return data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`;
+  }
+  const bytes =
+    data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  return `data:${mediaType};base64,${convertUint8ArrayToBase64(bytes)}`;
+}

@@ -1,10 +1,12 @@
-import type {
-  Message,
-  MessageContentParts,
-  MessageWithMetadataInternal,
-  StreamDelta,
-  StreamMessage,
+import {
+  vToolResultOutput,
+  type Message,
+  type MessageContentParts,
+  type MessageWithMetadataInternal,
+  type StreamDelta,
+  type StreamMessage,
 } from "../validators.js";
+import { validate } from "convex-helpers/validators";
 import {
   collectContiguousStreamParts,
   createPersistedUIMessageChunkState,
@@ -333,11 +335,16 @@ function toolResult(
         }
       : mode === "error-text"
         ? { type: "error-text" as const, value: String(raw) }
-      : mode === "error-json"
-        ? { type: "error-json" as const, value: raw ?? null }
-        : typeof raw === "string"
-          ? { type: "text" as const, value: raw }
-          : { type: "json" as const, value: raw ?? null };
+        : mode === "error-json"
+          ? { type: "error-json" as const, value: raw ?? null }
+          : validate(vToolResultOutput, raw)
+            ? (raw as Extract<
+                MessageContentParts,
+                { type: "tool-result" }
+              >["output"])
+            : typeof raw === "string"
+              ? { type: "text" as const, value: raw }
+              : { type: "json" as const, value: raw ?? null };
   const providerOptions =
     part.resultProviderMetadata ?? part.callProviderMetadata;
   return {

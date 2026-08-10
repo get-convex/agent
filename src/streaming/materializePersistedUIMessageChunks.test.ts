@@ -21,6 +21,36 @@ const stream: StreamMessage = {
 };
 
 describe("projectPersistedUIMessageChunks", () => {
+  it("preserves canonical content tool outputs", () => {
+    const canonicalOutput = {
+      type: "content",
+      value: [{ type: "text", text: "already canonical" }],
+    };
+    const actual = projectPersistedUIMessageChunks(
+      stream,
+      [
+        {
+          type: "tool-input-available",
+          toolCallId: "call-1",
+          toolName: "lookup",
+          input: { query: "hello" },
+        },
+        {
+          type: "tool-output-available",
+          toolCallId: "call-1",
+          output: canonicalOutput,
+        },
+      ],
+      { status: "success" },
+    );
+
+    expect(actual[1].message).toMatchObject({
+      role: "tool",
+      content: [{ output: canonicalOutput }],
+    });
+    expect(validate(vMessageWithMetadataInternal, actual[1])).toBe(true);
+  });
+
   it("keeps persisted sources on the step that produced them", () => {
     const chunks = [
       { type: "start-step" },

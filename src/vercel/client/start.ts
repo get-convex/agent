@@ -1,20 +1,27 @@
 import {
-  stepCountIs,
-  type CallSettings,
+  isStepCount,
   type GenerateObjectResult,
   type IdGenerator,
   type LanguageModel,
+  type Instructions,
   type ModelMessage,
   type StepResult,
   type StopCondition,
   type ToolSet,
 } from "ai";
+import type { Context } from "@ai-sdk/provider-utils";
 import {
   serializeResponseMessages,
   serializeObjectResult,
 } from "../mapping.js";
 import { embedMessages, fetchContextWithPrompt } from "./search.js";
-import type { ActionCtx, AgentComponent, Config, Options } from "./types.js";
+import type {
+  ActionCtx,
+  AgentCallSettings,
+  AgentComponent,
+  Config,
+  Options,
+} from "./types.js";
 import type { Message, MessageDoc } from "../../validators.js";
 import {
   getModelName,
@@ -27,10 +34,54 @@ import { assert, omit } from "convex-helpers";
 import { saveInputMessages } from "./saveInputMessages.js";
 import type { GenericActionCtx, GenericDataModel } from "convex/server";
 
+export function resolveUsageModel(
+  toSave:
+    | { step: { model?: ModelOrMetadata } }
+    | { object: unknown },
+  activeModel: ModelOrMetadata,
+): ModelOrMetadata {
+  return "step" in toSave ? (toSave.step.model ?? activeModel) : activeModel;
+}
+
+type RawRequestResponseInclude = Record<string, boolean>;
+
+/**
+ * The raw handler promises request and, for non-streaming calls, response
+ * bodies. Preserve explicit caller choices while opting in to those bodies.
+ */
+function rawRequestResponseInclude(
+  args: {
+    experimental_include?: RawRequestResponseInclude;
+    include?: RawRequestResponseInclude;
+  },
+  enabled: boolean,
+  operation:
+    | "generateText"
+    | "streamText"
+    | "generateObject"
+    | "streamObject"
+    | undefined,
+): RawRequestResponseInclude | undefined {
+  if (!enabled) return undefined;
+
+  const requested = {
+    ...args.experimental_include,
+    ...args.include,
+  };
+  return {
+    ...requested,
+    requestBody: requested.requestBody ?? true,
+    ...((operation === "generateText" || operation === "generateObject")
+      ? { responseBody: requested.responseBody ?? true }
+      : {}),
+  };
+}
+
 export async function startGeneration<
   T,
   Tools extends ToolSet = ToolSet,
   CustomCtx extends object = object,
+  RUNTIME_CONTEXT extends Context = Context,
 >(
   ctx: ActionCtx & CustomCtx,
   component: AgentComponent,
@@ -74,13 +125,20 @@ export async function startGeneration<
      *   the promptMessageId message, if provided.
      */
     messages?: (ModelMessage | Message)[];
+    instructions?: Instructions;
+    /** @deprecated Use instructions. */
+    system?: Instructions;
+    allowSystemInMessages?: boolean;
     /**
      * The abort signal to be passed to the LLM call. If triggered, it will
      * mark the pending message as failed. If the generation is asynchronously
      * aborted, it will trigger this signal when detected.
      */
     abortSignal?: AbortSignal;
-    stopWhen?: StopCondition<Tools> | Array<StopCondition<Tools>>;
+    runtimeContext?: RUNTIME_CONTEXT;
+    stopWhen?:
+      | StopCondition<Tools, RUNTIME_CONTEXT>
+      | Array<StopCondition<Tools, RUNTIME_CONTEXT>>;
     _internal?: { generateId?: IdGenerator };
   },
   {
@@ -94,14 +152,20 @@ export async function startGeneration<
       agentName: string;
       agentForToolCtx?: Agent;
     },
+  _operation?:
+    | "generateText"
+    | "streamText"
+    | "generateObject"
+    | "streamObject",
 ): Promise<{
   args: T & {
-    system?: string;
+    instructions?: Instructions;
     model: LanguageModel;
     messages: ModelMessage[];
     prompt?: never;
     tools?: Tools;
-  } & CallSettings;
+    runtimeContext?: RUNTIME_CONTEXT;
+  } & AgentCallSettings;
   order: number;
   stepOrder: number;
   userId: string | undefined;
@@ -109,7 +173,10 @@ export async function startGeneration<
   updateModel: (model: ModelOrMetadata | undefined) => void;
   save: <TOOLS extends ToolSet>(
     toSave:
-      | { step: StepResult<TOOLS> }
+      | {
+          step: StepResult<TOOLS, RUNTIME_CONTEXT>;
+          responseMessages?: ModelMessage[];
+        }
       | { object: GenerateObjectResult<unknown> },
     createPendingMessage?: boolean,
     finishStreamId?: string,
@@ -132,6 +199,15 @@ export async function startGeneration<
     prompt: args.prompt,
     promptMessageId: args.promptMessageId,
   });
+  const allowSystemInMessages = args.allowSystemInMessages ?? true;
+  if (
+    !allowSystemInMessages &&
+    context.messages.some((message) => message.role === "system")
+  ) {
+    throw new Error(
+      "System messages in assembled message history require allowSystemInMessages: true. Use instructions for top-level system guidance.",
+    );
+  }
 
   const saveMessages = opts.storageOptions?.saveMessages ?? "promptAndOutput";
   const { promptMessageId, pendingMessage, savedMessages } =
@@ -159,13 +235,22 @@ export async function startGeneration<
   assert(model, "model is required");
   let activeModel: ModelOrMetadata = model;
 
-  const fail = async (reason: string) => {
-    if (pendingMessageId) {
-      await ctx.runMutation(component.messages.finalizeMessage, {
-        messageId: pendingMessageId,
-        result: { status: "failed", error: reason },
-      });
+  // Both the caller's AbortSignal listener and AI SDK's onAbort can report
+  // the same cancellation. Share the one finalization instead of racing two
+  // mutations for the pending message.
+  let pendingMessageFailure: Promise<void> | undefined;
+  const fail = (reason: string): Promise<void> => {
+    if (!pendingMessageId) return Promise.resolve();
+    if (!pendingMessageFailure) {
+      const messageId = pendingMessageId;
+      pendingMessageFailure = ctx
+        .runMutation(component.messages.finalizeMessage, {
+          messageId,
+          result: { status: "failed", error: reason },
+        })
+        .then(() => undefined);
     }
+    return pendingMessageFailure;
   };
   if (args.abortSignal) {
     const abortSignal = args.abortSignal;
@@ -185,34 +270,52 @@ export async function startGeneration<
     agent: opts.agentForToolCtx,
   } satisfies ToolCtx;
   const tools = wrapTools(toolCtx, args.tools) as Tools;
+  const argsWithoutSystem = omit(
+    args as typeof args & { system?: Instructions },
+    ["system"],
+  );
+  const {
+    promptMessageId: _promptMessageId,
+    messages: _messages,
+    prompt: _prompt,
+    instructions: _instructions,
+    onStepFinish: _onStepFinish,
+    ...aiCallArgs
+  } = argsWithoutSystem as typeof argsWithoutSystem & {
+    onStepFinish?: unknown;
+  };
+  const include = rawRequestResponseInclude(
+    aiCallArgs as {
+      experimental_include?: RawRequestResponseInclude;
+      include?: RawRequestResponseInclude;
+    },
+    Boolean(opts.rawRequestResponseHandler),
+    _operation,
+  );
   const aiArgs = {
     ...opts.callSettings,
     providerOptions: opts.providerOptions,
-    ...omit(args, ["promptMessageId", "messages", "prompt"]),
+    ...aiCallArgs,
     model,
     messages: context.messages,
+    instructions: args.instructions ?? args.system,
+    allowSystemInMessages,
     stopWhen:
-      args.stopWhen ?? (opts.maxSteps ? stepCountIs(opts.maxSteps) : undefined),
+      args.stopWhen ?? (opts.maxSteps ? isStepCount(opts.maxSteps) : undefined),
     tools,
-  } as T & {
+    ...(include ? { include } : {}),
+  } as unknown as T & {
     model: LanguageModel;
     messages: ModelMessage[];
     prompt?: never;
     tools?: Tools;
     _internal?: { generateId?: IdGenerator };
-  } & CallSettings;
+  } & AgentCallSettings;
   // NOTE: We intentionally do NOT override _internal.generateId here.
   // The AI SDK uses generateId() for many internal IDs (approval IDs,
   // tool execution IDs, message IDs, etc.) and they must be unique.
   // The pending message is linked via the explicit `pendingMessageId`
   // parameter passed to addMessages in the save closure.
-  // Track how many response messages we've already saved across steps.
-  // step.response.messages is cumulative — each step appends to it.
-  // We need to know which messages are new in each step to serialize
-  // only the new ones (important for tool approval flows where the SDK
-  // may add extra messages like approval tool-results).
-  let previousResponseMessageCount = 0;
-
   return {
     args: aiArgs,
     order: order ?? 0,
@@ -228,7 +331,10 @@ export async function startGeneration<
     fail,
     save: async <TOOLS extends ToolSet>(
       toSave:
-        | { step: StepResult<TOOLS> }
+        | {
+            step: StepResult<TOOLS, RUNTIME_CONTEXT>;
+            responseMessages?: ModelMessage[];
+          }
         | { object: GenerateObjectResult<unknown> },
       createPendingMessage?: boolean,
       /**
@@ -247,11 +353,8 @@ export async function startGeneration<
             activeModel,
           );
         } else {
-          const allResponseMessages = toSave.step.response.messages;
-          const newResponseMessages = allResponseMessages.slice(
-            previousResponseMessageCount,
-          );
-          previousResponseMessageCount = allResponseMessages.length;
+          const newResponseMessages =
+            toSave.responseMessages ?? toSave.step.response.messages;
           // Even an empty completed step needs a durable assistant result so
           // the pending message can be finalized at the storage boundary.
           const responseMessagesToSave: ModelMessage[] =
@@ -300,6 +403,7 @@ export async function startGeneration<
             );
           } else {
             pendingMessageId = lastMessage._id;
+            pendingMessageFailure = undefined;
             savedMessages.push(...saved.messages.slice(0, -1));
           }
         } else {
@@ -318,12 +422,13 @@ export async function startGeneration<
         });
       }
       if (opts.usageHandler && output.usage) {
+        const usageModel = resolveUsageModel(toSave, activeModel);
         await opts.usageHandler(ctx, {
           userId,
           threadId,
           agentName: opts.agentName,
-          model: getModelName(activeModel),
-          provider: getProviderName(activeModel),
+          model: getModelName(usageModel),
+          provider: getProviderName(usageModel),
           usage: output.usage,
           providerMetadata: output.providerMetadata,
         });

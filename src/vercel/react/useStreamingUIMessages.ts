@@ -13,7 +13,7 @@ import {
 } from "../deltas.js";
 import { useDeltaStreams } from "./useDeltaStreams.js";
 
-// Polyfill structuredClone to support readUIMessageStream on ReactNative
+// Polyfill structuredClone to support incremental UI-message reduction on React Native.
 if (!("structuredClone" in globalThis)) {
   void import("@ungap/structured-clone" as any).then(
     ({ default: structuredClone }) =>
@@ -23,7 +23,7 @@ if (!("structuredClone" in globalThis)) {
 
 /**
  * A hook that fetches streaming messages from a thread and converts them to UIMessages
- * using AI SDK's readUIMessageStream.
+ * using the adapter's incremental UI-message reducer.
  * This ONLY returns streaming UIMessages. To get both full and streaming messages,
  * use `useUIMessages`.
  *

@@ -24,7 +24,7 @@ import { defineSchema } from "convex/server";
 import { stepCountIs } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { z } from "zod/v4";
-import { mockModel } from "./mockModel.js";
+import { MockLanguageModel, mockModel } from "./mockModel.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;
@@ -35,12 +35,50 @@ const action = actionGeneric as ActionBuilder<DataModel, "public">;
 
 const TEST_TEXT = JSON.stringify({ hello: "world" });
 
+const agentModel = new MockLanguageModel({
+  content: [{ type: "text", text: TEST_TEXT }],
+});
 const agent = new Agent(components.agent, {
   name: "test",
   instructions: "You are a test agent",
+  languageModel: agentModel,
+});
+
+let capturedRawBodies: { request?: unknown; response?: unknown } | undefined;
+const rawBodyAgent = new Agent(components.agent, {
+  name: "raw-body-test",
   languageModel: mockModel({
-    content: [{ type: "text", text: TEST_TEXT }],
+    doGenerate: async () => ({
+      content: [{ type: "text", text: "raw" }],
+      finishReason: { unified: "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 },
+      },
+      request: { body: { prompt: "request-body" } },
+      response: { body: { text: "response-body" }, headers: {} },
+      warnings: [],
+    }),
   }),
+  rawRequestResponseHandler: async (_ctx, event) => {
+    capturedRawBodies = {
+      request: event.request.body,
+      response: event.response.body,
+    };
+  },
+});
+
+export const captureRawBodies = action({
+  args: {},
+  handler: async (ctx) => {
+    capturedRawBodies = undefined;
+    await rawBodyAgent.generateText(
+      ctx,
+      { userId: "raw-body-user" },
+      { prompt: "raw" },
+    );
+    return capturedRawBodies;
+  },
 });
 
 export const testQuery = query({
@@ -90,7 +128,7 @@ const saveStepAgent = new Agent(components.agent, {
 });
 
 export const replayStepsViaSaveStep = action({
-  args: { withWatermark: v.boolean() },
+  args: { withPreviousStep: v.boolean() },
   handler: async (ctx, args) => {
     const { thread } = await saveStepAgent.createThread(ctx, {
       userId: "ss-gen",
@@ -101,18 +139,21 @@ export const replayStepsViaSaveStep = action({
     const { threadId } = await saveStepAgent.createThread(ctx, {
       userId: "ss-replay",
     });
-    const { messageId: promptMessageId } = await saveStepAgent.saveMessage(ctx, {
-      threadId,
-      message: { role: "user", content: "echo hi" },
-      skipEmbeddings: true,
-    });
+    const { messageId: promptMessageId } = await saveStepAgent.saveMessage(
+      ctx,
+      {
+        threadId,
+        message: { role: "user", content: "echo hi" },
+        skipEmbeddings: true,
+      },
+    );
     let previousStep: (typeof steps)[number] | undefined;
     for (const step of steps) {
       await saveStepAgent.saveStep(ctx, {
         threadId,
         promptMessageId,
         step,
-        previousStep: args.withWatermark ? previousStep : undefined,
+        previousStep: args.withPreviousStep ? previousStep : undefined,
       });
       previousStep = step;
     }
@@ -231,6 +272,7 @@ const testApi: ApiFromModules<{
     generateTextAction: typeof generateTextAction;
     generateObjectAction: typeof generateObjectAction;
     saveMessageMutation: typeof saveMessageMutation;
+    captureRawBodies: typeof captureRawBodies;
     replayStepsViaSaveStep: typeof replayStepsViaSaveStep;
   };
 }>["fns"] = anyApi["index.test"] as any;
@@ -247,27 +289,26 @@ describe("Agent thick client", () => {
     expect(result).toBeDefined();
     expect(result).toMatch(TEST_TEXT);
   });
-  test("saveStep with previousStep saves each step's new messages exactly once", async () => {
-    const t = initConvexTest(schema);
-    const res = await t.action(testApi.replayStepsViaSaveStep, {
-      withWatermark: true,
-    });
-    expect(res.stepCount).toBe(2);
-    const toolCalls = res.contentTypes.filter((t) => t === "tool-call").length;
-    const toolResults = res.contentTypes.filter(
-      (t) => t === "tool-result",
-    ).length;
-    expect(toolCalls).toBe(1);
-    expect(toolResults).toBe(1);
-  });
-  test("saveStep without previousStep duplicates prior messages", async () => {
-    const t = initConvexTest(schema);
-    const res = await t.action(testApi.replayStepsViaSaveStep, {
-      withWatermark: false,
-    });
-    const toolCalls = res.contentTypes.filter((t) => t === "tool-call").length;
-    expect(toolCalls).toBeGreaterThan(1);
-  });
+  test.each([true, false])(
+    "saveStep persists each SDK 7 step once (previousStep: %s)",
+    async (withPreviousStep) => {
+      const t = initConvexTest(schema);
+      const res = await t.action(testApi.replayStepsViaSaveStep, {
+        withPreviousStep,
+      });
+      expect(res.stepCount).toBe(2);
+      const toolCalls = res.contentTypes.filter(
+        (t) => t === "tool-call",
+      ).length;
+      const toolResults = res.contentTypes.filter(
+        (t) => t === "tool-result",
+      ).length;
+      expect({ toolCalls, toolResults }).toEqual({
+        toolCalls: 1,
+        toolResults: 1,
+      });
+    },
+  );
 });
 
 describe("filterOutOrphanedToolMessages", () => {
@@ -335,6 +376,14 @@ describe("filterOutOrphanedToolMessages", () => {
 });
 
 describe("Agent option variations and normal behavior", () => {
+  test("raw handler opts into retained SDK 7 request and response bodies", async () => {
+    const t = initConvexTest(schema);
+    await expect(t.action(testApi.captureRawBodies, {})).resolves.toEqual({
+      request: { prompt: "request-body" },
+      response: { text: "response-body" },
+    });
+  });
+
   test("Agent can be constructed with minimal options", () => {
     const a = new Agent(components.agent, {
       name: "minimal",
@@ -467,6 +516,25 @@ describe("Agent-generated mutations/actions/queries", () => {
       messages: [{ role: "user", content: "Give object" }],
     });
     expect(objResult.object).toBeDefined();
+  });
+
+  test("asTextAction maps its system wire field to AI SDK instructions", async () => {
+    const t = initConvexTest(schema);
+    const before = agentModel.doGenerateCalls.length;
+
+    await t.action(testApi.generateTextAction, {
+      userId: "8",
+      system: "Action-scoped instructions",
+      prompt: "Say hi",
+    });
+
+    const call = agentModel.doGenerateCalls.at(-1);
+    expect(agentModel.doGenerateCalls).toHaveLength(before + 1);
+    expect(call?.prompt[0]).toEqual({
+      role: "system",
+      content: "Action-scoped instructions",
+    });
+    expect(call).not.toHaveProperty("system");
   });
 
   test("asSaveMessagesMutation works via t.mutation", async () => {
