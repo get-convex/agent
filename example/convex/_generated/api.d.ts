@@ -49,6 +49,7 @@ import type * as usage_tracking_tables from "../usage_tracking/tables.js";
 import type * as usage_tracking_usageHandler from "../usage_tracking/usageHandler.js";
 import type * as utils from "../utils.js";
 import type * as workflows_chaining from "../workflows/chaining.js";
+import type * as workflows_coordination from "../workflows/coordination.js";
 
 import type {
   ApiFromModules,
@@ -98,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   "usage_tracking/usageHandler": typeof usage_tracking_usageHandler;
   utils: typeof utils;
   "workflows/chaining": typeof workflows_chaining;
+  "workflows/coordination": typeof workflows_coordination;
 }>;
 
 /**
