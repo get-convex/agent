@@ -208,6 +208,7 @@ export class DeltaStreamer<T> {
   #nextParts: T[] = [];
   #latestWrite: number = 0;
   #ongoingWrite: Promise<void> | undefined;
+  #abortPromise: Promise<void> | undefined;
   #cursor: number = 0;
   public abortController: AbortController;
   // When true, the stream will be finished externally (e.g., atomically via addMessages)
@@ -243,34 +244,28 @@ export class DeltaStreamer<T> {
     this.#nextParts = [];
     this.abortController = new AbortController();
     if (config.abortSignal) {
-      config.abortSignal.addEventListener("abort", async () => {
-        try {
-          if (this.abortController.signal.aborted) {
-            return;
-          }
-          this.abortController.abort();
-          // Wait for in-flight stream creation before trying to abort it
-          if (this.#creatingStreamIdPromise) {
-            await this.#creatingStreamIdPromise;
-          }
-          if (this.streamId) {
-            await this.#ongoingWrite;
-            await this.ctx.runMutation(this.component.streams.abort, {
-              streamId: this.streamId,
-              reason: "abortSignal",
-            });
-          }
-        } catch {
-          // Best-effort cleanup — the stream will be garbage-collected
-          // by the 10-minute timeout if this fails.
-        }
-      });
+      const abortFromSignal = () => {
+        void this.#abort("abortSignal").catch(() => {
+          // Best-effort cleanup — the stream timeout is the fallback.
+        });
+      };
+      if (config.abortSignal.aborted) {
+        abortFromSignal();
+      } else {
+        config.abortSignal.addEventListener("abort", abortFromSignal, {
+          once: true,
+        });
+      }
     }
   }
 
   // Avoid race conditions by only creating once
   #creatingStreamIdPromise: Promise<string> | undefined;
   public async getStreamId() {
+    if (this.abortController.signal.aborted) {
+      await this.#abortPromise;
+      throw new Error("Cannot create a stream after it has been aborted");
+    }
     if (!this.streamId) {
       if (!this.#creatingStreamIdPromise) {
         this.#creatingStreamIdPromise = this.ctx.runMutation(
@@ -310,9 +305,11 @@ export class DeltaStreamer<T> {
     }
     // Skip finish if it will be handled externally (atomically with message save)
     // or if the stream was aborted (e.g., due to a failed delta write).
-    // Aborted streams are cleaned up via streams.abort (called by the abort
-    // signal handler), so we don't need to call finish() for them.
-    if (!this.#finishedExternally && !this.abortController.signal.aborted) {
+    // Abort cleanup owns the terminal component transition, so consumeStream
+    // must wait for it instead of also trying to finish the stream.
+    if (this.abortController.signal.aborted) {
+      await this.#waitForAbortCleanup();
+    } else if (!this.#finishedExternally) {
       await this.finish();
     }
   }
@@ -343,28 +340,27 @@ export class DeltaStreamer<T> {
       return;
     }
     this.#latestWrite = Date.now();
+    let success: boolean;
     try {
-      const success = await this.ctx.runMutation(
+      success = await this.ctx.runMutation(
         this.component.streams.addDelta,
         delta,
       );
-      if (!success) {
-        // An in-flight #sendDelta started before markFinishedExternally()
-        // will get `success === false` because the stream row is already
-        // "finished". That's a benign late-write miss, not a failure —
-        // don't convert it into an abort.
-        if (this.#finishedExternally) {
-          return;
-        }
-        await this.config.onAsyncAbort("async abort");
-        this.abortController.abort();
-        return;
-      }
     } catch (e) {
-      await this.config.onAsyncAbort(
+      await this.#abortDelta(
         e instanceof Error ? e.message : "unknown error",
       );
-      this.abortController.abort();
+      return;
+    }
+    if (!success) {
+      // An in-flight #sendDelta started before markFinishedExternally()
+      // will get `success === false` because the stream row is already
+      // "finished". That's a benign late-write miss, not a failure —
+      // don't convert it into an abort.
+      if (this.#finishedExternally) {
+        return;
+      }
+      await this.#abortDelta("async abort");
       return;
     }
     // Now that we've sent the delta, check if we need to send another one.
@@ -400,9 +396,17 @@ export class DeltaStreamer<T> {
     if (!this.streamId) {
       return;
     }
-    await this.#ongoingWrite;
+    try {
+      await this.#ongoingWrite;
+    } catch (error) {
+      if (this.abortController.signal.aborted) {
+        await this.#waitForAbortCleanup();
+      }
+      throw error;
+    }
     await this.#sendDelta(); // #sendDelta checks aborted internally
     if (this.abortController.signal.aborted) {
+      await this.#waitForAbortCleanup();
       return;
     }
     await this.ctx.runMutation(this.component.streams.finish, {
@@ -411,18 +415,76 @@ export class DeltaStreamer<T> {
   }
 
   public async fail(reason: string) {
-    if (this.abortController.signal.aborted) {
-      return;
+    await this.#abort(reason);
+  }
+
+  async #abortDelta(reason: string) {
+    let callbackFailure: { error: unknown } | undefined;
+    try {
+      await this.config.onAsyncAbort(reason);
+    } catch (error) {
+      callbackFailure = { error };
     }
-    this.abortController.abort();
-    if (!this.streamId) {
-      return;
+    if (!this.#abortPromise) {
+      try {
+        await this.#abort(reason, false);
+      } catch {
+        // The stream timeout is the bounded cleanup fallback.
+      }
     }
-    await this.#ongoingWrite;
-    await this.ctx.runMutation(this.component.streams.abort, {
-      streamId: this.streamId,
-      reason,
-    });
+    if (callbackFailure) throw callbackFailure.error;
+  }
+
+  #abort(reason: string, waitForOngoingWrite = true): Promise<void> {
+    if (!this.#abortPromise) {
+      this.abortController.abort();
+      this.#abortPromise = this.#abortCreatedStream(
+        reason,
+        waitForOngoingWrite,
+      );
+    }
+    return this.#abortPromise;
+  }
+
+  async #waitForAbortCleanup() {
+    let writeFailure: { error: unknown } | undefined;
+    try {
+      await this.#ongoingWrite;
+    } catch (error) {
+      writeFailure = { error };
+    }
+    try {
+      await this.#abortPromise;
+    } catch (error) {
+      writeFailure ??= { error };
+    }
+    if (writeFailure) throw writeFailure.error;
+  }
+
+  async #abortCreatedStream(reason: string, waitForOngoingWrite: boolean) {
+    if (this.#creatingStreamIdPromise) {
+      this.streamId ??= await this.#creatingStreamIdPromise;
+    }
+    if (!this.streamId) return;
+    let writeFailure: { error: unknown } | undefined;
+    if (waitForOngoingWrite) {
+      try {
+        await this.#ongoingWrite;
+      } catch (error) {
+        writeFailure = { error };
+      }
+    }
+    let abortFailure: { error: unknown } | undefined;
+    try {
+      await this.ctx.runMutation(this.component.streams.abort, {
+        streamId: this.streamId,
+        reason,
+      });
+    } catch (error) {
+      abortFailure = { error };
+    }
+    if (writeFailure) throw writeFailure.error;
+    if (abortFailure) throw abortFailure.error;
   }
 }
 

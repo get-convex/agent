@@ -1,4 +1,9 @@
-import type { ToolResultOutput } from "@ai-sdk/provider-utils";
+import type { JSONObject } from "@ai-sdk/provider";
+import type {
+  Context,
+  Experimental_SandboxSession,
+  ToolResultOutput,
+} from "@ai-sdk/provider-utils";
 import type {
   FlexibleSchema,
   ModelMessage,
@@ -28,12 +33,16 @@ export type ToolCtx<DataModel extends GenericDataModel = GenericDataModel> =
     messageId?: string;
   };
 
+export type AgentToolExecutionOptions<TOOL_CONTEXT extends Context = Context> =
+  ToolExecutionOptions<TOOL_CONTEXT>;
+
 /**
  * Function that is called to determine if the tool needs approval before it can be executed.
  */
 export type ToolNeedsApprovalFunctionCtx<
   INPUT,
   Ctx extends ToolCtx = ToolCtx,
+  TOOL_CONTEXT extends Context = Context,
 > = (
   ctx: Ctx,
   input: INPUT,
@@ -52,7 +61,7 @@ export type ToolNeedsApprovalFunctionCtx<
      *
      * Experimental (can break in patch releases).
      */
-    experimental_context?: unknown;
+    context: TOOL_CONTEXT;
   },
 ) => boolean | PromiseLike<boolean>;
 
@@ -60,10 +69,11 @@ export type ToolExecuteFunctionCtx<
   INPUT,
   OUTPUT,
   Ctx extends ToolCtx = ToolCtx,
+  TOOL_CONTEXT extends Context = Context,
 > = (
   ctx: Ctx,
   input: INPUT,
-  options: ToolExecutionOptions,
+  options: AgentToolExecutionOptions<TOOL_CONTEXT>,
 ) => AsyncIterable<OUTPUT> | PromiseLike<OUTPUT>;
 
 type NeverOptional<N, T> = 0 extends 1 & N
@@ -83,6 +93,7 @@ export type ToolOutputPropertiesCtx<
   INPUT,
   OUTPUT,
   Ctx extends ToolCtx = ToolCtx,
+  TOOL_CONTEXT extends Context = Context,
 > = NeverOptional<
   OUTPUT,
   {
@@ -93,7 +104,7 @@ export type ToolOutputPropertiesCtx<
      * @param input - The input of the tool call.
      * @param options.abortSignal - A signal that can be used to abort the tool call.
      */
-    execute?: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx>;
+    execute?: ToolExecuteFunctionCtx<INPUT, OUTPUT, Ctx, TOOL_CONTEXT>;
     outputSchema?: FlexibleSchema<OUTPUT>;
     /**
      * @deprecated Removed in v0.6.0. Use `execute` instead.
@@ -133,14 +144,24 @@ export type ToolInputProperties<INPUT> = {
  *
  * @returns A tool to be used with the AI SDK.
  */
-export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
+export function createTool<
+  INPUT,
+  OUTPUT,
+  Ctx extends ToolCtx = ToolCtx,
+  TOOL_CONTEXT extends Context = Context,
+>(
   def: {
     /**
      * An optional description of what the tool does.
      * Will be used by the language model to decide whether to use the tool.
      * Not used for provider-defined tools.
      */
-    description?: string;
+    description?:
+      | string
+      | ((options: {
+          context: NoInfer<TOOL_CONTEXT>;
+          experimental_sandbox?: Experimental_SandboxSession;
+        }) => string);
     /**
      * An optional title of the tool.
      */
@@ -151,6 +172,8 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
      * functionality that can be fully encapsulated in the provider.
      */
     providerOptions?: ProviderOptions;
+    metadata?: JSONObject;
+    contextSchema?: FlexibleSchema<TOOL_CONTEXT>;
   } & ToolInputProperties<INPUT> & {
       /**
        * An optional list of input examples that show the language
@@ -166,7 +189,8 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
         | boolean
         | ToolNeedsApprovalFunctionCtx<
             [INPUT] extends [never] ? unknown : INPUT,
-            Ctx
+            Ctx,
+            TOOL_CONTEXT
           >;
       /**
        * Strict mode setting for the tool.
@@ -186,7 +210,7 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
        */
       onInputStart?: (
         ctx: Ctx,
-        options: ToolExecutionOptions,
+        options: AgentToolExecutionOptions<TOOL_CONTEXT>,
       ) => void | PromiseLike<void>;
       /**
        * Optional function that is called when an argument streaming delta is available.
@@ -194,7 +218,9 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
        */
       onInputDelta?: (
         ctx: Ctx,
-        options: { inputTextDelta: string } & ToolExecutionOptions,
+        options: {
+          inputTextDelta: string;
+        } & AgentToolExecutionOptions<TOOL_CONTEXT>,
       ) => void | PromiseLike<void>;
       /**
        * Optional function that is called when a tool call can be started,
@@ -204,9 +230,9 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
         ctx: Ctx,
         options: {
           input: [INPUT] extends [never] ? unknown : INPUT;
-        } & ToolExecutionOptions,
+        } & AgentToolExecutionOptions<TOOL_CONTEXT>,
       ) => void | PromiseLike<void>;
-    } & ToolOutputPropertiesCtx<INPUT, OUTPUT, Ctx> & {
+    } & ToolOutputPropertiesCtx<INPUT, OUTPUT, Ctx, TOOL_CONTEXT> & {
       /**
        * Optional conversion function that maps the tool result to an output that can be used by the language model.
        *
@@ -234,7 +260,7 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
         },
       ) => ToolResultOutput | PromiseLike<ToolResultOutput>;
     },
-): Tool<INPUT, OUTPUT> {
+): Tool<INPUT, OUTPUT, TOOL_CONTEXT> {
   // Runtime backwards compat - types will show errors but runtime still works
   const inputSchema = def.inputSchema ?? (def as any).args;
   if (!inputSchema)
@@ -260,16 +286,18 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
         " handler function, define an outputSchema, or both",
     );
 
-  const t = tool<INPUT, OUTPUT>({
+  const t = tool<INPUT, OUTPUT, TOOL_CONTEXT>({
     type: "function",
     __acceptsCtx: true,
     ctx: def.ctx,
     description: def.description,
     title: def.title,
     providerOptions: def.providerOptions,
+    metadata: def.metadata,
     inputSchema,
+    contextSchema: def.contextSchema,
     inputExamples: def.inputExamples,
-    needsApproval(this: Tool<INPUT, OUTPUT>, input, options) {
+    needsApproval(this: Tool<INPUT, OUTPUT, TOOL_CONTEXT>, input, options) {
       const needsApproval = def.needsApproval;
       if (!needsApproval || typeof needsApproval === "boolean")
         return Boolean(needsApproval);
@@ -287,9 +315,9 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
     ...(executeHandler
       ? {
           execute(
-            this: Tool<INPUT, OUTPUT>,
+            this: Tool<INPUT, OUTPUT, TOOL_CONTEXT>,
             input: INPUT,
-            options: ToolExecutionOptions,
+            options: ToolExecutionOptions<TOOL_CONTEXT>,
           ) {
             if (!getCtx(this)) {
               throw new Error(
@@ -306,25 +334,37 @@ export function createTool<INPUT, OUTPUT, Ctx extends ToolCtx = ToolCtx>(
   });
   if (def.onInputStart) {
     const origOnInputStart = def.onInputStart;
-    t.onInputStart = function (this: Tool<INPUT, OUTPUT>, options) {
+    t.onInputStart = function (
+      this: Tool<INPUT, OUTPUT, TOOL_CONTEXT>,
+      options,
+    ) {
       return origOnInputStart.call(this, getCtx(this), options);
     };
   }
   if (def.onInputDelta) {
     const origOnInputDelta = def.onInputDelta;
-    t.onInputDelta = function (this: Tool<INPUT, OUTPUT>, options) {
+    t.onInputDelta = function (
+      this: Tool<INPUT, OUTPUT, TOOL_CONTEXT>,
+      options,
+    ) {
       return origOnInputDelta.call(this, getCtx(this), options);
     };
   }
   if (def.onInputAvailable) {
     const origOnInputAvailable = def.onInputAvailable;
-    t.onInputAvailable = function (this: Tool<INPUT, OUTPUT>, options) {
+    t.onInputAvailable = function (
+      this: Tool<INPUT, OUTPUT, TOOL_CONTEXT>,
+      options,
+    ) {
       return origOnInputAvailable.call(this, getCtx(this), options);
     };
   }
   if (def.toModelOutput) {
     const origToModelOutput = def.toModelOutput;
-    t.toModelOutput = function (this: Tool<INPUT, OUTPUT>, options) {
+    t.toModelOutput = function (
+      this: Tool<INPUT, OUTPUT, TOOL_CONTEXT>,
+      options,
+    ) {
       return origToModelOutput.call(this, getCtx(this), options);
     };
   }

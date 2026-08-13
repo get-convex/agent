@@ -1,5 +1,5 @@
 /**
- * Internal AI SDK 6 implementation for the Agent API.
+ * Internal AI SDK implementation for the Agent API.
  *
  * Consumers continue to import this API from `@convex-dev/agent`. A public
  * `@convex-dev/agent/vercel` entry point is intentionally deferred until its
@@ -8,24 +8,26 @@
 
 import type { JSONValue } from "@ai-sdk/provider";
 import type {
+  Context,
   FlexibleSchema,
   IdGenerator,
   InferSchema,
 } from "@ai-sdk/provider-utils";
 import type {
-  CallSettings,
   EmbeddingModel,
   GenerateObjectResult,
   GenerateTextResult,
   LanguageModel,
+  Instructions,
   ModelMessage,
+  Output as AISDKOutput,
   StepResult,
   StopCondition,
   StreamTextResult,
   ToolChoice,
   ToolSet,
 } from "ai";
-import { generateObject, generateText, stepCountIs, streamObject } from "ai";
+import { generateObject, generateText, isStepCount, streamObject } from "ai";
 
 const MIGRATION_URL = "node_modules/@convex-dev/agent/MIGRATION.md";
 const warnedDeprecations = new Set<string>();
@@ -51,7 +53,7 @@ import { type VectorDimension } from "../component/vector/tables.js";
 import {
   toModelMessage,
   serializeMessage,
-  serializeNewMessagesInStep,
+  serializeResponseMessages,
   serializeObjectResult,
 } from "./mapping.js";
 import { getModelName, getProviderName } from "../shared.js";
@@ -104,7 +106,7 @@ import type {
   UsageHandler,
   QueryCtx,
   AgentPrompt,
-  Output,
+  AgentCallSettings,
 } from "./client/types.js";
 import { streamText } from "./client/streamText.js";
 import {
@@ -113,7 +115,7 @@ import {
   willContinue,
 } from "./client/utils.js";
 
-export { stepCountIs } from "ai";
+export { isStepCount, stepCountIs } from "ai";
 export { hasSuccessfulToolCall };
 export {
   docsToModelMessages,
@@ -248,7 +250,7 @@ export class Agent<
        * The default system prompt to put in each request.
        * Override per-prompt by passing the "system" parameter.
        */
-      instructions?: string;
+      instructions?: Instructions;
       /**
        * Tools that the agent can call out to and get responses from.
        * They can be AI SDK tools (import {tool} from "ai")
@@ -397,6 +399,7 @@ export class Agent<
     T extends {
       _internal?: { generateId?: IdGenerator };
     },
+    RUNTIME_CONTEXT extends Context = Context,
   >(
     ctx: ActionCtx & CustomCtx,
     /**
@@ -419,19 +422,34 @@ export class Agent<
          * aborted, it will trigger this signal when detected.
          */
         abortSignal?: AbortSignal;
+        runtimeContext?: RUNTIME_CONTEXT;
         stopWhen?:
-          | StopCondition<TOOLS extends undefined ? AgentTools : TOOLS>
-          | Array<StopCondition<TOOLS extends undefined ? AgentTools : TOOLS>>;
+          | StopCondition<
+              TOOLS extends undefined ? AgentTools : TOOLS,
+              RUNTIME_CONTEXT
+            >
+          | Array<
+              StopCondition<
+                TOOLS extends undefined ? AgentTools : TOOLS,
+                RUNTIME_CONTEXT
+              >
+            >;
       },
     options?: Options & { userId?: string | null; threadId?: string },
+    operation?:
+      | "generateText"
+      | "streamText"
+      | "generateObject"
+      | "streamObject",
   ): Promise<{
     args: T & {
-      system?: string;
+      instructions?: Instructions;
       model: LanguageModel;
       prompt?: never;
       messages: ModelMessage[];
+      runtimeContext?: RUNTIME_CONTEXT;
       tools?: TOOLS extends undefined ? AgentTools : TOOLS;
-    } & CallSettings;
+    } & AgentCallSettings;
     order: number;
     stepOrder: number;
     userId: string | undefined;
@@ -439,7 +457,10 @@ export class Agent<
     updateModel: (model: LanguageModel | undefined) => void;
     save: <TOOLS extends ToolSet>(
       toSave:
-        | { step: StepResult<TOOLS> }
+        | {
+            step: StepResult<TOOLS, RUNTIME_CONTEXT>;
+            responseMessages?: ModelMessage[];
+          }
         | { object: GenerateObjectResult<unknown> },
       createPendingMessage?: boolean,
     ) => Promise<void>;
@@ -447,13 +468,14 @@ export class Agent<
     getSavedMessages: () => MessageDoc[];
   }> {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    return startGeneration<T, Tools, CustomCtx>(
+    return startGeneration<T, Tools, CustomCtx, RUNTIME_CONTEXT>(
       ctx,
       this.component,
       {
         ...args,
         tools: (args.tools ?? this.options.tools) as Tools,
-        system: args.system ?? this.options.instructions,
+        instructions:
+          args.instructions ?? args.system ?? this.options.instructions,
         stopWhen: (args.stopWhen ?? this.options.stopWhen) as any,
       },
       {
@@ -462,6 +484,7 @@ export class Agent<
         agentName: this.options.name,
         agentForToolCtx: this,
       },
+      operation,
     );
   }
 
@@ -480,7 +503,11 @@ export class Agent<
    */
   async generateText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any, any> = never,
+    OUTPUT extends AISDKOutput.Output<any, any, any> = AISDKOutput.Output<
+      string,
+      string
+    >,
+    RUNTIME_CONTEXT extends Context = Context,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -488,34 +515,56 @@ export class Agent<
      * The arguments to the generateText function, similar to the ai sdk's
      * {@link generateText} function, along with Agent prompt options.
      */
-    generateTextArgs: AgentPrompt & TextArgs<AgentTools, TOOLS, OUTPUT>,
+    generateTextArgs: TextArgs<AgentTools, TOOLS, OUTPUT, RUNTIME_CONTEXT>,
     options?: Options,
   ): Promise<
-    GenerateTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
+    GenerateTextResult<
+      TOOLS extends undefined ? AgentTools : TOOLS,
+      RUNTIME_CONTEXT,
+      OUTPUT
+    > &
       GenerationOutputMetadata
   > {
     const { args, promptMessageId, order, ...call } = await this.start(
       ctx,
       generateTextArgs,
       { ...threadOpts, ...options },
+      "generateText",
     );
 
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    const steps: StepResult<Tools>[] = [];
+    const steps: StepResult<Tools, RUNTIME_CONTEXT>[] = [];
+    let initialResponseMessages: ModelMessage[] = [];
+    let initialResponseMessagesSaved = false;
     try {
-      const result = (await generateText<Tools, OUTPUT>({
+      const result = (await generateText<Tools, RUNTIME_CONTEXT, OUTPUT>({
         ...args,
         prepareStep: async (options) => {
+          if (options.stepNumber === 0) {
+            initialResponseMessages = [...options.responseMessages];
+          }
           const result = await generateTextArgs.prepareStep?.(options);
           call.updateModel(result?.model ?? options.model);
           return result;
         },
-        onStepFinish: async (step) => {
+        onStepEnd: async (step) => {
           steps.push(step);
-          await call.save({ step }, await willContinue(steps, args.stopWhen));
-          return generateTextArgs.onStepFinish?.(step);
+          await call.save(
+            {
+              step,
+              responseMessages: [
+                ...(initialResponseMessagesSaved ? [] : initialResponseMessages),
+                ...step.response.messages,
+              ],
+            },
+            await willContinue(steps, args.stopWhen),
+          );
+          initialResponseMessagesSaved = true;
+          return (
+            generateTextArgs.onStepEnd ?? generateTextArgs.onStepFinish
+          )?.(step);
         },
-      })) as GenerateTextResult<Tools, OUTPUT>;
+      })) as GenerateTextResult<Tools, RUNTIME_CONTEXT, OUTPUT>;
       const metadata: GenerationOutputMetadata = {
         promptMessageId,
         order,
@@ -538,7 +587,12 @@ export class Agent<
    */
   async streamText<
     TOOLS extends ToolSet | undefined = undefined,
-    OUTPUT extends Output<any, any, any> = never,
+    OUTPUT extends AISDKOutput.Output<any, any, any> = AISDKOutput.Output<
+      string,
+      string,
+      never
+    >,
+    RUNTIME_CONTEXT extends Context = Context,
   >(
     ctx: ActionCtx & CustomCtx,
     threadOpts: { userId?: string | null; threadId?: string },
@@ -546,7 +600,12 @@ export class Agent<
      * The arguments to the streamText function, similar to the ai sdk's
      * {@link streamText} function, along with Agent prompt options.
      */
-    streamTextArgs: AgentPrompt & StreamingTextArgs<AgentTools, TOOLS, OUTPUT>,
+    streamTextArgs: StreamingTextArgs<
+      AgentTools,
+      TOOLS,
+      OUTPUT,
+      RUNTIME_CONTEXT
+    >,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -565,18 +624,25 @@ export class Agent<
       saveStreamDeltas?: boolean | StreamingOptions;
     },
   ): Promise<
-    StreamTextResult<TOOLS extends undefined ? AgentTools : TOOLS, OUTPUT> &
+    StreamTextResult<
+      TOOLS extends undefined ? AgentTools : TOOLS,
+      RUNTIME_CONTEXT,
+      OUTPUT
+    > &
       GenerationOutputMetadata
   > {
     type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
-    return streamText<Tools, OUTPUT>(
+    return streamText<AgentTools, TOOLS, OUTPUT, RUNTIME_CONTEXT>(
       ctx,
       this.component,
       {
         ...streamTextArgs,
         model: streamTextArgs.model ?? this.options.languageModel,
         tools: (streamTextArgs.tools ?? this.options.tools) as Tools,
-        system: streamTextArgs.system ?? this.options.instructions,
+        instructions:
+          streamTextArgs.instructions ??
+          streamTextArgs.system ??
+          this.options.instructions,
         stopWhen: (streamTextArgs.stopWhen ?? this.options.stopWhen) as any,
       },
       {
@@ -611,8 +677,7 @@ export class Agent<
      * The arguments to the generateObject function, similar to the ai sdk's
      * {@link generateObject} function, along with Agent prompt options.
      */
-    generateObjectArgs: AgentPrompt &
-      GenerateObjectArgs<SCHEMA, OUTPUT, RESULT>,
+    generateObjectArgs: GenerateObjectArgs<SCHEMA, OUTPUT, RESULT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -620,7 +685,12 @@ export class Agent<
     options?: Options,
   ): Promise<GenerateObjectResult<RESULT> & GenerationOutputMetadata> {
     const { args, promptMessageId, order, fail, save, getSavedMessages } =
-      await this.start(ctx, generateObjectArgs, { ...threadOpts, ...options });
+      await this.start(
+        ctx,
+        generateObjectArgs,
+        { ...threadOpts, ...options },
+        "generateObject",
+      );
 
     try {
       const result = (await generateObject(
@@ -663,7 +733,7 @@ export class Agent<
      * The arguments to the streamObject function, similar to the ai sdk's
      * {@link streamObject} function, along with Agent prompt options.
      */
-    streamObjectArgs: AgentPrompt & StreamObjectArgs<SCHEMA, OUTPUT, RESULT>,
+    streamObjectArgs: StreamObjectArgs<SCHEMA, OUTPUT, RESULT>,
     /**
      * The {@link ContextOptions} and {@link StorageOptions}
      * options to use for fetching contextual messages and saving input/output messages.
@@ -674,7 +744,12 @@ export class Agent<
       GenerationOutputMetadata
   > {
     const { args, promptMessageId, order, fail, save, getSavedMessages } =
-      await this.start(ctx, streamObjectArgs, { ...threadOpts, ...options });
+      await this.start(
+        ctx,
+        streamObjectArgs,
+        { ...threadOpts, ...options },
+        "streamObject",
+      );
 
     const stream = streamObject<SCHEMA, OUTPUT, RESULT>({
       ...(args as any),
@@ -1194,8 +1269,7 @@ export class Agent<
 
   /**
    * Explicitly save a "step" created by the AI SDK. For multi-step generation
-   * loops, pass `previousStep` so we save only the new response messages —
-   * see the arg JSDoc for why.
+   * loops, each SDK 7 step already owns its response messages.
    * @param ctx The ctx argument to a mutation or action.
    * @param args The Step generated by the AI SDK.
    */
@@ -1212,14 +1286,7 @@ export class Agent<
        * The step to save, possibly including multiple tool calls.
        */
       step: StepResult<TOOLS>;
-      /**
-       * The previous step in the same generation loop, if any. Pass it so we
-       * can compute how many of `step.response.messages` are already saved.
-       * Omit for the first step. AI SDK v6's `step.response.messages` is
-       * cumulative across steps; without this, multi-step callers duplicate
-       * every prior message on every save — the exact failure mode this fix
-       * addresses, just at the public-API layer.
-       */
+      /** @deprecated SDK 7 response messages are step-local. */
       previousStep?: StepResult<TOOLS>;
       /**
        * The model used to generate the step.
@@ -1233,19 +1300,7 @@ export class Agent<
       provider?: string;
     },
   ): Promise<{ messages: MessageDoc[] }> {
-    const previousResponseMessageCount =
-      args.previousStep?.response.messages.length ?? 0;
-    if (
-      args.previousStep !== undefined &&
-      args.step.response.messages.length < previousResponseMessageCount
-    ) {
-      throw new Error(
-        `saveStep: step.response.messages length (${args.step.response.messages.length}) is less than ` +
-          `previousStep.response.messages length (${previousResponseMessageCount}). ` +
-          `Ensure previousStep is from the immediately preceding step in the same generation loop.`,
-      );
-    }
-    const { messages } = await serializeNewMessagesInStep(
+    const { messages } = await serializeResponseMessages(
       ctx,
       this.component,
       args.step,
@@ -1253,7 +1308,9 @@ export class Agent<
         provider: args.provider ?? getProviderName(this.options.languageModel),
         model: args.model ?? getModelName(this.options.languageModel),
       },
-      previousResponseMessageCount,
+      args.step.response.messages.length > 0
+        ? args.step.response.messages
+        : [{ role: "assistant", content: [] }],
     );
     const embeddings = await this.generateEmbeddings(
       ctx,
@@ -1568,25 +1625,34 @@ export class Agent<
        */
       stopWhen?: StopCondition<AgentTools> | Array<StopCondition<AgentTools>>;
     } & Options,
-    overrides?: CallSettings,
+    overrides?: AgentCallSettings,
   ) {
     return internalActionGeneric({
       args: vTextArgs,
       handler: async (ctx_, args) => {
         const stream =
           args.stream === true ? spec?.stream || true : (spec?.stream ?? false);
-        const { userId, threadId, prompt, messages, maxSteps, ...rest } = args;
+        const {
+          userId,
+          threadId,
+          prompt,
+          messages,
+          maxSteps,
+          system,
+          ...rest
+        } = args;
         const targetArgs = { userId, threadId };
         const llmArgs = {
           stopWhen: spec?.stopWhen,
           ...overrides,
           ...omit(rest, ["storageOptions", "contextOptions", "stream"]),
+          instructions: system,
           messages: messages?.map(toModelMessage),
           prompt: Array.isArray(prompt) ? prompt.map(toModelMessage) : prompt,
           toolChoice: args.toolChoice as ToolChoice<AgentTools>,
-        } satisfies StreamingTextArgs<AgentTools>;
+        } as any;
         if (maxSteps) {
-          llmArgs.stopWhen = stepCountIs(maxSteps);
+          llmArgs.stopWhen = isStepCount(maxSteps);
         }
         const opts = {
           ...pick(spec, ["contextOptions", "storageOptions"]),
@@ -1647,13 +1713,19 @@ export class Agent<
     return internalActionGeneric({
       args: vSafeObjectArgs,
       handler: async (ctx_, args) => {
-        const { userId, threadId, callSettings, ...rest } = args;
+        const { userId, threadId, callSettings, system, ...rest } = args;
+        const {
+          instructions: configuredInstructions,
+          system: configuredSystem,
+          ...configuredObjectArgs
+        } = objectArgs;
         const overrides = pick(rest, ["contextOptions", "storageOptions"]);
         const targetArgs = { userId, threadId };
         const llmArgs = {
-          ...objectArgs,
+          ...configuredObjectArgs,
           ...callSettings,
           ...omit(rest, ["storageOptions", "contextOptions"]),
+          instructions: system ?? configuredInstructions ?? configuredSystem,
           messages: args.messages?.map(toModelMessage),
           prompt: Array.isArray(args.prompt)
             ? args.prompt.map(toModelMessage)

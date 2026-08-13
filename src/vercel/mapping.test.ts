@@ -4,25 +4,31 @@ import {
   serializeDataOrUrl,
   toModelMessageDataOrUrl,
   serializeMessage,
-  serializeNewMessagesInStep,
   serializeResponseMessages,
   toModelMessage,
   serializeContent,
   toModelMessageContent,
+  toUIFilePart,
   autoDenyUnresolvedApprovals,
+  serializeWarnings,
 } from "./mapping.js";
 import { api } from "../component/_generated/api.js";
-import type {
-  AgentComponent,
-  ActionCtx,
-} from "./client/types.js";
+import type { AgentComponent, ActionCtx } from "./client/types.js";
 import { vMessage, vToolResultPart } from "../validators.js";
 import fs from "fs";
 import path from "path";
 import type { SerializedContent } from "./mapping.js";
 import { validate } from "convex-helpers/validators";
-import type { ModelMessage, StepResult, ToolResultPart, ToolSet } from "ai";
+import type {
+  FilePart,
+  ModelMessage,
+  StepResult,
+  ToolResultPart,
+  ToolSet,
+  CallWarning,
+} from "ai";
 import type { Infer } from "convex/values";
+import { mockModel } from "./client/mockModel.js";
 
 const testAssetsDir = path.join(__dirname, "../../test-assets");
 const testFiles = [
@@ -40,6 +46,21 @@ function fileToArrayBuffer(filePath: string): ArrayBuffer {
 }
 
 describe("mapping", () => {
+  test("serializes every AI SDK 7 warning discriminant", () => {
+    const warnings: CallWarning[] = [
+      { type: "unsupported", feature: "feature", details: "details" },
+      { type: "compatibility", feature: "feature", details: "details" },
+      {
+        type: "deprecated",
+        setting: "setting",
+        message: "message",
+      },
+      { type: "other", message: "message" },
+    ];
+
+    expect(serializeWarnings(warnings)).toEqual(warnings);
+  });
+
   test("infers correct mimeType for all test-assets", () => {
     const expected: { [key: string]: string } = {
       "book.svg": "image/svg+xml", // <svg
@@ -139,6 +160,266 @@ describe("mapping", () => {
     expect(serialized).toMatchObject(expected);
   });
 
+  test("legacy result JSON with a type field is not treated as SDK output", async () => {
+    const weather = { type: "weather", temperature: 72 };
+    const toolResult = {
+      type: "tool-result" as const,
+      toolCallId: "tool-call-id",
+      toolName: "weather",
+      result: weather,
+    } satisfies Infer<typeof vToolResultPart>;
+    const expected = { type: "json", value: weather };
+
+    const [deserialized] = toModelMessageContent([
+      toolResult,
+    ]) as ToolResultPart[];
+    expect(deserialized.output).toEqual(expected);
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      [toolResult],
+    );
+    expect((content[0] as Infer<typeof vToolResultPart>).output).toEqual(
+      expected,
+    );
+  });
+
+  test.each([
+    [
+      "tagged data",
+      {
+        type: "file",
+        data: { type: "data", data: new Uint8Array([1, 2]) },
+        mediaType: "application/octet-stream",
+      },
+      { type: "data" },
+    ],
+    [
+      "tagged URL",
+      {
+        type: "file",
+        data: { type: "url", url: new URL("https://example.com/file") },
+        mediaType: "application/pdf",
+      },
+      { type: "url", url: new URL("https://example.com/file") },
+    ],
+    [
+      "tagged text",
+      {
+        type: "file",
+        data: { type: "text", text: "hello" },
+        mediaType: "text/plain",
+      },
+      { type: "text", text: "hello" },
+    ],
+    [
+      "tagged reference",
+      {
+        type: "file",
+        data: { type: "reference", reference: { openai: "file-1" } },
+        mediaType: "application/pdf",
+      },
+      { type: "reference", reference: { openai: "file-1" } },
+    ],
+    [
+      "legacy file-data",
+      {
+        type: "file-data",
+        data: "AQI=",
+        mediaType: "application/octet-stream",
+      },
+      { type: "data", data: "AQI=" },
+    ],
+    [
+      "legacy file-url",
+      {
+        type: "file-url",
+        url: "https://example.com/file",
+        mediaType: "application/pdf",
+      },
+      { type: "url", url: new URL("https://example.com/file") },
+    ],
+    [
+      "legacy file ID",
+      { type: "file-id", fileId: "file-1" },
+      { type: "file-id", fileId: "file-1" },
+    ],
+    [
+      "provider-keyed legacy file ID",
+      { type: "file-id", fileId: { openai: "file-1" } },
+      { type: "reference", reference: { openai: "file-1" } },
+    ],
+    [
+      "legacy file reference",
+      { type: "file-reference", providerReference: { openai: "file-1" } },
+      { type: "reference", reference: { openai: "file-1" } },
+    ],
+    [
+      "legacy image data",
+      { type: "image-data", data: "AQI=", mediaType: "image/png" },
+      { type: "data", data: "AQI=" },
+    ],
+    [
+      "legacy image URL",
+      { type: "image-url", url: "https://example.com/image" },
+      { type: "url", url: new URL("https://example.com/image") },
+    ],
+    [
+      "legacy image ID",
+      { type: "image-file-id", fileId: "image-1" },
+      { type: "image-file-id", fileId: "image-1" },
+    ],
+    [
+      "provider-keyed legacy image ID",
+      { type: "image-file-id", fileId: { openai: "image-1" } },
+      { type: "reference", reference: { openai: "image-1" } },
+    ],
+    [
+      "legacy image reference",
+      {
+        type: "image-file-reference",
+        providerReference: { openai: "image-1" },
+      },
+      { type: "reference", reference: { openai: "image-1" } },
+    ],
+  ])("round-trips AI SDK 7 tool-result %s", async (_name, value, expected) => {
+    const result = {
+      type: "tool-result",
+      toolCallId: "call-1",
+      toolName: "lookup",
+      output: { type: "content", value: [value] },
+    } as ToolResultPart;
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      [result],
+    );
+    const [restored] = toModelMessageContent(content) as ToolResultPart[];
+    const restoredPart = (restored.output as { value: unknown[] }).value[0]!;
+    if ("fileId" in expected) {
+      expect(restoredPart).toMatchObject(expected);
+    } else {
+      expect((restoredPart as { data: unknown }).data).toMatchObject(expected);
+    }
+  });
+
+  test("deserializes persisted legacy media tool output to a canonical file", () => {
+    const [restored] = toModelMessageContent([
+      {
+        type: "tool-result",
+        toolCallId: "call-1",
+        toolName: "render",
+        output: {
+          type: "content",
+          value: [{ type: "media", data: "AQI=", mediaType: "image/png" }],
+        },
+      },
+    ]) as ToolResultPart[];
+    expect(restored.output).toEqual({
+      type: "content",
+      value: [
+        {
+          type: "file",
+          data: { type: "data", data: "AQI=" },
+          mediaType: "image/png",
+        },
+      ],
+    });
+  });
+
+  test("reasoning files persist tagged data and URLs, and reject missing data", async () => {
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      [
+        {
+          type: "reasoning-file",
+          data: { type: "url", url: new URL("https://example.com/reasoning") },
+          mediaType: "text/plain",
+        },
+        {
+          type: "reasoning-file",
+          data: { type: "data", data: new Uint8Array([1, 2]) },
+          mediaType: "application/octet-stream",
+        },
+        { type: "custom", kind: "provider.annotation" },
+      ] as ModelMessage["content"],
+    );
+    expect(content).toMatchObject([
+      { type: "reasoning-file", url: "https://example.com/reasoning" },
+      { type: "reasoning-file", data: expect.any(ArrayBuffer) },
+      { type: "custom", kind: "provider.annotation" },
+    ]);
+    expect(toModelMessageContent(content)).toMatchObject([
+      {
+        type: "reasoning-file",
+        data: { type: "url", url: new URL("https://example.com/reasoning") },
+      },
+      {
+        type: "reasoning-file",
+        data: { type: "data", data: expect.any(ArrayBuffer) },
+      },
+      { type: "custom", kind: "provider.annotation" },
+    ]);
+    expect(
+      (await serializeContent({} as ActionCtx, {} as AgentComponent, content))
+        .content,
+    ).toEqual(content);
+    expect(() =>
+      toModelMessageContent([
+        { type: "reasoning-file", mediaType: "text/plain" },
+      ] as SerializedContent),
+    ).toThrow("reasoning-file requires data or url");
+  });
+
+  test("reserializing persisted provider fields preserves them", async () => {
+    const content: SerializedContent = [
+      { type: "reasoning", text: "private", signature: "signed" },
+      {
+        type: "tool-result",
+        toolCallId: "provider-call",
+        toolName: "search",
+        providerExecuted: true,
+        output: { type: "text", value: "found" },
+      },
+    ];
+    await expect(
+      serializeContent({} as ActionCtx, {} as AgentComponent, content),
+    ).resolves.toEqual({ content, fileIds: undefined });
+  });
+
+  test.each([
+    [
+      "ArrayBuffer",
+      {
+        type: "file",
+        data: new Uint8Array([1, 2]).buffer,
+        mediaType: "application/octet-stream",
+      },
+      { url: "data:application/octet-stream;base64,AQI=" },
+    ],
+    [
+      "tagged data",
+      {
+        type: "file",
+        data: { type: "data", data: new Uint8Array([1, 2]) },
+        mediaType: "application/octet-stream",
+      },
+      { url: "data:application/octet-stream;base64,AQI=" },
+    ],
+    [
+      "provider reference",
+      {
+        type: "file",
+        data: { type: "reference", reference: { openai: "file-1" } },
+        mediaType: "application/pdf",
+      },
+      { url: "", providerReference: { openai: "file-1" } },
+    ],
+  ])("renders file UI part for %s", (_name, part, expected) => {
+    expect(toUIFilePart(part as FilePart)).toMatchObject(expected);
+  });
+
   test("saving files returns fileIds when too big", async () => {
     // Make a big file
     const bigArr = new Uint8Array(1024 * 65).fill(1);
@@ -229,6 +510,7 @@ describe("mapping", () => {
     );
     expect(content).toHaveLength(1);
     expect((content as unknown[])[0]).toMatchObject(approvalRequest);
+    expect(toModelMessageContent(content)).toMatchObject([approvalRequest]);
   });
 
   test("tool-approval-response with approved: true is preserved", async () => {
@@ -280,7 +562,7 @@ describe("mapping", () => {
     expect(content).toEqual(reasoningFile);
   });
 
-  describe("serializeNewMessagesInStep", () => {
+  describe("serializeResponseMessages", () => {
     const ctx = {
       runAction: async () => undefined,
       runMutation: async () => undefined,
@@ -296,7 +578,12 @@ describe("mapping", () => {
       {
         role: "assistant",
         content: [
-          { type: "tool-call", toolCallId: "c1", toolName: "search", input: {} },
+          {
+            type: "tool-call",
+            toolCallId: "c1",
+            toolName: "search",
+            input: {},
+          },
         ],
       },
       {
@@ -312,15 +599,18 @@ describe("mapping", () => {
       },
     ];
     const step1Messages: ModelMessage[] = [
-      ...step0Messages,
       { role: "assistant", content: [{ type: "text", text: "thinking" }] },
     ];
     const step2Messages: ModelMessage[] = [
-      ...step1Messages,
       {
         role: "assistant",
         content: [
-          { type: "tool-call", toolCallId: "c2", toolName: "search", input: {} },
+          {
+            type: "tool-call",
+            toolCallId: "c2",
+            toolName: "search",
+            input: {},
+          },
         ],
       },
       {
@@ -381,13 +671,13 @@ describe("mapping", () => {
       expect(res.messages).toEqual([]);
     });
 
-    test("first step (count=0) serializes all response messages", async () => {
-      const res = await serializeNewMessagesInStep(
+    test("serializes all response messages for a step", async () => {
+      const res = await serializeResponseMessages(
         ctx,
         component,
         makeStep(step0Messages),
         undefined,
-        0,
+        step0Messages,
       );
       expect(res.messages).toHaveLength(2);
       expect(res.messages[0].message.role).toBe("assistant");
@@ -396,26 +686,50 @@ describe("mapping", () => {
       expect(contentTypes(res.messages[1].message)).toEqual(["tool-result"]);
     });
 
-    test("middle step (count=2) serializes only the new text message", async () => {
-      const res = await serializeNewMessagesInStep(
+    test("serializes the text response from a later step", async () => {
+      const res = await serializeResponseMessages(
         ctx,
         component,
         makeStep(step1Messages),
         undefined,
-        2,
+        step1Messages,
       );
       expect(res.messages).toHaveLength(1);
       expect(res.messages[0].message.role).toBe("assistant");
       expect(contentTypes(res.messages[0].message)).toEqual(["text"]);
     });
 
-    test("multi-message step (count=3) serializes the new tool-call + tool-result pair", async () => {
-      const res = await serializeNewMessagesInStep(
+    test("persists the model that generated an SDK 7 step over the fallback", async () => {
+      const routedModel = mockModel({
+        provider: "routed-provider",
+        modelId: "routed-model",
+      });
+      const step = {
+        ...makeStep(step1Messages),
+        model: routedModel,
+      } as StepResult<ToolSet>;
+
+      const res = await serializeResponseMessages(
+        ctx,
+        component,
+        step,
+        { provider: "fallback-provider", model: "fallback-model" },
+        step1Messages,
+      );
+
+      expect(res.messages[0]).toMatchObject({
+        model: "routed-model",
+        provider: "routed-provider",
+      });
+    });
+
+    test("serializes a tool-call and tool-result from the same step", async () => {
+      const res = await serializeResponseMessages(
         ctx,
         component,
         makeStep(step2Messages),
         undefined,
-        3,
+        step2Messages,
       );
       expect(res.messages).toHaveLength(2);
       expect(res.messages[0].message.role).toBe("assistant");
@@ -424,19 +738,21 @@ describe("mapping", () => {
       expect(contentTypes(res.messages[1].message)).toEqual(["tool-result"]);
     });
 
-    // Regression test for the actually-broken shape: a single step appended
-    // assistant(text) + assistant(tool-call) + tool(tool-result), so the new
-    // tail has length 3 and the last message is a tool message. The old
-    // heuristic took `slice(-2)` whenever the last role was "tool" and would
-    // have dropped the leading text. The watermark returns all three.
-    test("returns all three messages when a step adds text + tool-call + tool-result", async () => {
+    test("preserves text, a tool call, and its result from one step", async () => {
       const stepMessages: ModelMessage[] = [
-        ...step0Messages, // length 2
-        { role: "assistant", content: [{ type: "text", text: "Let me check..." }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Let me check..." }],
+        },
         {
           role: "assistant",
           content: [
-            { type: "tool-call", toolCallId: "c3", toolName: "search", input: {} },
+            {
+              type: "tool-call",
+              toolCallId: "c3",
+              toolName: "search",
+              input: {},
+            },
           ],
         },
         {
@@ -451,12 +767,12 @@ describe("mapping", () => {
           ],
         },
       ];
-      const res = await serializeNewMessagesInStep(
+      const res = await serializeResponseMessages(
         ctx,
         component,
         makeStep(stepMessages),
         undefined,
-        step0Messages.length,
+        stepMessages,
       );
       expect(res.messages).toHaveLength(3);
       expect(res.messages[0].message.role).toBe("assistant");
@@ -465,68 +781,6 @@ describe("mapping", () => {
       expect(contentTypes(res.messages[1].message)).toEqual(["tool-call"]);
       expect(res.messages[2].message.role).toBe("tool");
       expect(contentTypes(res.messages[2].message)).toEqual(["tool-result"]);
-    });
-
-    test("empty response messages slice falls back to synthetic empty assistant", async () => {
-      const res = await serializeNewMessagesInStep(
-        ctx,
-        component,
-        makeStep(step1Messages),
-        undefined,
-        step1Messages.length,
-      );
-      expect(res.messages).toHaveLength(1);
-      expect(res.messages[0].message.role).toBe("assistant");
-      expect(res.messages[0].message.content).toEqual([]);
-    });
-
-    // Pin the caller-drift behavior: if the watermark is past the end of
-    // response.messages (e.g. the caller mistracked), the slice is empty and
-    // we fall through to the synthetic anchor. Future "fixes" should not
-    // accidentally change this without intent.
-    test("watermark beyond response.messages.length returns the synthetic fallback", async () => {
-      const res = await serializeNewMessagesInStep(
-        ctx,
-        component,
-        makeStep(step1Messages),
-        undefined,
-        step1Messages.length + 5,
-      );
-      expect(res.messages).toHaveLength(1);
-      expect(res.messages[0].message.role).toBe("assistant");
-      expect(res.messages[0].message.content).toEqual([]);
-    });
-
-    // AI SDK v6 makes step.response.messages cumulative across steps:
-    // step N's array contains all messages from steps 0..N. Without the
-    // previousResponseMessageCount watermark, every multi-step save duplicates
-    // all prior messages. These tests demonstrate the bug and the fix.
-    describe("multi-step loop — previousStep watermark", () => {
-      test("without watermark, step 2 re-saves all cumulative messages (demonstrates the bug)", async () => {
-        // step2Messages = step0 (2 msgs) + step1 (1 msg) + step2 new (2 msgs) = 5 total
-        const res = await serializeNewMessagesInStep(
-          ctx,
-          component,
-          makeStep(step2Messages),
-          undefined,
-          0,
-        );
-        expect(res.messages).toHaveLength(5);
-      });
-
-      test("with watermark, step 2 saves only its 2 new messages", async () => {
-        const step1 = makeStep(step1Messages);
-        const res = await serializeNewMessagesInStep(
-          ctx,
-          component,
-          makeStep(step2Messages),
-          undefined,
-          step1.response.messages.length,
-        );
-        expect(res.messages).toHaveLength(2);
-        expect(contentTypes(res.messages[0].message)).toEqual(["tool-call"]);
-        expect(contentTypes(res.messages[1].message)).toEqual(["tool-result"]);
-      });
     });
   });
 

@@ -145,6 +145,14 @@ export const testApproveFlow = action({
       threadId: thread.threadId,
       paginationOpts: { cursor: null, numItems: 20 },
     });
+    const toolResults = allMessages.page.flatMap((message) =>
+      Array.isArray(message.message?.content)
+        ? message.message.content.filter(
+            (part) =>
+              part.type === "tool-result" && part.toolCallId === "tc-approve",
+          )
+        : [],
+    );
 
     return {
       approvalId,
@@ -154,8 +162,9 @@ export const testApproveFlow = action({
       secondSavedCount: result2.savedMessages?.length ?? 0,
       totalThreadMessages: allMessages.page.length,
       threadMessageRoles: allMessages.page.map((m) => m.message?.role),
+      toolResults,
       usageCallCount: usageCalls.length,
-      // Verify usage data includes detail fields (AI SDK v6)
+      // Verify usage data includes detail fields.
       lastUsage: usageCalls.at(-1),
     };
   },
@@ -431,8 +440,6 @@ describe("Tool Approval Workflow", () => {
     expect(result.firstSavedCount).toBeGreaterThanOrEqual(2);
     // Second call: tool-result + assistant text
     expect(result.secondSavedCount).toBeGreaterThanOrEqual(1);
-    // Thread should have (ascending): user, assistant(tool-call+approval),
-    // tool(approval-response), tool(tool-result), assistant(text)
     // listMessages returns descending order:
     expect(result.threadMessageRoles).toEqual([
       "assistant", // final text
@@ -441,9 +448,17 @@ describe("Tool Approval Workflow", () => {
       "assistant", // tool-call + approval-request
       "user", // prompt
     ]);
+    expect(result.toolResults).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "tc-approve",
+        toolName: "deleteFile",
+        output: { type: "text", value: "Deleted: test.txt" },
+      },
+    ]);
     // Usage handler should be called for each generateText call
     expect(result.usageCallCount).toBeGreaterThanOrEqual(2);
-    // Usage data should include AI SDK v6 detail fields
+    // Usage data should include detail fields.
     expect(result.lastUsage).toBeDefined();
     expect(result.lastUsage!.inputTokenDetails).toBeDefined();
     expect(result.lastUsage!.outputTokenDetails).toBeDefined();
@@ -457,9 +472,7 @@ describe("Tool Approval Workflow", () => {
     expect(result.approvalId).toBeDefined();
     expect(result.firstText).toBe("");
     expect(result.secondText).toBe("OK, I won't delete that file.");
-    // Same message ordering as approve flow:
-    // user, assistant(tool-call+approval), tool(denial-response),
-    // tool(execution-denied result), assistant(text)
+    // Same message ordering as approve flow.
     expect(result.threadMessageRoles).toEqual([
       "assistant",
       "tool",
@@ -483,14 +496,11 @@ describe("Tool Approval Workflow", () => {
     expect(result.secondText).toBe(
       "Done! Deleted old.txt and renamed a.txt to b.txt.",
     );
-    // Both approval responses should be merged into one tool message
-    // (write-time merge in respondToToolCallApproval via findApprovalContext)
-    // Thread: user, assistant(2 tool-calls + 2 approvals),
-    //         tool(2 approval-responses merged), tool(2 tool-results), assistant(text)
+    // Executed results are persisted separately from approval responses.
     expect(result.threadMessageRoles).toEqual([
       "assistant", // final text
       "tool", // tool-results
-      "tool", // approval-responses (merged)
+      "tool", // approval-responses
       "assistant", // tool-calls + approval-requests
       "user", // prompt
     ]);

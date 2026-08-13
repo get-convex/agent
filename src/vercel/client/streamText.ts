@@ -1,9 +1,11 @@
 import type {
+  ModelMessage,
   StepResult,
   StreamTextResult,
   ToolSet,
   UIMessage as AIUIMessage,
 } from "ai";
+import type { Context } from "@ai-sdk/provider-utils";
 import { streamText as streamTextAi } from "ai";
 import {
   compressUIMessageChunks,
@@ -14,15 +16,30 @@ import {
 import type {
   ActionCtx,
   AgentComponent,
-  AgentPrompt,
   GenerationOutputMetadata,
   Options,
-  Output,
+  StreamingTextArgs,
 } from "./types.js";
+import type { Output as AISDKOutput } from "ai";
 import { startGeneration } from "./start.js";
 import type { Agent } from "../index.js";
 import { getModelName, getProviderName } from "../../shared.js";
 import { errorToString, willContinue } from "./utils.js";
+
+/** Finish every abort cleanup path before surfacing an internal failure. */
+export async function runAbortCleanup(cleanup: {
+  failCall: () => Promise<void>;
+  failStreamer: () => Promise<void>;
+  onAbort?: () => PromiseLike<void> | void;
+}): Promise<void> {
+  const results = await Promise.allSettled([
+    cleanup.failCall(),
+    cleanup.failStreamer(),
+  ]);
+  await cleanup.onAbort?.();
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure) throw failure.reason;
+}
 
 /**
  * This behaves like {@link streamText} from the "ai" package except that
@@ -32,8 +49,14 @@ import { errorToString, willContinue } from "./utils.js";
  * to a thread (and optionally userId).
  */
 export async function streamText<
-  TOOLS extends ToolSet,
-  OUTPUT extends Output<any, any, any> = never,
+  AgentTools extends ToolSet,
+  TOOLS extends ToolSet | undefined = undefined,
+  OUTPUT extends AISDKOutput.Output<any, any, any> = AISDKOutput.Output<
+    string,
+    string,
+    never
+  >,
+  RUNTIME_CONTEXT extends Context = Context,
 >(
   ctx: ActionCtx,
   component: AgentComponent,
@@ -41,17 +64,7 @@ export async function streamText<
    * The arguments to the streamText function, similar to the ai sdk's
    * {@link streamText} function, along with Agent prompt options.
    */
-  streamTextArgs: AgentPrompt &
-    Omit<
-      Parameters<typeof streamTextAi<TOOLS, OUTPUT>>[0],
-      "model" | "prompt" | "messages"
-    > & {
-      /**
-       * The tools to use for the tool calls. This will override tools specified
-       * in the Agent constructor or createThread / continueThread.
-       */
-      tools?: TOOLS;
-    },
+  streamTextArgs: StreamingTextArgs<AgentTools, TOOLS, OUTPUT, RUNTIME_CONTEXT>,
   /**
    * The {@link ContextOptions} and {@link StorageOptions}
    * options to use for fetching contextual messages and saving input/output messages.
@@ -73,17 +86,49 @@ export async function streamText<
     saveStreamDeltas?: boolean | StreamingOptions;
     agentForToolCtx?: Agent;
   },
-): Promise<StreamTextResult<TOOLS, OUTPUT> & GenerationOutputMetadata> {
+): Promise<
+  StreamTextResult<
+    TOOLS extends undefined ? AgentTools : TOOLS,
+    RUNTIME_CONTEXT,
+    OUTPUT
+  > &
+    GenerationOutputMetadata
+> {
+  type Tools = TOOLS extends undefined ? AgentTools : TOOLS;
   const { threadId } = options ?? {};
   const { args, userId, order, stepOrder, promptMessageId, ...call } =
-    await startGeneration(ctx, component, streamTextArgs, options);
+    await startGeneration<
+      StreamingTextArgs<AgentTools, TOOLS, OUTPUT, RUNTIME_CONTEXT>,
+      Tools,
+      object,
+      RUNTIME_CONTEXT
+    >(
+      ctx,
+      component,
+      streamTextArgs,
+      options,
+      "streamText",
+    );
 
-  const steps: StepResult<TOOLS>[] = [];
+  const steps: StepResult<Tools, RUNTIME_CONTEXT>[] = [];
+  let initialResponseMessages: ModelMessage[] = [];
+  let initialResponseMessagesSaved = false;
+  const responseMessagesForStep = (
+    step: StepResult<Tools, RUNTIME_CONTEXT>,
+  ) => [
+    ...(initialResponseMessagesSaved ? [] : initialResponseMessages),
+    ...step.response.messages,
+  ];
 
   // Track the final step for atomic save with stream finish (issue #181).
   // Only used when streamText awaits stream consumption itself; the
   // `returnImmediately` path saves inline instead (see onStepFinish below).
-  let pendingFinalStep: StepResult<TOOLS> | undefined;
+  let pendingFinalStep:
+    | {
+        step: StepResult<Tools, RUNTIME_CONTEXT>;
+        responseMessages: ModelMessage[];
+      }
+    | undefined;
 
   // Whether streamText will await stream consumption before returning.
   // When false (saveStreamDeltas.returnImmediately === true), we cannot
@@ -123,7 +168,7 @@ export async function streamText<
         )
       : undefined;
 
-  const result = streamTextAi({
+  const result = streamTextAi<Tools, RUNTIME_CONTEXT, OUTPUT>({
     ...args,
     abortSignal: streamer?.abortController.signal ?? args.abortSignal,
     experimental_transform: mergeTransforms(
@@ -136,7 +181,19 @@ export async function streamText<
       await streamer?.fail(errorToString(error.error));
       return streamTextArgs.onError?.(error);
     },
+    onAbort: async (event) => {
+      const reason = args.abortSignal?.reason
+        ? errorToString(args.abortSignal.reason)
+        : "streamText aborted";
+      await runAbortCleanup({
+        failCall: () => call.fail(reason),
+        failStreamer: async () => streamer?.fail(reason),
+        onAbort: () => streamTextArgs.onAbort?.(event),
+      });
+    },
     prepareStep: async (options) => {
+      if (options.stepNumber === 0)
+        initialResponseMessages = [...options.responseMessages];
       const result = await streamTextArgs.prepareStep?.(options);
       if (result) {
         const model = result.model ?? options.model;
@@ -150,7 +207,7 @@ export async function streamText<
       }
       return undefined;
     },
-    onStepFinish: async (step) => {
+    onStepEnd: async (step) => {
       steps.push(step);
       const createPendingMessage = await willContinue(steps, args.stopWhen);
       if (!createPendingMessage && streamer) {
@@ -159,22 +216,36 @@ export async function streamText<
         if (willAwaitStream) {
           // We're about to `await stream` below — defer the save so it
           // happens atomically with stream finish (issue #181).
-          pendingFinalStep = step;
+          pendingFinalStep = {
+            step,
+            responseMessages: responseMessagesForStep(step),
+          };
         } else {
           // returnImmediately path: streamText is about to return without
           // awaiting consumption, so the deferred-save block below won't
           // see this step. Save inline now (issue #265).
           const finishStreamId = await streamer.getOrCreateStreamId();
-          await call.save({ step }, false, finishStreamId);
+          await call.save(
+            { step, responseMessages: responseMessagesForStep(step) },
+            false,
+            finishStreamId,
+          );
+          initialResponseMessagesSaved = true;
         }
       } else {
-        await call.save({ step }, createPendingMessage);
+        await call.save(
+          { step, responseMessages: responseMessagesForStep(step) },
+          createPendingMessage,
+        );
+        initialResponseMessagesSaved = true;
       }
-      return args.onStepFinish?.(step);
+      return (streamTextArgs.onStepEnd ?? streamTextArgs.onStepFinish)?.(step);
     },
-  }) as StreamTextResult<TOOLS, OUTPUT>;
+  } as Parameters<
+    typeof streamTextAi<Tools, RUNTIME_CONTEXT, OUTPUT>
+  >[0]) as StreamTextResult<Tools, RUNTIME_CONTEXT, OUTPUT>;
   const stream = streamer?.consumeStream(
-    result.toUIMessageStream<AIUIMessage<TOOLS>>(),
+    result.toUIMessageStream<AIUIMessage<Tools>>(),
   );
   if (willAwaitStream) {
     try {
@@ -188,7 +259,7 @@ export async function streamText<
       // Save the deferred final step if it was already generated but not yet persisted
       if (pendingFinalStep) {
         try {
-          await call.save({ step: pendingFinalStep }, false);
+          await call.save(pendingFinalStep, false);
         } catch (saveError) {
           console.error("Failed to save deferred final step:", saveError);
         }
@@ -201,7 +272,7 @@ export async function streamText<
   // If we deferred the final step save, do it now with atomic stream finish.
   if (pendingFinalStep && streamer) {
     const finishStreamId = await streamer.getOrCreateStreamId();
-    await call.save({ step: pendingFinalStep }, false, finishStreamId);
+    await call.save(pendingFinalStep, false, finishStreamId);
   }
   const metadata: GenerationOutputMetadata = {
     promptMessageId,

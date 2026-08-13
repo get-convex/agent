@@ -11,6 +11,7 @@ import {
 import { v } from "convex/values";
 import { components, initConvexTest } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
+import { runAbortCleanup } from "./streamText.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;
@@ -145,6 +146,31 @@ describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () =
   });
 });
 
+describe("streamText abort cleanup", () => {
+  test("attempts every cleanup and rethrows the first internal failure", async () => {
+    const calls: string[] = [];
+    const firstFailure = new Error("failed pending message cleanup");
+
+    await expect(
+      runAbortCleanup({
+        failCall: async () => {
+          calls.push("call.fail");
+          throw firstFailure;
+        },
+        failStreamer: async () => {
+          calls.push("streamer.fail");
+          throw new Error("failed stream cleanup");
+        },
+        onAbort: () => {
+          calls.push("user.onAbort");
+        },
+      }),
+    ).rejects.toBe(firstFailure);
+
+    expect(calls).toEqual(["call.fail", "streamer.fail", "user.onAbort"]);
+  });
+});
+
 describe("streamText with an empty final step (issue #274)", () => {
   test.each([
     ["awaited", testApi.streamTextEmptyAwaited],
@@ -178,9 +204,9 @@ describe("streamText with an empty final step (issue #274)", () => {
           provider: "mock-provider",
           providerMetadata: { mock: { emptyResponse: true } },
           usage: expect.objectContaining({
-            promptTokens: 0,
-            completionTokens: 0,
-            totalTokens: 0,
+            promptTokens: 3,
+            completionTokens: 10,
+            totalTokens: 13,
           }),
         }),
       );

@@ -69,8 +69,9 @@
     }
   },
   "peerDependencies": {
-    "@ai-sdk/provider-utils": "^4.0.6",
-    "ai": "^6.0.35",
+    "@ai-sdk/provider": "^4.0.0",
+    "@ai-sdk/provider-utils": "^5.0.0",
+    "ai": "^7.0.0",
     "convex": "^1.24.8",
     "convex-helpers": "^0.1.103",
     "react": "^18.3.1 || ^19.0.0"
@@ -81,14 +82,14 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/anthropic": "3.0.13",
-    "@ai-sdk/google": "3.0.30",
-    "@ai-sdk/groq": "3.0.8",
-    "@ai-sdk/openai": "3.0.10",
-    "@ai-sdk/provider": "3.0.3",
-    "@ai-sdk/provider-utils": "4.0.6",
+    "@ai-sdk/anthropic": "4.0.15",
+    "@ai-sdk/google": "4.0.16",
+    "@ai-sdk/groq": "4.0.11",
+    "@ai-sdk/openai": "4.0.14",
+    "@ai-sdk/provider": "4.0.3",
+    "@ai-sdk/provider-utils": "5.0.10",
     "@convex-dev/eslint-plugin": "^2.0.0",
-    "@convex-dev/rag": "0.7.5",
+    "@convex-dev/rag": "0.8.0-alpha.0",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/workflow": "0.4.3",
     "@edge-runtime/vm": "5.0.0",
@@ -106,11 +107,11 @@
     "@radix-ui/react-slot": "1.2.4",
     "@radix-ui/react-toast": "1.2.15",
     "@tailwindcss/typography": "0.5.19",
-    "@types/node": "20.19.37",
+    "@types/node": "22.20.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
-    "ai": "6.0.35",
+    "ai": "7.0.28",
     "autoprefixer": "10.4.27",
     "chokidar-cli": "3.0.0",
     "class-variance-authority": "0.7.1",
@@ -127,7 +128,6 @@
     "eslint-plugin-react-refresh": "0.5.2",
     "globals": "16.5.0",
     "lucide-react": "0.577.0",
-    "ollama-ai-provider": "1.2.0",
     "openai": "5.23.2",
     "pkg-pr-new": "0.0.66",
     "postcss": "8.5.23",
@@ -151,5 +151,8 @@
   "module": "./dist/vercel/index.js",
   "optionalDependencies": {
     "@ungap/structured-clone": "^1.3.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

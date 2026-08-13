@@ -1,8 +1,10 @@
 import {
   convertToModelMessages,
   type UIMessage as AIUIMessage,
+  type CustomContentUIPart,
   type DeepPartial,
   type DynamicToolUIPart,
+  type ReasoningFileUIPart,
   type ReasoningUIPart,
   type SourceDocumentUIPart,
   type SourceUrlUIPart,
@@ -13,6 +15,10 @@ import {
   type UIDataTypes,
   type UITools,
 } from "ai";
+import {
+  convertUint8ArrayToBase64,
+  type ReasoningFilePart,
+} from "@ai-sdk/provider-utils";
 import type { Infer } from "convex/values";
 import { toModelMessage, fromModelMessage, toUIFilePart } from "./mapping.js";
 import {
@@ -399,7 +405,13 @@ function createAssistantUIMessage<
 
   // Extract approval parts from raw message content for UI rendering
   type ApprovalPart =
-    | { type: "tool-approval-request"; approvalId: string; toolCallId: string }
+    | {
+        type: "tool-approval-request";
+        approvalId: string;
+        toolCallId: string;
+        isAutomatic?: boolean;
+        signature?: string;
+      }
     | {
         type: "tool-approval-response";
         approvalId: string;
@@ -496,6 +508,16 @@ function createAssistantUIMessage<
             ...partCommon,
             ...contentPart,
           } satisfies ReasoningUIPart);
+          break;
+        case "reasoning-file":
+          allParts.push(toUIReasoningFilePart(contentPart));
+          break;
+        case "custom":
+          allParts.push({
+            type: "custom",
+            kind: contentPart.kind,
+            providerMetadata: contentPart.providerOptions,
+          } satisfies CustomContentUIPart);
           break;
         case "file":
         case "image":
@@ -614,6 +636,8 @@ function createAssistantUIMessage<
           const typedPart = contentPart as {
             toolCallId: string;
             approvalId: string;
+            isAutomatic?: boolean;
+            signature?: string;
           };
           const toolCallPart = allParts.find(
             (part) =>
@@ -624,6 +648,12 @@ function createAssistantUIMessage<
             toolCallPart.state = "approval-requested";
             (toolCallPart as ToolUIPart & { approval?: object }).approval = {
               id: typedPart.approvalId,
+              ...(typedPart.isAutomatic !== undefined
+                ? { isAutomatic: typedPart.isAutomatic }
+                : {}),
+              ...(typedPart.signature !== undefined
+                ? { signature: typedPart.signature }
+                : {}),
             };
           } else {
             console.warn(
@@ -648,9 +678,15 @@ function createAssistantUIMessage<
           ) as ToolUIPart | undefined;
 
           if (toolCallPart) {
+            const approval = (
+              toolCallPart as ToolUIPart & {
+                approval?: { isAutomatic?: boolean; signature?: string };
+              }
+            ).approval;
             if (typedPart.approved) {
               toolCallPart.state = "approval-responded";
               (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+                ...approval,
                 id: typedPart.approvalId,
                 approved: true,
                 reason: typedPart.reason,
@@ -658,6 +694,7 @@ function createAssistantUIMessage<
             } else {
               toolCallPart.state = "output-denied";
               (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+                ...approval,
                 id: typedPart.approvalId,
                 approved: false,
                 reason: typedPart.reason,
@@ -711,6 +748,12 @@ function createAssistantUIMessage<
         // update state if not in a final state
         (toolCallPart as ToolUIPart & { approval?: object }).approval = {
           id: approvalPart.approvalId,
+          ...(approvalPart.isAutomatic !== undefined
+            ? { isAutomatic: approvalPart.isAutomatic }
+            : {}),
+          ...(approvalPart.signature !== undefined
+            ? { signature: approvalPart.signature }
+            : {}),
         };
         if (!finalStates.has(toolCallPart.state)) {
           toolCallPart.state = "approval-requested";
@@ -726,7 +769,13 @@ function createAssistantUIMessage<
 
       if (toolCallPart) {
         // Always update approval info, but only update state if not in a final state
+        const approval = (
+          toolCallPart as ToolUIPart & {
+            approval?: { isAutomatic?: boolean; signature?: string };
+          }
+        ).approval;
         (toolCallPart as ToolUIPart & { approval?: object }).approval = {
+          ...approval,
           id: approvalPart.approvalId,
           approved: approvalPart.approved,
           reason: approvalPart.reason,
@@ -776,6 +825,48 @@ function createAssistantUIMessage<
     parts: allParts,
     metadata: group.find((m) => m.metadata)?.metadata,
   };
+}
+
+function toUIReasoningFilePart(part: ReasoningFilePart): ReasoningFileUIPart {
+  const data = part.data;
+  return {
+    type: "reasoning-file",
+    mediaType: part.mediaType,
+    url: toUIReasoningFileUrl(data, part.mediaType),
+    providerMetadata: part.providerOptions,
+  };
+}
+
+function toUIReasoningFileUrl(
+  data: ReasoningFilePart["data"],
+  mediaType: string,
+): string {
+  if (isTaggedReasoningFileData(data)) {
+    if (data.type === "url") return data.url.toString();
+    data = data.data;
+  }
+  if (data instanceof URL) return data.toString();
+  if (typeof data === "string") {
+    return data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`;
+  }
+  const bytes =
+    data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  return `data:${mediaType};base64,${convertUint8ArrayToBase64(bytes)}`;
+}
+
+function isTaggedReasoningFileData(
+  data: ReasoningFilePart["data"],
+): data is Extract<ReasoningFilePart["data"], { type: string }> {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    !(data instanceof URL) &&
+    !(data instanceof ArrayBuffer) &&
+    !(data instanceof Uint8Array) &&
+    "type" in data
+  );
 }
 
 function toSourcePart(

@@ -56,6 +56,43 @@ describe("toUIMessages", () => {
     });
   });
 
+  it("projects finalized reasoning-file and custom parts", () => {
+    const messages = [
+      baseMessageDoc({
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning-file",
+              url: "https://example.com/reasoning.pdf",
+              mediaType: "application/pdf",
+              providerOptions: { openai: { file: "reasoning" } },
+            },
+            {
+              type: "custom",
+              kind: "openai.annotation",
+              providerOptions: { openai: { annotation: "kept" } },
+            },
+          ],
+        },
+      }),
+    ];
+
+    expect(toUIMessages(messages)[0].parts).toEqual([
+      {
+        type: "reasoning-file",
+        url: "https://example.com/reasoning.pdf",
+        mediaType: "application/pdf",
+        providerMetadata: { openai: { file: "reasoning" } },
+      },
+      {
+        type: "custom",
+        kind: "openai.annotation",
+        providerMetadata: { openai: { annotation: "kept" } },
+      },
+    ]);
+  });
+
   it("handles multiple messages", () => {
     const messages = [
       baseMessageDoc({
@@ -993,6 +1030,8 @@ describe("toUIMessages", () => {
                 type: "tool-approval-request",
                 approvalId: "approval1",
                 toolCallId: "call1",
+                isAutomatic: true,
+                signature: "signed-request",
               },
             ],
           },
@@ -1007,7 +1046,11 @@ describe("toUIMessages", () => {
       ) as any;
       expect(toolPart).toBeDefined();
       expect(toolPart.state).toBe("approval-requested");
-      expect(toolPart.approval).toEqual({ id: "approval1" });
+      expect(toolPart.approval).toEqual({
+        id: "approval1",
+        isAutomatic: true,
+        signature: "signed-request",
+      });
     });
 
     it("sets state to approval-responded when tool-approval-response with approved: true", () => {
@@ -1031,6 +1074,8 @@ describe("toUIMessages", () => {
                 type: "tool-approval-request",
                 approvalId: "approval1",
                 toolCallId: "call1",
+                isAutomatic: true,
+                signature: "signed-request",
               },
             ],
           },
@@ -1066,6 +1111,8 @@ describe("toUIMessages", () => {
         id: "approval1",
         approved: true,
         reason: "User confirmed",
+        isAutomatic: true,
+        signature: "signed-request",
       });
     });
 
