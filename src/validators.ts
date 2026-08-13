@@ -73,6 +73,22 @@ export const vReasoningPart = v.object({
   providerMetadata,
 });
 
+export const vReasoningFilePart = v.object({
+  type: v.literal("reasoning-file"),
+  url: v.optional(v.string()),
+  data: v.optional(v.union(v.string(), v.bytes())),
+  mediaType: v.string(),
+  providerOptions,
+  providerMetadata,
+});
+
+export const vCustomContentPart = v.object({
+  type: v.literal("custom"),
+  kind: v.string(),
+  providerOptions,
+  providerMetadata,
+});
+
 export const vRedactedReasoningPart = v.object({
   type: v.literal("redacted-reasoning"),
   data: v.string(),
@@ -127,6 +143,8 @@ export const vToolCallPart = v.union(
     /** @deprecated Use `input` instead. */
     args: v.optional(v.any()),
     providerExecuted: v.optional(v.boolean()),
+    title: v.optional(v.string()),
+    toolMetadata: v.optional(v.record(v.string(), v.any())),
     providerOptions,
     providerMetadata,
   }),
@@ -139,6 +157,8 @@ export const vToolCallPart = v.union(
     args: v.any(),
     input: v.optional(v.any()),
     providerExecuted: v.optional(v.boolean()),
+    title: v.optional(v.string()),
+    toolMetadata: v.optional(v.record(v.string(), v.any())),
     providerOptions,
     providerMetadata,
   }),
@@ -271,6 +291,8 @@ export const vToolApprovalRequest = v.object({
    * ID of the tool call that the approval request is for.
    */
   toolCallId: v.string(),
+  isAutomatic: v.optional(v.boolean()),
+  signature: v.optional(v.string()),
   /** @todo Should we continue to include? */
   providerMetadata,
   /** @todo Should we continue to include? */
@@ -334,6 +356,8 @@ export const vAssistantContent = v.union(
       vTextPart,
       vFilePart,
       vReasoningPart,
+      vReasoningFilePart,
+      vCustomContentPart,
       vRedactedReasoningPart,
       vToolCallPart,
       vToolResultPart,
@@ -383,6 +407,8 @@ export type MessageContentParts =
   | Infer<typeof vImagePart>
   | Infer<typeof vFilePart>
   | Infer<typeof vReasoningPart>
+  | Infer<typeof vReasoningFilePart>
+  | Infer<typeof vCustomContentPart>
   | Infer<typeof vRedactedReasoningPart>
   | Infer<typeof vToolCallPart>
   | Infer<typeof vToolResultPart>

@@ -26,7 +26,9 @@ import {
   type MessageWithMetadata,
   type Usage,
   type vFilePart,
+  type vCustomContentPart,
   type vImagePart,
+  type vReasoningFilePart,
   type vReasoningPart,
   type vRedactedReasoningPart,
   type vTextPart,
@@ -507,6 +509,9 @@ export async function serializeContent(
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             providerExecuted: part.providerExecuted,
+            title: "title" in part ? part.title : undefined,
+            toolMetadata:
+              "toolMetadata" in part ? part.toolMetadata : undefined,
             ...metadata,
           } satisfies Infer<typeof vToolCallPart>;
         }
@@ -519,6 +524,32 @@ export async function serializeContent(
             text: part.text,
             ...metadata,
           } satisfies Infer<typeof vReasoningPart>;
+        }
+        case "reasoning-file": {
+          if ("url" in part && part.url !== undefined) {
+            return {
+              type: part.type,
+              url: part.url,
+              mediaType: part.mediaType,
+              ...metadata,
+            } satisfies Infer<typeof vReasoningFilePart>;
+          }
+          if (part.data === undefined) {
+            throw new Error("reasoning-file requires data or url");
+          }
+          return {
+            type: part.type,
+            data: serializeDataOrUrl(part.data),
+            mediaType: part.mediaType,
+            ...metadata,
+          } satisfies Infer<typeof vReasoningFilePart>;
+        }
+        case "custom": {
+          return {
+            type: part.type,
+            kind: part.kind,
+            ...metadata,
+          } satisfies Infer<typeof vCustomContentPart>;
         }
         // Not in current generation output, but could be in historical messages
         case "redacted-reasoning": {
@@ -536,6 +567,9 @@ export async function serializeContent(
             type: part.type,
             approvalId: part.approvalId,
             toolCallId: part.toolCallId,
+            isAutomatic:
+              "isAutomatic" in part ? part.isAutomatic : undefined,
+            signature: "signature" in part ? part.signature : undefined,
             ...metadata,
           } satisfies Infer<typeof vToolApprovalRequest>;
         }
@@ -699,6 +733,9 @@ export function toModelMessageContent(
             text: part.text,
             ...metadata,
           } satisfies ReasoningPart;
+        case "reasoning-file":
+        case "custom":
+          return null;
         case "redacted-reasoning":
           // Legacy v5 part: round-trip the redacted payload via providerOptions.
           return {

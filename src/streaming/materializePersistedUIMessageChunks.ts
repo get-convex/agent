@@ -103,6 +103,8 @@ export function projectPersistedUIMessageChunkParts(
       part.type === "text" ||
       part.type === "reasoning" ||
       part.type === "file" ||
+      part.type === "reasoning-file" ||
+      part.type === "custom" ||
       part.type === "source-url" ||
       part.type === "source-document" ||
       isToolPart(part) ||
@@ -144,6 +146,26 @@ export function projectPersistedUIMessageChunkParts(
           data: part.url,
           ...(part.filename ? { filename: part.filename } : {}),
           mediaType: part.mediaType,
+          ...(part.providerMetadata
+            ? { providerOptions: part.providerMetadata }
+            : {}),
+        });
+      } else if (part.type === "reasoning-file") {
+        assistantContent.push({
+          type: "reasoning-file",
+          url: part.url,
+          mediaType: part.mediaType,
+          ...(part.providerMetadata
+            ? { providerOptions: part.providerMetadata }
+            : {}),
+        });
+      } else if (part.type === "custom") {
+        assistantContent.push({
+          type: "custom",
+          kind: part.kind,
+          ...(part.providerMetadata
+            ? { providerOptions: part.providerMetadata }
+            : {}),
         });
       } else if (isToolPart(part) && part.state !== "input-streaming") {
         const input =
@@ -157,6 +179,8 @@ export function projectPersistedUIMessageChunkParts(
           input,
           args: input,
           providerExecuted: part.providerExecuted,
+          ...(part.title ? { title: part.title } : {}),
+          ...(part.toolMetadata ? { toolMetadata: part.toolMetadata } : {}),
           ...(part.callProviderMetadata
             ? { providerOptions: part.callProviderMetadata }
             : {}),
@@ -166,6 +190,12 @@ export function projectPersistedUIMessageChunkParts(
             type: "tool-approval-request",
             approvalId: part.approval.id,
             toolCallId: part.toolCallId,
+            ...(part.approval.isAutomatic !== undefined
+              ? { isAutomatic: part.approval.isAutomatic }
+              : {}),
+            ...(part.approval.signature
+              ? { signature: part.approval.signature }
+              : {}),
           });
         }
         if (
@@ -199,6 +229,14 @@ export function projectPersistedUIMessageChunkParts(
           reason: part.approval.reason,
           providerExecuted: part.providerExecuted,
         });
+      }
+      if (
+        part.state === "approval-responded" &&
+        part.approval?.approved === false
+      ) {
+        toolContent.push(
+          toolResult(part, "execution-denied", part.approval.reason),
+        );
       }
       if (part.providerExecuted === true) continue;
       if (part.state === "output-denied") {

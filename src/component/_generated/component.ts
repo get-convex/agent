@@ -258,6 +258,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -281,7 +307,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -297,7 +325,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -476,6 +506,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -484,6 +515,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -811,6 +843,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -834,7 +892,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -850,7 +910,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -1029,6 +1091,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -1037,6 +1100,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -1400,6 +1464,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -1417,7 +1501,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -1430,7 +1516,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -1596,11 +1684,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -1954,6 +2044,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -1977,7 +2093,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -1993,7 +2111,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -2172,6 +2292,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -2180,6 +2301,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -2510,6 +2632,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -2527,7 +2669,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -2540,7 +2684,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -2706,11 +2852,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -3028,6 +3176,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -3045,7 +3213,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -3058,7 +3228,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -3224,11 +3396,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -3554,6 +3728,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -3577,7 +3777,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -3593,7 +3795,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -3772,6 +3976,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -3780,6 +3985,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -4034,6 +4240,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -4051,7 +4277,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -4064,7 +4292,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -4230,11 +4460,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }

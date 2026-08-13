@@ -264,6 +264,22 @@ describe("mapping", () => {
     expect((content as unknown[])[0]).toMatchObject(approvalResponse);
   });
 
+  test("stored reasoning-file URLs survive serialization", async () => {
+    const reasoningFile: SerializedContent = [
+      {
+        type: "reasoning-file",
+        url: "https://example.com/reasoning",
+        mediaType: "text/plain",
+      },
+    ];
+    const { content } = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      reasoningFile,
+    );
+    expect(content).toEqual(reasoningFile);
+  });
+
   describe("serializeNewMessagesInStep", () => {
     const ctx = {
       runAction: async () => undefined,

@@ -222,6 +222,7 @@ describe("projectPersistedUIMessageChunks", () => {
               type: "file",
               data: "https://example.com/file.txt",
               mediaType: "text/plain",
+              providerOptions: { openai: { ignored: true } },
             },
           ],
         },
@@ -316,5 +317,167 @@ describe("projectPersistedUIMessageChunks", () => {
         reasoning: "",
       },
     ]);
+  });
+
+  it("round-trips extended UIMessageChunk parts through the same marker", () => {
+    const actual = projectPersistedUIMessageChunks(
+      stream,
+      [
+        {
+          type: "custom",
+          kind: "openai.annotation",
+          providerMetadata: { openai: { annotation: "kept" } },
+        },
+        {
+          type: "reasoning-file",
+          url: "https://example.com/reasoning.pdf",
+          mediaType: "application/pdf",
+        },
+        {
+          type: "tool-input-start",
+          toolCallId: "static-call",
+          toolName: "weather",
+          providerExecuted: true,
+          title: "Weather",
+          toolMetadata: { source: "forecast" },
+          providerMetadata: { openai: { call: "metadata" } },
+        },
+        {
+          type: "tool-input-delta",
+          toolCallId: "static-call",
+          inputTextDelta: '{"city":"Boston"}',
+        },
+        {
+          type: "tool-approval-request",
+          toolCallId: "static-call",
+          approvalId: "approval-1",
+          isAutomatic: true,
+          signature: "signed",
+        },
+        {
+          type: "tool-approval-response",
+          approvalId: "approval-1",
+          approved: false,
+          providerExecuted: true,
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "dynamic-call",
+          toolName: "unknown",
+          dynamic: true,
+          input: { value: 1 },
+        },
+        {
+          type: "tool-approval-request",
+          toolCallId: "dynamic-call",
+          approvalId: "approval-2",
+        },
+        {
+          type: "tool-approval-response",
+          approvalId: "approval-2",
+          approved: false,
+          reason: "denied",
+        },
+        { type: "tool-output-denied", toolCallId: "dynamic-call" },
+      ],
+      { status: "failed" },
+    );
+
+    expect(actual).toMatchObject([
+      {
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "custom",
+              kind: "openai.annotation",
+              providerOptions: { openai: { annotation: "kept" } },
+            },
+            {
+              type: "reasoning-file",
+              url: "https://example.com/reasoning.pdf",
+              mediaType: "application/pdf",
+            },
+            {
+              type: "tool-call",
+              toolCallId: "static-call",
+              toolName: "weather",
+              input: { city: "Boston" },
+              providerExecuted: true,
+              title: "Weather",
+              toolMetadata: { source: "forecast" },
+            },
+            {
+              type: "tool-approval-request",
+              approvalId: "approval-1",
+              isAutomatic: true,
+              signature: "signed",
+            },
+            {
+              type: "tool-call",
+              toolCallId: "dynamic-call",
+              toolName: "unknown",
+            },
+            {
+              type: "tool-approval-request",
+              approvalId: "approval-2",
+            },
+          ],
+        },
+      },
+      {
+        message: {
+          role: "tool",
+          content: [
+            {
+              type: "tool-approval-response",
+              approvalId: "approval-1",
+              approved: false,
+              providerExecuted: true,
+            },
+            {
+              type: "tool-result",
+              toolCallId: "static-call",
+              output: { type: "execution-denied" },
+            },
+            {
+              type: "tool-approval-response",
+              approvalId: "approval-2",
+              approved: false,
+              reason: "denied",
+            },
+            {
+              type: "tool-result",
+              toolCallId: "dynamic-call",
+              output: {
+                type: "execution-denied",
+                reason: "denied",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    expect(
+      actual.flatMap((message) =>
+        Array.isArray(message.message.content)
+          ? message.message.content.filter((part) => part.type === "tool-result")
+          : [],
+      ),
+    ).toHaveLength(2);
+    expect(
+      actual.flatMap((message) =>
+        Array.isArray(message.message.content)
+          ? message.message.content.filter(
+              (part) =>
+                part.type === "tool-result" &&
+                part.toolCallId === "dynamic-call",
+            )
+          : [],
+      ),
+    ).toHaveLength(1);
+    for (const message of actual) {
+      expect(validate(vMessageWithMetadataInternal, message)).toBe(true);
+    }
   });
 });
