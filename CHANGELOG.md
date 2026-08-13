@@ -1,9 +1,9 @@
 # Changelog
 
-## 0.7.0
+## 0.7.0-alpha.0
 
-- Breaking: requires AI SDK v7, provider packages v4, provider utilities v5,
-  and Node.js 22 or newer.
+- Breaking: requires AI SDK v7, provider packages v4, provider utilities v5, and
+  Node.js 22 or newer.
 - Migrates generation, streaming, tools, callbacks, usage, warnings, runtime
   context, and provider types to AI SDK v7.
 - Uses one `UIMessageChunk` reducer for existing v0.6 stream data and new v0.7
