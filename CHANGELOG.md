@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0-alpha.0
+## 0.7.0
 
 - Breaking: requires AI SDK v7, provider packages v4, provider utilities v5, and
   Node.js 22 or newer.
