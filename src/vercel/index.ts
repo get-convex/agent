@@ -818,6 +818,7 @@ export class Agent<
       metadata: args.metadata ? [args.metadata] : undefined,
       skipEmbeddings: args.skipEmbeddings,
       promptMessageId: args.promptMessageId,
+      order: args.order,
       pendingMessageId: args.pendingMessageId,
     });
     const message = messages.at(-1)!;
@@ -1765,6 +1766,7 @@ export class Agent<
         threadId: v.string(),
         userId: v.optional(v.string()),
         promptMessageId: v.optional(v.string()),
+        order: v.optional(v.union(v.number(), v.literal("next"))),
         messages: v.array(vMessageWithMetadata),
         failPendingSteps: v.optional(v.boolean()),
         embeddings: v.optional(vMessageEmbeddings),

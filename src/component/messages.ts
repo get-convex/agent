@@ -153,6 +153,7 @@ const addMessagesArgs = {
   userId: v.optional(v.string()),
   threadId: v.id("threads"),
   promptMessageId: v.optional(v.id("messages")),
+  order: v.optional(v.union(v.number(), v.literal("next"))),
   agentName: v.optional(v.string()),
   messages: v.array(vMessageWithMetadataInternal),
   embeddings: v.optional(vMessageEmbeddingsWithDimension),
@@ -171,6 +172,15 @@ export const addMessages = mutation({
   handler: addMessagesHandler,
   returns: v.object({ messages: v.array(vMessageDoc) }),
 });
+
+function incrementMessagePosition(value: number, field: "order" | "stepOrder") {
+  assert(
+    Number.isSafeInteger(value) && value < Number.MAX_SAFE_INTEGER,
+    `${field} cannot be incremented past Number.MAX_SAFE_INTEGER`,
+  );
+  return value + 1;
+}
+
 async function addMessagesHandler(
   ctx: MutationCtx,
   args: ObjectType<typeof addMessagesArgs>,
@@ -189,12 +199,29 @@ async function addMessagesHandler(
     finishStreamId,
     messages,
     promptMessageId,
+    order: requestedOrder,
     pendingMessageId,
     hideFromUserIdSearch,
     ...rest
   } = args;
   const promptMessage =
     promptMessageId && (await ctx.db.get("messages", promptMessageId));
+  assert(
+    requestedOrder === undefined ||
+      requestedOrder === "next" ||
+      (Number.isSafeInteger(requestedOrder) &&
+        requestedOrder >= 0 &&
+        requestedOrder < Number.MAX_SAFE_INTEGER),
+    "order must be a non-negative safe integer less than Number.MAX_SAFE_INTEGER",
+  );
+  assert(
+    requestedOrder === undefined || !promptMessageId,
+    "order and promptMessageId cannot both be provided",
+  );
+  assert(
+    requestedOrder === undefined || !pendingMessageId,
+    "order and pendingMessageId cannot both be provided",
+  );
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
     const pendingMessages = await ctx.db
@@ -224,7 +251,18 @@ async function addMessagesHandler(
   let order, stepOrder;
   let fail = false;
   let error: string | undefined;
-  if (promptMessageId) {
+  const startsAtNextOrder = requestedOrder === "next";
+  const explicitOrder =
+    typeof requestedOrder === "number" ? requestedOrder : undefined;
+  if (startsAtNextOrder) {
+    const maxMessage = await getMaxMessage(ctx, threadId);
+    order = incrementMessagePosition(maxMessage?.order ?? -1, "order");
+    stepOrder = -1;
+  } else if (explicitOrder !== undefined) {
+    order = explicitOrder;
+    const maxMessage = await getMaxMessage(ctx, threadId, order);
+    stepOrder = maxMessage?.stepOrder ?? -1;
+  } else if (promptMessageId) {
     assert(promptMessage, `Parent message ${promptMessageId} not found`);
     if (promptMessage.status === "failed") {
       fail = true;
@@ -305,20 +343,28 @@ async function addMessagesHandler(
       toReturn.push((await ctx.db.get("messages", pendingMessage._id))!);
       continue;
     }
-    if (message.message.role === "user") {
-      if (promptMessage && promptMessage.order === order) {
-        // see if there's a later message than the parent message order
+    if ((startsAtNextOrder || explicitOrder !== undefined) && i === 0) {
+      stepOrder = incrementMessagePosition(stepOrder, "stepOrder");
+    } else if (message.message.role === "user") {
+      if (
+        (explicitOrder !== undefined && order === explicitOrder) ||
+        (promptMessage && promptMessage.order === order)
+      ) {
+        // Avoid colliding with a later order when saving from an older one.
         const maxMessage = await getMaxMessage(ctx, threadId);
-        order = (maxMessage?.order ?? order) + 1;
+        order = incrementMessagePosition(
+          Math.max(maxMessage?.order ?? order, order),
+          "order",
+        );
       } else {
-        order++;
+        order = incrementMessagePosition(order, "order");
       }
       stepOrder = 0;
     } else {
       if (order < 0) {
         order = 0;
       }
-      stepOrder++;
+      stepOrder = incrementMessagePosition(stepOrder, "stepOrder");
     }
     const messageId = await ctx.db.insert("messages", {
       ...messageDoc,

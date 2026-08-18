@@ -4,6 +4,8 @@ import {
   createThread,
   createTool,
   filterOutOrphanedToolMessages,
+  saveMessage,
+  toUIMessages,
   type MessageDoc,
 } from "../index.js";
 import type { DataModelFromSchemaDefinition } from "convex/server";
@@ -457,6 +459,51 @@ describe("Agent message operations", () => {
     );
     expect(messages.length).toBe(2);
     expect(messages[1]._id).toBeDefined();
+  });
+
+  test("saveMessage can place a standalone assistant message on a new order", async () => {
+    const t = initConvexTest(schema);
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "operator-test" }),
+    );
+    const { message: agentReply } = await t.run(async (ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "handoff-1",
+              toolName: "handoff",
+              input: {},
+            },
+          ],
+        },
+      }),
+    );
+    const { message: operatorReply } = await t.run(async (ctx) =>
+      saveMessage(ctx, components.agent, {
+        threadId,
+        order: "next",
+        agentName: "human:Alex",
+        message: { role: "assistant", content: "Operator reply" },
+      }),
+    );
+    const uiMessages = toUIMessages([agentReply, operatorReply]);
+
+    expect(agentReply).toMatchObject({ order: 0, stepOrder: 0 });
+    expect(operatorReply).toMatchObject({
+      order: 1,
+      stepOrder: 0,
+      agentName: "human:Alex",
+    });
+    expect(uiMessages).toHaveLength(2);
+    expect(uiMessages[1]).toMatchObject({
+      order: 1,
+      agentName: "human:Alex",
+      text: "Operator reply",
+    });
   });
 });
 

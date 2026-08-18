@@ -163,6 +163,251 @@ describe("agent", () => {
     });
   });
 
+  test("an explicit order starts, appends, and avoids later order collisions", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "user", content: "hello" } },
+        { message: { role: "assistant", content: "agent reply" } },
+      ],
+    });
+
+    const { messages: firstHumanReply } = await t.mutation(
+      api.messages.addMessages,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: 1,
+        agentName: "human:Alex",
+        messages: [{ message: { role: "assistant", content: "human reply" } }],
+      },
+    );
+    expect(firstHumanReply[0]).toMatchObject({
+      order: 1,
+      stepOrder: 0,
+      agentName: "human:Alex",
+    });
+
+    const { messages: secondHumanReply } = await t.mutation(
+      api.messages.addMessages,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: 1,
+        agentName: "human:Sam",
+        messages: [{ message: { role: "assistant", content: "follow-up" } }],
+      },
+    );
+    expect(secondHumanReply[0]).toMatchObject({
+      order: 1,
+      stepOrder: 1,
+      agentName: "human:Sam",
+    });
+
+    const { messages: backdatedBatch } = await t.mutation(
+      api.messages.addMessages,
+      {
+        threadId: thread._id as Id<"threads">,
+        order: 0,
+        messages: [
+          { message: { role: "assistant", content: "backdated reply" } },
+          { message: { role: "user", content: "new user turn" } },
+        ],
+      },
+    );
+    expect(
+      backdatedBatch.map(({ order, stepOrder }) => [order, stepOrder]),
+    ).toEqual([
+      [0, 2],
+      [2, 0],
+    ]);
+  });
+
+  test("concurrent saves to an explicit order receive distinct step orders", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const saveReply = (agentName: string) =>
+      t.mutation(api.messages.addMessages, {
+        threadId: thread._id as Id<"threads">,
+        order: 3,
+        agentName,
+        messages: [
+          { message: { role: "assistant" as const, content: agentName } },
+        ],
+      });
+
+    const replies = await Promise.all([saveReply("Alex"), saveReply("Sam")]);
+
+    expect(
+      replies
+        .map(({ messages }) => messages[0].stepOrder)
+        .sort((a, b) => a - b),
+    ).toEqual([0, 1]);
+  });
+
+  test("next order is allocated after the latest message", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      order: "next",
+      messages: [
+        { message: { role: "assistant", content: "separate reply" } },
+      ],
+    });
+
+    expect(messages[0]).toMatchObject({ order: 1, stepOrder: 0 });
+  });
+
+  test("concurrent next orders receive distinct orders", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const saveReply = (agentName: string) =>
+      t.mutation(api.messages.addMessages, {
+        threadId: thread._id as Id<"threads">,
+        order: "next",
+        agentName,
+        messages: [
+          { message: { role: "assistant" as const, content: agentName } },
+        ],
+      });
+
+    const replies = await Promise.all([saveReply("Alex"), saveReply("Sam")]);
+
+    expect(
+      replies
+        .map(({ messages }) => messages[0])
+        .sort((a, b) => a.order - b.order)
+        .map(({ order, stepOrder }) => [order, stepOrder]),
+    ).toEqual([
+      [1, 0],
+      [2, 0],
+    ]);
+  });
+
+  test("an explicit order ahead of the thread places the batch there", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      order: 5,
+      messages: [
+        { message: { role: "assistant", content: "imported reply" } },
+        { message: { role: "user", content: "imported question" } },
+      ],
+    });
+    expect(messages.map(({ order, stepOrder }) => [order, stepOrder])).toEqual([
+      [5, 0],
+      [6, 0],
+    ]);
+  });
+
+  test("an explicit order cannot conflict with another placement argument", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId: thread._id as Id<"threads">,
+        order: 1,
+        promptMessageId: messages[0]._id as Id<"messages">,
+        messages: [{ message: { role: "assistant", content: "reply" } }],
+      }),
+    ).rejects.toThrow("order and promptMessageId cannot both be provided");
+
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId: thread._id as Id<"threads">,
+        order: "next",
+        promptMessageId: messages[0]._id as Id<"messages">,
+        messages: [{ message: { role: "assistant", content: "reply" } }],
+      }),
+    ).rejects.toThrow("order and promptMessageId cannot both be provided");
+
+    for (const order of [-1, 1.5, Number.MAX_SAFE_INTEGER]) {
+      await expect(
+        t.mutation(api.messages.addMessages, {
+          threadId: thread._id as Id<"threads">,
+          order,
+          messages: [{ message: { role: "assistant", content: "reply" } }],
+        }),
+      ).rejects.toThrow("order must be a non-negative safe integer");
+    }
+  });
+
+  test("derived message positions cannot exceed safe integers", async () => {
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      order: 1,
+      messages: [{ message: { role: "assistant", content: "reply" } }],
+    });
+    const messageId = messages[0]._id as Id<"messages">;
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("messages", messageId, {
+        stepOrder: Number.MAX_SAFE_INTEGER,
+      });
+    });
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId: thread._id as Id<"threads">,
+        order: 1,
+        messages: [{ message: { role: "assistant", content: "follow-up" } }],
+      }),
+    ).rejects.toThrow(
+      "stepOrder cannot be incremented past Number.MAX_SAFE_INTEGER",
+    );
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("messages", messageId, {
+        order: Number.MAX_SAFE_INTEGER,
+        stepOrder: 0,
+      });
+    });
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId: thread._id as Id<"threads">,
+        messages: [{ message: { role: "user", content: "new turn" } }],
+      }),
+    ).rejects.toThrow(
+      "order cannot be incremented past Number.MAX_SAFE_INTEGER",
+    );
+  });
+
   test("order is incremented for user messages on to addMessages for the same promptMessageId", async () => {
     const t = convexTest(schema, modules);
     const thread = await t.mutation(api.threads.createThread, {

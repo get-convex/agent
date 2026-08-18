@@ -11,6 +11,7 @@ import { toUIMessages, type UIMessage } from "../UIMessages.js";
 import {
   listMessages,
   saveMessages as saveCanonicalMessages,
+  type MessageOrder,
 } from "../../client/messages.js";
 import type {
   AgentComponent,
@@ -36,6 +37,15 @@ export async function listUIMessages(
 export type SaveMessagesArgs = {
   threadId: string;
   userId?: string | null;
+  /**
+   * Save the first message at this order. Pass `"next"` to allocate a new
+   * order after the current latest message. If the numeric order already
+   * contains messages, the message is appended at the next stepOrder.
+   * Numeric orders must be non-negative safe integers less than
+   * Number.MAX_SAFE_INTEGER.
+   * Cannot be combined with promptMessageId or pendingMessageId.
+   */
+  order?: MessageOrder;
   /**
    * The message that these messages are in response to. They will be
    * the same "order" as this message, at increasing stepOrder(s).
@@ -86,6 +96,7 @@ export async function saveMessages(
     userId: args.userId ?? undefined,
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
+    order: args.order,
     pendingMessageId: args.pendingMessageId,
     embeddings: args.embeddings,
     messages: serialized.map(({ message }) => message),
@@ -105,6 +116,14 @@ export async function saveMessages(
 export type SaveMessageArgs = {
   threadId: string;
   userId?: string | null;
+  /**
+   * Save the message at this order. Pass `"next"` to allocate a new order
+   * after the current latest message. If the numeric order already contains
+   * messages, the message is appended at the next stepOrder. Numeric orders
+   * must be non-negative safe integers less than Number.MAX_SAFE_INTEGER.
+   * Cannot be combined with promptMessageId or pendingMessageId.
+   */
+  order?: MessageOrder;
   /**
    * The message that these messages are in response to. They will be
    * the same "order" as this message, at increasing stepOrder(s).
@@ -169,6 +188,7 @@ export async function saveMessage(
     userId: args.userId ?? undefined,
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
+    order: args.order,
     pendingMessageId: args.pendingMessageId,
     messages:
       args.prompt !== undefined
