@@ -26,13 +26,19 @@ describe("toUIMessages", () => {
           content: "Hello!",
         },
         text: "Hello!",
+        providerMetadata: { testProvider: { traceId: "trace-123" } },
       }),
     ];
     const uiMessages = toUIMessages(messages);
     expect(uiMessages).toHaveLength(1);
     expect(uiMessages[0].role).toBe("user");
     expect(uiMessages[0].text).toBe("Hello!");
-    expect(uiMessages[0].parts[0]).toEqual({ type: "text", text: "Hello!" });
+    expect(uiMessages[0].parts[0]).toEqual({
+      type: "text",
+      text: "Hello!",
+      state: "done",
+      providerMetadata: { testProvider: { traceId: "trace-123" } },
+    });
   });
 
   it("handles assistant message", () => {
