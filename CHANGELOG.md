@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+
+- Persists oversized streamed files (#307)
+- fix: preserve text-part metadata on user messages (#318)
+
 ## 0.7.0
 
 - Breaking: requires AI SDK v7, provider packages v4, provider utilities v5, and
