@@ -5,6 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { getMaxMessage } from "./messages.js";
+import { timeoutStreamHandler } from "./streams.js";
 import schema from "./schema.js";
 import { initConvexTest, modules } from "./setup.test.js";
 
@@ -923,5 +924,96 @@ describe("agent", () => {
     });
     expect(state.messages[0].embeddingId).toBeUndefined();
     expect(state.embedding).toBeNull();
+  });
+
+  test("transfers recovered file ownership and releases timed-out streams", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "stream-file-recovery",
+    });
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: thread._id as Id<"threads">,
+      messages: [
+        { message: { role: "assistant", content: [] }, status: "pending" },
+      ],
+    });
+    const pending = messages[0]!;
+    const { fileId: recoveredFileId } = await t.mutation(api.files.addFile, {
+      storageId: "recovered-storage",
+      hash: "recovered-hash",
+      filename: "recovered.txt",
+    });
+    await t.mutation(api.files.copyFile, { fileId: recoveredFileId });
+    const recoveredStreamId = await t.run((ctx) =>
+      ctx.db.insert("streamingMessages", {
+        threadId: thread._id as Id<"threads">,
+        order: pending.order,
+        stepOrder: pending.stepOrder,
+        format: "UIMessageChunk",
+        state: { kind: "aborted", reason: "interrupted" },
+        fileRefs: [
+          { url: "https://files.example/recovered", fileId: recoveredFileId },
+        ],
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("streamDeltas", {
+        streamId: recoveredStreamId,
+        start: 0,
+        end: 3,
+        parts: [
+          { type: "start" },
+          {
+            type: "file",
+            url: "https://files.example/recovered",
+            mediaType: "text/plain",
+          },
+          { type: "finish" },
+        ],
+      }),
+    );
+    await t.mutation(api.messages.finalizeMessage, {
+      messageId: pending._id as Id<"messages">,
+      result: { status: "success" },
+    });
+    await expect(
+      t.query(api.files.get, { fileId: recoveredFileId }),
+    ).resolves.toMatchObject({
+      refcount: 1,
+    });
+    expect(
+      (await t.run((ctx) => ctx.db.get("streamingMessages", recoveredStreamId)))
+        ?.fileRefs,
+    ).toBeUndefined();
+
+    const { fileId: timedOutFileId } = await t.mutation(api.files.addFile, {
+      storageId: "timeout-storage",
+      hash: "timeout-hash",
+      filename: "timeout.txt",
+    });
+    await t.mutation(api.files.copyFile, { fileId: timedOutFileId });
+    const timedOutStreamId = await t.run((ctx) =>
+      ctx.db.insert("streamingMessages", {
+        threadId: thread._id as Id<"threads">,
+        order: pending.order + 1,
+        stepOrder: 0,
+        format: "UIMessageChunk",
+        state: { kind: "streaming", lastHeartbeat: Date.now() },
+        fileRefs: [
+          { url: "https://files.example/timeout", fileId: timedOutFileId },
+        ],
+      }),
+    );
+    await t.run((ctx) =>
+      timeoutStreamHandler(ctx, { streamId: timedOutStreamId }),
+    );
+    await t.mutation(api.streams.deleteStreamSync, {
+      streamId: timedOutStreamId,
+    });
+    await expect(
+      t.query(api.files.get, { fileId: timedOutFileId }),
+    ).resolves.toMatchObject({
+      refcount: 0,
+    });
   });
 });

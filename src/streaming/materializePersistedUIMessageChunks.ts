@@ -33,6 +33,7 @@ export function projectPersistedUIMessageChunks(
   stream: StreamMessage,
   chunks: readonly unknown[],
   metadata: PersistedStreamMetadata,
+  fileRefs: readonly { url: string; fileId: string }[] = [],
 ): MessageWithMetadataInternal[] {
   if (stream.format !== "UIMessageChunk") {
     throw new Error(
@@ -60,6 +61,7 @@ export function projectPersistedUIMessageChunks(
     reduced.state.parts,
     stream,
     metadata,
+    fileRefs,
   );
 }
 
@@ -91,6 +93,7 @@ export function projectPersistedUIMessageChunkParts(
   parts: PersistedUIMessagePart[],
   stream: StreamMessage,
   metadata: PersistedStreamMetadata,
+  fileRefs: readonly { url: string; fileId: string }[] = [],
 ): MessageWithMetadataInternal[] {
   const blocks: PersistedUIMessagePart[][] = [];
   let block: PersistedUIMessagePart[] = [];
@@ -267,6 +270,7 @@ export function projectPersistedUIMessageChunkParts(
     const hasToolCall =
       message.role === "tool" ||
       content.some((part) => part.type === "tool-call");
+    const fileIds = referencedFileIds(message, fileRefs);
     return {
       message,
       status: metadata.status,
@@ -284,6 +288,9 @@ export function projectPersistedUIMessageChunkParts(
         )
         .map((part) => part.text)
         .join(" "),
+      ...(fileIds.length > 0
+        ? { fileIds: fileIds as MessageWithMetadataInternal["fileIds"] }
+        : {}),
       ...(metadata.error !== undefined ? { error: metadata.error } : {}),
     } satisfies MessageWithMetadataInternal;
   });
@@ -314,6 +321,36 @@ function projectSources(parts: PersistedUIMessagePart[]) {
             filename: part.filename,
           },
     );
+}
+
+function referencedFileIds(
+  message: Message,
+  fileRefs: readonly { url: string; fileId: string }[],
+) {
+  if (typeof message.content === "string") return [];
+  const urls = new Set<string>();
+  for (const part of message.content) {
+    if (part.type === "file") {
+      if (typeof part.data === "string") urls.add(part.data);
+    } else if (part.type === "reasoning-file") {
+      if ("url" in part && part.url) urls.add(part.url);
+    } else if (part.type === "tool-result" && part.output?.type === "content") {
+      for (const outputPart of part.output.value) {
+        if (
+          outputPart.type === "file" &&
+          outputPart.data.type === "url" &&
+          typeof outputPart.data.url === "string"
+        ) {
+          urls.add(outputPart.data.url);
+        }
+      }
+    }
+  }
+  return [
+    ...new Set(
+      fileRefs.filter((ref) => urls.has(ref.url)).map((ref) => ref.fileId),
+    ),
+  ];
 }
 
 function toolResult(

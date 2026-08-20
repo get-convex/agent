@@ -127,7 +127,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       useExistingFile: FunctionReference<
         "mutation",
         "internal",
-        { filename?: string; hash: string },
+        { filename?: string; hash: string; mediaType?: string },
         null | { fileId: string; storageId: string },
         Name
       >;
@@ -5522,7 +5522,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       addDelta: FunctionReference<
         "mutation",
         "internal",
-        { end: number; parts: Array<any>; start: number; streamId: string },
+        {
+          end: number;
+          fileRefs?: Array<{ fileId: string; url: string }>;
+          parts: Array<any>;
+          start: number;
+          streamId: string;
+        },
         boolean,
         Name
       >;

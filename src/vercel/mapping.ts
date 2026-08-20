@@ -44,6 +44,7 @@ import {
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { MutationCtx } from "./client/types.js";
 import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
+import { materializeCanonicalToolResultContentFiles } from "./fileMaterialization.js";
 import type { Infer } from "convex/values";
 import {
   convertUint8ArrayToBase64,
@@ -466,7 +467,20 @@ export async function serializeContent(
           } satisfies Infer<typeof vToolCallPart>;
         }
         case "tool-result": {
-          return serializeToolResult(part, metadata);
+          const output =
+            "output" in part && part.output !== undefined
+              ? part.output
+              : normalizeToolOutput("result" in part ? part.result : undefined);
+          const materialized = await materializeCanonicalToolResultContentFiles(
+            ctx,
+            component,
+            output,
+          );
+          fileIds.push(...materialized.fileRefs.map((ref) => ref.fileId));
+          return serializeToolResult(
+            { ...part, output: materialized.output } as ToolResultPart,
+            metadata,
+          );
         }
         case "reasoning": {
           return {

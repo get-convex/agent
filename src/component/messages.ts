@@ -40,7 +40,11 @@ import {
   vVectorId,
 } from "./vector/tables.js";
 import { changeRefcount } from "./files.js";
-import { getStreamingMessagesWithMetadata, finishHandler } from "./streams.js";
+import {
+  getStreamingMessagesWithMetadata,
+  finishHandler,
+  releaseStreamFileOwnershipByIds,
+} from "./streams.js";
 import { partial } from "convex-helpers/validators";
 
 function publicMessage(message: Doc<"messages">): MessageDoc {
@@ -334,7 +338,10 @@ async function addMessagesHandler(
   // Atomically finish the stream if requested, preventing UI flickering
   // from separate mutations for message save and stream finish (issue #181).
   if (finishStreamId) {
-    await finishHandler(ctx, { streamId: finishStreamId });
+    await finishHandler(ctx, {
+      streamId: finishStreamId,
+    });
+    await releaseStreamFileOwnershipByIds(ctx, [finishStreamId]);
   }
   return { messages: toReturn.map(publicMessage) };
 }
@@ -409,7 +416,7 @@ export const finalizeMessage = mutation({
     }
     // See if we can add any in-progress data
     if (!message.message?.content.length) {
-      const { messages, materializationFailures } =
+      const { messages, materializationFailures, streamsToRelease } =
         await getStreamingMessagesWithMetadata(ctx, message, result);
       if (materializationFailures.length > 0) {
         console.error(
@@ -433,6 +440,7 @@ export const finalizeMessage = mutation({
           userId: message.userId,
           embeddings: undefined,
         });
+        await releaseStreamFileOwnershipByIds(ctx, streamsToRelease);
         return;
       }
     }

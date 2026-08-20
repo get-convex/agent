@@ -25,6 +25,7 @@ import { startGeneration } from "./start.js";
 import type { Agent } from "../index.js";
 import { getModelName, getProviderName } from "../../shared.js";
 import { errorToString, willContinue } from "./utils.js";
+import { materializeUIMessageChunkFiles } from "../fileMaterialization.js";
 
 /** Finish every abort cleanup path before surfacing an internal failure. */
 export async function runAbortCleanup(cleanup: {
@@ -152,6 +153,8 @@ export async function streamText<
                 : undefined,
             onAsyncAbort: call.fail,
             compress: compressUIMessageChunks,
+            materialize: (parts) =>
+              materializeUIMessageChunkFiles(ctx, component, parts),
             abortSignal: args.abortSignal,
           },
           {

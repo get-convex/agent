@@ -465,6 +465,123 @@ describe("mapping", () => {
     );
   });
 
+  test("materializes oversized canonical tool-result files", async () => {
+    const bytes = new Uint8Array(1024 * 65).fill(1);
+    const ctx = {
+      runAction: async () => undefined,
+      runMutation: async () => ({
+        fileId: "file-123",
+        storageId: "storage-123",
+      }),
+      storage: {
+        getUrl: async () => "https://example.com/file",
+      },
+    } as unknown as ActionCtx;
+    const result = {
+      type: "tool-result" as const,
+      toolCallId: "call-1",
+      toolName: "render",
+      output: {
+        type: "content" as const,
+        value: [
+          {
+            type: "file" as const,
+            data: { type: "data" as const, data: bytes },
+            mediaType: "application/octet-stream",
+            filename: "result.bin",
+          },
+        ],
+      },
+    } satisfies ToolResultPart;
+
+    const { content, fileIds } = await serializeContent(
+      ctx,
+      api as unknown as AgentComponent,
+      [result],
+    );
+
+    expect(fileIds).toEqual(["file-123"]);
+    expect(content).toMatchObject([
+      {
+        type: "tool-result",
+        output: {
+          type: "content",
+          value: [
+            {
+              type: "file",
+              data: { type: "url", url: "https://example.com/file" },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const opaque = { attachment: "data:application/octet-stream,opaque" };
+    await expect(
+      serializeContent(ctx, api as unknown as AgentComponent, [
+        {
+          type: "tool-result",
+          toolCallId: "call-2",
+          toolName: "render",
+          result: opaque,
+        } satisfies Infer<typeof vToolResultPart>,
+      ]),
+    ).resolves.toMatchObject({
+      content: [{ output: { type: "json", value: opaque } }],
+    });
+  });
+
+  test("materializes oversized canonical tool-result text files", async () => {
+    const ctx = {
+      runAction: async () => undefined,
+      runMutation: async () => ({
+        fileId: "file-123",
+        storageId: "storage-123",
+      }),
+      storage: {
+        getUrl: async () => "https://example.com/file",
+      },
+    } as unknown as ActionCtx;
+    const result = {
+      type: "tool-result" as const,
+      toolCallId: "call-1",
+      toolName: "render",
+      output: {
+        type: "content" as const,
+        value: [
+          {
+            type: "file" as const,
+            data: { type: "text" as const, text: "x".repeat(1024 * 65) },
+            mediaType: "text/plain",
+            filename: "result.txt",
+          },
+        ],
+      },
+    } satisfies ToolResultPart;
+
+    const { content, fileIds } = await serializeContent(
+      ctx,
+      api as unknown as AgentComponent,
+      [result],
+    );
+
+    expect(fileIds).toEqual(["file-123"]);
+    expect(content).toMatchObject([
+      {
+        type: "tool-result",
+        output: {
+          type: "content",
+          value: [
+            {
+              type: "file",
+              data: { type: "url", url: "https://example.com/file" },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   test("sanity: fileIds are not returned for small files", async () => {
     const arr = new Uint8Array([1, 2, 3, 4, 5]);
     const ab = arr.buffer.slice(

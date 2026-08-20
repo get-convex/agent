@@ -67,9 +67,13 @@ export async function storeFile(
   const reused = await ctx.runMutation(component.files.useExistingFile, {
     hash,
     filename,
+    mediaType: blob.type || undefined,
   });
   if (reused) {
-    const url = (await ctx.storage.getUrl(reused.storageId))!;
+    const url = await ctx.storage.getUrl(reused.storageId);
+    if (!url) {
+      throw new Error(`File not found in storage: ${reused.storageId}`);
+    }
     return {
       ...getParts(url, blob.type, filename),
       file: {
@@ -82,35 +86,56 @@ export async function storeFile(
     };
   }
   const newStorageId = await ctx.storage.store(blob);
-  if (sha256) {
-    const metadata = await ctx.storage.getMetadata(newStorageId);
-    if (metadata?.sha256 !== sha256) {
-      throw new Error("Hash mismatch: " + metadata?.sha256 + " != " + sha256);
-    }
-  }
-  const { fileId, storageId } = await ctx.runMutation(component.files.addFile, {
-    storageId: newStorageId,
-    hash,
-    filename,
-    mediaType: blob.type,
-  });
-  const url = (await ctx.storage.getUrl(storageId as Id<"_storage">))!;
-  if (storageId !== newStorageId) {
-    // We're re-using another file's storageId
-    // Because we try to reuse the file above, this should be very very rare
-    // and only in the case of racing to check then store the file.
+  let newStorageRegistered = false;
+  let cleanupAttempted = false;
+  const cleanupNewStorage = async () => {
+    if (cleanupAttempted) return;
+    cleanupAttempted = true;
     await ctx.storage.delete(newStorageId);
-  }
-  return {
-    ...getParts(url, blob.type, filename),
-    file: {
-      url,
-      fileId,
-      storageId: storageId as Id<"_storage">,
-      hash,
-      filename,
-    },
   };
+  try {
+    if (sha256) {
+      const metadata = await ctx.storage.getMetadata(newStorageId);
+      if (metadata?.sha256 !== sha256) {
+        throw new Error("Hash mismatch: " + metadata?.sha256 + " != " + sha256);
+      }
+    }
+    const { fileId, storageId } = await ctx.runMutation(
+      component.files.addFile,
+      {
+        storageId: newStorageId,
+        hash,
+        filename,
+        mediaType: blob.type,
+      },
+    );
+    newStorageRegistered = storageId === newStorageId;
+    // A competing request can win after useExistingFile but before addFile.
+    // Delete our losing blob before the existing file's URL is read, so a
+    // failed getUrl cannot leave the raw object orphaned.
+    if (!newStorageRegistered) {
+      await cleanupNewStorage();
+    }
+    const url = await ctx.storage.getUrl(storageId as Id<"_storage">);
+    if (!url) {
+      throw new Error(`File not found in storage: ${storageId}`);
+    }
+    return {
+      ...getParts(url, blob.type, filename),
+      file: {
+        url,
+        fileId,
+        storageId: storageId as Id<"_storage">,
+        hash,
+        filename,
+      },
+    };
+  } catch (error) {
+    if (!newStorageRegistered && !cleanupAttempted) {
+      await cleanupNewStorage().catch(() => {});
+    }
+    throw error;
+  }
 }
 
 /**

@@ -249,6 +249,49 @@ describe("DeltaStreamer", () => {
     );
   });
 
+  test("waits for signal cleanup when the source throws", async () => {
+    let resolveDelta!: (value: boolean) => void;
+    const deltaWrite = new Promise<boolean>((resolve) => {
+      resolveDelta = resolve;
+    });
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce("stream-1")
+      .mockImplementationOnce(() => deltaWrite)
+      .mockResolvedValueOnce(undefined);
+    const abortController = new AbortController();
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      { ...defaultTestOptions, abortSignal: abortController.signal },
+      { ...testMetadata, threadId },
+    );
+    const sourceError = new Error("provider aborted");
+    const source = {
+      async *[Symbol.asyncIterator]() {
+        yield "chunk";
+        abortController.abort();
+        throw sourceError;
+      },
+    } as unknown as Parameters<typeof streamer.consumeStream>[0];
+
+    const consuming = streamer.consumeStream(source);
+    let settled = false;
+    void consuming.catch(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(runMutation).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+
+    resolveDelta(true);
+    await expect(consuming).rejects.toBe(sourceError);
+    expect(runMutation).toHaveBeenNthCalledWith(
+      3,
+      components.agent.streams.abort,
+      { streamId: "stream-1", reason: "abortSignal" },
+    );
+  });
+
   test("aborts the component stream when a delta write fails", async () => {
     const runMutation = vi
       .fn()
@@ -276,6 +319,34 @@ describe("DeltaStreamer", () => {
       3,
       components.agent.streams.abort,
       { streamId: "stream-1", reason: "delta failed" },
+    );
+  });
+
+  test("aborts the component stream when file materialization fails", async () => {
+    const materializationFailure = new Error("storage failed");
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce("stream-1")
+      .mockResolvedValueOnce(undefined);
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      {
+        ...defaultTestOptions,
+        onAsyncAbort: async () => {},
+        materialize: async () => {
+          throw materializationFailure;
+        },
+      },
+      { ...testMetadata, threadId },
+    );
+
+    await streamer.addParts(["A"]);
+    await expect(streamer.finish()).resolves.toBeUndefined();
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      components.agent.streams.abort,
+      { streamId: "stream-1", reason: "storage failed" },
     );
   });
 
