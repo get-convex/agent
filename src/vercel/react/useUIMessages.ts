@@ -15,7 +15,7 @@ import type {
   PaginationOptions,
   PaginationResult,
 } from "convex/server";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { SyncStreamsReturnValue } from "../client/types.js";
 import type { StreamArgs } from "../../validators.js";
 import type { StreamQuery } from "./types.js";
@@ -34,6 +34,8 @@ export type UIMessageLike = {
   parts: UIMessage["parts"];
   role: UIMessage["role"];
 };
+
+type OldestOrderCompletion = "ready" | number | "idle";
 
 export type UIMessagesQuery<
   Args = unknown,
@@ -126,6 +128,10 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   query: Query,
   args: UIMessagesQueryArgs<Query> | "skip",
   options: {
+    /**
+     * Minimum page size. The hook may load additional records when pagination
+     * splits the oldest UI message across canonical message rows.
+     */
     initialNumItems: number;
     stream?: Query extends StreamQuery
       ? boolean
@@ -139,6 +145,25 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
     args as PaginatedQueryArgs<Query> | "skip",
     { initialNumItems: options.initialNumItems },
   );
+
+  const orderToComplete = useRef<OldestOrderCompletion>("ready");
+
+  useEffect(() => {
+    const decision = planOldestOrderCompletion(
+      paginated.results,
+      paginated.status,
+      orderToComplete.current,
+    );
+    orderToComplete.current = decision.order;
+    if (decision.loadMore) {
+      paginated.loadMore(options.initialNumItems);
+    }
+  }, [
+    paginated.loadMore,
+    paginated.results,
+    paginated.status,
+    options.initialNumItems,
+  ]);
 
   const startOrder = paginated.results.length
     ? Math.min(...paginated.results.map((m) => m.order))
@@ -162,6 +187,67 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   }, [paginated, streamMessages]);
 
   return merged as UIMessagesQueryResult<Query>;
+}
+
+/**
+ * UI messages are assembled from every canonical record at the same order.
+ * If row pagination starts partway through the oldest loaded order, fetch
+ * follow-up pages until that specific UI message is complete.
+ */
+export function planOldestOrderCompletion(
+  messages: Pick<UIMessageLike, "order" | "stepOrder">[],
+  status: UsePaginatedQueryResult<UIMessageLike>["status"],
+  orderToComplete: OldestOrderCompletion,
+): { order: OldestOrderCompletion; loadMore: boolean } {
+  if (status === "LoadingFirstPage") {
+    return { order: "ready", loadMore: false };
+  }
+  if (status === "LoadingMore") {
+    // A load started while idle came from the caller. Rearm completion for the
+    // new boundary. Automatic loads already carry their target order.
+    return {
+      order: orderToComplete === "idle" ? "ready" : orderToComplete,
+      loadMore: false,
+    };
+  }
+  if (status === "Exhausted") {
+    return { order: "idle", loadMore: false };
+  }
+  if (status !== "CanLoadMore" || messages.length === 0) {
+    return { order: orderToComplete, loadMore: false };
+  }
+
+  const oldestOrder = Math.min(...messages.map((message) => message.order));
+  if (orderToComplete === "idle") {
+    return { order: "idle", loadMore: false };
+  }
+
+  let targetOrder = orderToComplete;
+  if (targetOrder === "ready") {
+    const oldestOrderIsComplete = messages.some(
+      (message) => message.order === oldestOrder && message.stepOrder === 0,
+    );
+    if (oldestOrderIsComplete) {
+      return { order: "idle", loadMore: false };
+    }
+    targetOrder = oldestOrder;
+  }
+
+  const targetMessages = messages.filter(
+    (message) => message.order === targetOrder,
+  );
+  if (targetMessages.length === 0) {
+    return { order: "idle", loadMore: false };
+  }
+  if (targetMessages.some((message) => message.stepOrder === 0)) {
+    return { order: "idle", loadMore: false };
+  }
+  if (oldestOrder < targetOrder) {
+    // The query moved past the target without exposing its step zero. This can
+    // happen when a custom query filters the anchor; do not chase older orders.
+    return { order: "idle", loadMore: false };
+  }
+  return { order: targetOrder, loadMore: true };
 }
 
 export function mergeUIMessages<M extends UIMessageLike>(
