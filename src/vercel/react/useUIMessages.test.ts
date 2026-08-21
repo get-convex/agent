@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   dedupeMessages,
   mergeUIMessages,
+  planOldestOrderCompletion,
   type UIMessageLike,
 } from "./useUIMessages.js";
 
@@ -44,6 +45,86 @@ function testUIMessage({
     _creationTime: 0,
   };
 }
+
+describe("paginated UI message boundaries", () => {
+  const partialOrder = [
+    { order: 4, stepOrder: 2 },
+    { order: 5, stepOrder: 0 },
+  ];
+
+  it("tracks one incomplete order across follow-up pages", () => {
+    expect(
+      planOldestOrderCompletion(partialOrder, "CanLoadMore", "ready"),
+    ).toEqual({ order: 4, loadMore: true });
+    expect(
+      planOldestOrderCompletion(
+        [...partialOrder, { order: 4, stepOrder: 1 }],
+        "CanLoadMore",
+        4,
+      ),
+    ).toEqual({ order: 4, loadMore: true });
+  });
+
+  it("stops after completing the target instead of chasing a new boundary", () => {
+    expect(
+      planOldestOrderCompletion(
+        [
+          { order: 4, stepOrder: 0 },
+          { order: 4, stepOrder: 2 },
+          { order: 3, stepOrder: 2 },
+        ],
+        "CanLoadMore",
+        4,
+      ),
+    ).toEqual({ order: "idle", loadMore: false });
+  });
+
+  it("stops if a custom query filters out the target's step zero", () => {
+    expect(
+      planOldestOrderCompletion(
+        [...partialOrder, { order: 3, stepOrder: 2 }],
+        "CanLoadMore",
+        4,
+      ),
+    ).toEqual({ order: "idle", loadMore: false });
+  });
+
+  it("uses loading status to distinguish automatic and caller pages", () => {
+    expect(planOldestOrderCompletion(partialOrder, "LoadingMore", 4)).toEqual({
+      order: 4,
+      loadMore: false,
+    });
+    expect(
+      planOldestOrderCompletion(partialOrder, "LoadingMore", "idle"),
+    ).toEqual({ order: "ready", loadMore: false });
+  });
+
+  it("resets with a new first page and ignores an already complete boundary", () => {
+    expect(
+      planOldestOrderCompletion(partialOrder, "LoadingFirstPage", 4),
+    ).toEqual({ order: "ready", loadMore: false });
+    expect(
+      planOldestOrderCompletion(
+        [
+          { order: 4, stepOrder: 0 },
+          { order: 5, stepOrder: 0 },
+        ],
+        "CanLoadMore",
+        "ready",
+      ),
+    ).toEqual({ order: "idle", loadMore: false });
+    expect(planOldestOrderCompletion(partialOrder, "Exhausted", 4)).toEqual({
+      order: "idle",
+      loadMore: false,
+    });
+  });
+
+  it("stops if realtime updates remove the target order", () => {
+    expect(
+      planOldestOrderCompletion([{ order: 5, stepOrder: 0 }], "CanLoadMore", 4),
+    ).toEqual({ order: "idle", loadMore: false });
+  });
+});
 
 describe("dedupeMessages", () => {
   it("should prefer messages from messages list when streaming messages are absent", () => {
