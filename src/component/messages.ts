@@ -327,8 +327,8 @@ async function addMessagesHandler(
       if (pendingMessage.status === "failed") {
         fail = true;
         error =
-          `Trying to update a message that failed: ${pendingMessageId}, ` +
-          `error: ${pendingMessage.error ?? error}`;
+          pendingMessage.error ??
+          `Trying to update a message that failed: ${pendingMessageId}`;
         messageDoc.status = "failed";
         messageDoc.error = error;
       }

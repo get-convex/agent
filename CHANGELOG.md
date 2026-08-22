@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Preserve classified provider errors when streamed responses fail, including
+  aborts racing late message writes (#320). `DeltaStreamer.getOrCreateStreamId`
+  now accepts `{ ifAborted: "returnUndefined" }` for abort-aware writes; its
+  existing no-argument behavior is unchanged.
+
 ## 0.7.1
 
 - Persists oversized streamed files (#307)
