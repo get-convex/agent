@@ -59,9 +59,20 @@ export async function listMessages(
   });
 }
 
+export type MessageOrder = number | "next";
+
 export type SaveMessagesArgs = {
   threadId: string;
   userId?: string | null;
+  /**
+   * Save the first message at this order. Pass `"next"` to allocate a new
+   * order after the current latest message. If the numeric order already
+   * contains messages, the message is appended at the next stepOrder.
+   * Numeric orders must be non-negative safe integers less than
+   * Number.MAX_SAFE_INTEGER.
+   * Cannot be combined with promptMessageId or pendingMessageId.
+   */
+  order?: MessageOrder;
   /**
    * The message that these messages are in response to. They will be
    * the same "order" as this message, at increasing stepOrder(s).
@@ -121,6 +132,7 @@ export async function saveMessages(
     userId: args.userId ?? undefined,
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
+    order: args.order,
     pendingMessageId: args.pendingMessageId,
     embeddings,
     messages: args.messages.map((message, i) =>
