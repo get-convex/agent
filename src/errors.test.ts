@@ -55,4 +55,22 @@ describe("errorToString", () => {
     expect(serialized.length).toBeLessThanOrEqual(1024);
     expect(serialized.endsWith("x…")).toBe(true);
   });
+
+  test("does not throw when Error properties are hostile accessors", () => {
+    const error = new Error();
+    Object.defineProperties(error, {
+      message: {
+        get() {
+          throw new Error("message getter failed");
+        },
+      },
+      name: {
+        get() {
+          throw new Error("name getter failed");
+        },
+      },
+    });
+
+    expect(errorToString(error)).toBe("Unknown error");
+  });
 });
