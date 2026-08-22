@@ -7,15 +7,21 @@ export function errorToString(error: unknown): string {
 function describeError(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) {
-    if (!error.message) return error.name;
+    const message = property(error, "message");
+    if (typeof message !== "string" || message.length === 0) {
+      const name = property(error, "name");
+      return typeof name === "string" && name.length > 0
+        ? name
+        : safeString(error);
+    }
     const nested = errorDetails(
       property(error, "error") ?? property(error, "data"),
     );
     return (
       formatDetails({
-        message: nested.message ?? error.message,
+        message: nested.message ?? message,
         code: nested.code,
-      }) ?? error.message
+      }) ?? message
     );
   }
 
