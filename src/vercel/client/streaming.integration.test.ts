@@ -190,17 +190,16 @@ describe("HTTP Streaming Initiation", () => {
     });
   });
 
-  test("markFinishedExternally prevents consumeStream from calling finish", async () => {
+  test("finishHandledExternally prevents consumeStream from calling finish", async () => {
     await t.run(async (ctx) => {
       const streamer = new DeltaStreamer(
         components.agent,
         ctx,
-        { ...defaultTestOptions },
+        { ...defaultTestOptions, finishHandledExternally: true },
         { ...testMetadata, threadId },
       );
 
       await streamer.getStreamId();
-      streamer.markFinishedExternally();
 
       const result = streamText({
         model: mockModel({
@@ -212,6 +211,44 @@ describe("HTTP Streaming Initiation", () => {
       await streamer.consumeStream(result.toUIMessageStream());
 
       // Stream should still be in streaming state since finish was skipped
+      const streamingStreams = await ctx.runQuery(
+        components.agent.streams.list,
+        { threadId, statuses: ["streaming"] },
+      );
+      expect(streamingStreams).toHaveLength(1);
+
+      // ...but the parts still made it into deltas, since the row kept
+      // accepting until end-of-stream.
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ streamId: streamer.streamId!, cursor: 0 }],
+      });
+      const types = deltas.flatMap((d) => d.parts).map((p) => p.type);
+      expect(types.at(0)).toBe("start");
+      expect(types.at(-1)).toBe("finish");
+    });
+  });
+
+  test("flushAndStopAccepting drops later parts but keeps the row streaming", async () => {
+    await t.run(async (ctx) => {
+      const streamer = new DeltaStreamer(
+        components.agent,
+        ctx,
+        { ...defaultTestOptions, finishHandledExternally: true },
+        { ...testMetadata, threadId },
+      );
+
+      await streamer.addParts([{ type: "start" }]);
+      await streamer.flushAndStopAccepting();
+      await streamer.addParts([{ type: "finish" }]);
+
+      const deltas = await ctx.runQuery(components.agent.streams.listDeltas, {
+        threadId,
+        cursors: [{ streamId: streamer.streamId!, cursor: 0 }],
+      });
+      const types = deltas.flatMap((d) => d.parts).map((p) => p.type);
+      expect(types).toEqual(["start"]);
+
       const streamingStreams = await ctx.runQuery(
         components.agent.streams.list,
         { threadId, statuses: ["streaming"] },
