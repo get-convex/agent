@@ -217,9 +217,18 @@ export class DeltaStreamer<T> {
   #abortPromise: Promise<void> | undefined;
   #cursor: number = 0;
   public abortController: AbortController;
-  // When true, the stream will be finished externally (e.g., atomically via addMessages)
-  // and consumeStream should skip calling finish().
-  #finishedExternally: boolean = false;
+  /**
+   * When true, external code finishes the stream row (atomically with the
+   * message save, issue #181) and `consumeStream` must not. Decided once, at
+   * construction.
+   */
+  #finishHandledExternally: boolean;
+  /**
+   * Set only where the row is finished before the source is drained. An
+   * optimization, not a race guard: `addDelta` already returns false for a
+   * non-streaming row.
+   */
+  #stoppedAccepting: boolean = false;
 
   constructor(
     public readonly component: AgentComponent,
@@ -229,6 +238,8 @@ export class DeltaStreamer<T> {
       onAsyncAbort: (reason: string) => Promise<void>;
       abortSignal: AbortSignal | undefined;
       compress: ((parts: T[]) => T[]) | null;
+      /** Defaults to false, meaning `consumeStream` finishes the stream. */
+      finishHandledExternally?: boolean;
       materialize?: (parts: T[]) => Promise<{
         parts: T[];
         fileRefs: Array<{ url: string; fileId: string }>;
@@ -252,6 +263,7 @@ export class DeltaStreamer<T> {
       compress: config.compress,
       materialize: config.materialize ?? null,
     };
+    this.#finishHandledExternally = config.finishHandledExternally ?? false;
     this.#nextParts = [];
     this.abortController = new AbortController();
     if (config.abortSignal) {
@@ -293,15 +305,16 @@ export class DeltaStreamer<T> {
     if (this.abortController.signal.aborted) {
       return;
     }
-    // Once the stream has been finished externally (e.g. by the inline
-    // save in streamText's onStepFinish for the returnImmediately path),
-    // the stream record is already "finished" in the DB. Late deltas
-    // would be silently dropped by streams.addDelta — skip the work.
-    if (this.#finishedExternally) {
+    if (this.#stoppedAccepting) {
       return;
     }
-    await this.getStreamId();
+    // Buffer before awaiting: a part parked in stream creation would be
+    // invisible to #flushPendingParts.
     this.#nextParts.push(...parts);
+    await this.getStreamId();
+    if (this.#stoppedAccepting || this.abortController.signal.aborted) {
+      return;
+    }
     if (
       !this.#ongoingWrite &&
       Date.now() - this.#latestWrite >= this.config.throttleMs
@@ -324,24 +337,64 @@ export class DeltaStreamer<T> {
       ).catch(() => {});
       throw error;
     }
-    // Skip finish if it will be handled externally (atomically with message save)
-    // or if the stream was aborted (e.g., due to a failed delta write).
     // Abort cleanup owns the terminal component transition, so consumeStream
     // must wait for it instead of also trying to finish the stream.
     if (this.abortController.signal.aborted) {
       await this.#waitForAbortCleanup();
-    } else if (!this.#finishedExternally) {
+      return;
+    }
+    // EOF is the only point where every part has actually been handed over:
+    // parts sit in the AI SDK's transform and tee pipeline until the iterator
+    // yields them, so no earlier callback can observe them.
+    try {
+      await this.#flushPendingParts();
+    } catch (error) {
+      if (this.abortController.signal.aborted) {
+        await this.#waitForAbortCleanup();
+      }
+      throw error;
+    }
+    if (this.abortController.signal.aborted) {
+      await this.#waitForAbortCleanup();
+      return;
+    }
+    if (!this.#finishHandledExternally) {
       await this.finish();
     }
   }
 
   /**
-   * Mark the stream as being finished externally (e.g., atomically via addMessages).
-   * When called, consumeStream() will skip calling finish() since it will be
-   * handled elsewhere in the same mutation as message saving.
+   * Drain everything currently buffered or in flight, so that after this
+   * resolves no delta write is outstanding and #nextParts is empty.
    */
-  public markFinishedExternally(): void {
-    this.#finishedExternally = true;
+  async #flushPendingParts(): Promise<void> {
+    while (!this.abortController.signal.aborted) {
+      const inFlight = this.#ongoingWrite;
+      await inFlight;
+      // #sendDelta reassigns #ongoingWrite from its own tail, so a write can
+      // still be live even though the buffer it drained is now empty.
+      if (this.#ongoingWrite !== inFlight) {
+        continue;
+      }
+      if (this.#nextParts.length === 0) {
+        break;
+      }
+      this.#ongoingWrite = this.#sendDelta();
+    }
+  }
+
+  /**
+   * For the `returnImmediately` path, where nothing awaits consumption and the
+   * save has to happen inline (issue #265).
+   *
+   * Inherent window: parts still inside the AI SDK pipeline at this instant
+   * never reach addParts, so they are never persisted as deltas (the
+   * stream-level `finish` chunk among them). The message saved alongside this
+   * transition is complete, and is authoritative once the stream is finished.
+   */
+  public async flushAndStopAccepting(): Promise<void> {
+    await this.#flushPendingParts();
+    this.#stoppedAccepting = true;
   }
 
   /**
@@ -358,6 +411,7 @@ export class DeltaStreamer<T> {
     }
     let success: boolean;
     try {
+      await this.getStreamId();
       const delta = await this.#createDelta();
       if (!delta) {
         return;
@@ -372,11 +426,11 @@ export class DeltaStreamer<T> {
       return;
     }
     if (!success) {
-      // An in-flight #sendDelta started before markFinishedExternally()
+      // A #sendDelta racing the inline save on the returnImmediately path
       // will get `success === false` because the stream row is already
       // "finished". That's a benign late-write miss, not a failure —
       // don't convert it into an abort.
-      if (this.#finishedExternally) {
+      if (this.#stoppedAccepting) {
         return;
       }
       await this.#abortDelta("async abort");

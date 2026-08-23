@@ -156,6 +156,10 @@ export async function streamText<
             materialize: (parts) =>
               materializeUIMessageChunkFiles(ctx, component, parts),
             abortSignal: args.abortSignal,
+            // Both paths below finish the stream row atomically with the
+            // message save (issue #181), so the streamer must never finish it
+            // itself at end-of-stream.
+            finishHandledExternally: true,
           },
           {
             threadId,
@@ -215,10 +219,13 @@ export async function streamText<
       const createPendingMessage = await willContinue(steps, args.stopWhen);
       if (!createPendingMessage && streamer) {
         // Final step with streaming enabled.
-        streamer.markFinishedExternally();
         if (willAwaitStream) {
           // We're about to `await stream` below — defer the save so it
-          // happens atomically with stream finish (issue #181).
+          // happens atomically with stream finish (issue #181). Don't touch
+          // the streamer here: the stream-level `finish` chunk is emitted
+          // after this callback, so the row has to stay `streaming` and keep
+          // accepting parts until consumeStream reaches EOF, which is the only
+          // point where everything has actually been handed over.
           pendingFinalStep = {
             step,
             responseMessages: responseMessagesForStep(step),
@@ -226,7 +233,10 @@ export async function streamText<
         } else {
           // returnImmediately path: streamText is about to return without
           // awaiting consumption, so the deferred-save block below won't
-          // see this step. Save inline now (issue #265).
+          // see this step. Save inline now (issue #265). Nothing awaits the
+          // stream here, so this is the last moment we can drain deltas — see
+          // flushAndStopAccepting for the window that leaves.
+          await streamer.flushAndStopAccepting();
           const finishStreamId = await streamer.getOrCreateStreamId();
           await call.save(
             { step, responseMessages: responseMessagesForStep(step) },
@@ -276,6 +286,11 @@ export async function streamText<
   if (pendingFinalStep && streamer) {
     const finishStreamId = await streamer.getOrCreateStreamId();
     await call.save(pendingFinalStep, false, finishStreamId);
+  } else if (willAwaitStream && streamer) {
+    // No final step was deferred (e.g. the generation produced none), so no
+    // save will finish the stream. The streamer doesn't finish itself, so do
+    // it here rather than leaving the row to time out.
+    await streamer.finish();
   }
   const metadata: GenerationOutputMetadata = {
     promptMessageId,
