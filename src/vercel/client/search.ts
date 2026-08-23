@@ -36,9 +36,23 @@ import {
 } from "../mapping.js";
 
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
+// Bound the rare boundary-extension query; incomplete orders are trimmed below.
+const MAX_ORDER_COMPLETION_MESSAGES = 1_000;
 // 10k characters should be more than enough for most cases, and stays under
 // the 8k token limit for some models.
 const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
+
+/**
+ * Omit the oldest order when a descending pagination window split it.
+ * Expects the messages to be sorted in ascending order.
+ */
+export function trimIncompleteOldestOrder(docs: MessageDoc[]) {
+  const oldest = docs[0];
+  if (!oldest || oldest.stepOrder === 0) {
+    return docs;
+  }
+  return docs.filter((doc) => doc.order !== oldest.order);
+}
 
 export type GetEmbedding = (text: string) => Promise<
   | {
@@ -133,25 +147,45 @@ export async function fetchRecentAndSearchMessages(
   let included: Set<string> | undefined;
   let recentMessages: MessageDoc[] = [];
   let searchMessages: MessageDoc[] = [];
+  const threadId = args.threadId;
   const targetMessageId =
     args.targetMessageId ?? args.upToAndIncludingMessageId;
-  if (args.threadId && opts.recentMessages !== 0) {
-    const { page } = await ctx.runQuery(
-      component.messages.listMessagesByThreadId,
-      {
-        threadId: args.threadId,
+  if (threadId && opts.recentMessages !== 0) {
+    const fetchRecentPage = (numItems: number, cursor: string | null) =>
+      ctx.runQuery(component.messages.listMessagesByThreadId, {
+        threadId,
         excludeToolMessages: opts.excludeToolMessages,
-        paginationOpts: {
-          numItems: opts.recentMessages ?? DEFAULT_RECENT_MESSAGES,
-          cursor: null,
-        },
+        paginationOpts: { numItems, cursor },
         upToAndIncludingMessageId: targetMessageId,
         order: "desc",
         statuses: ["success"],
-      },
+      });
+    const firstPage = await fetchRecentPage(
+      opts.recentMessages ?? DEFAULT_RECENT_MESSAGES,
+      null,
     );
-    included = new Set(page.map((m) => m._id));
-    recentMessages = filterOutOrphanedToolMessages(sorted(page));
+    let page = firstPage.page;
+    const oldest = page.at(-1);
+    if (
+      oldest &&
+      oldest.stepOrder > 0 &&
+      !firstPage.isDone &&
+      firstPage.continueCursor
+    ) {
+      const completionPage = await fetchRecentPage(
+        Math.min(oldest.stepOrder, MAX_ORDER_COMPLETION_MESSAGES),
+        firstPage.continueCursor,
+      );
+      page = [
+        ...page,
+        ...completionPage.page.filter(
+          (message) => message.order === oldest.order,
+        ),
+      ];
+    }
+    const retained = trimIncompleteOldestOrder(sorted(page));
+    included = new Set(retained.map((m) => m._id));
+    recentMessages = filterOutOrphanedToolMessages(retained);
   }
   if (
     (opts.searchOptions?.textSearch || opts.searchOptions?.vectorSearch) &&

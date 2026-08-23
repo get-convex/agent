@@ -20,6 +20,7 @@ import {
   fetchContextMessages,
   filterOutOrphanedToolMessages,
   getPromptArray,
+  trimIncompleteOldestOrder,
 } from "./search.js";
 import { components, initConvexTest } from "./setup.test.js";
 import { createThread } from "../../client/threads.js";
@@ -31,13 +32,14 @@ const createMockMessageDoc = (
   role: "user" | "assistant" | "tool" | "system",
   content: any,
   order: number = 1,
+  stepOrder: number = 0,
 ): MessageDoc => ({
   _id: id,
   _creationTime: Date.now(),
   userId: "test-user",
   threadId: "test-thread",
   order,
-  stepOrder: order,
+  stepOrder,
   status: "success",
   tool: false,
   message: { role, content },
@@ -124,6 +126,27 @@ describe("search.ts", () => {
       expect(getPromptArray(prompt)).toEqual([
         { role: "user", content: "Hello world" },
       ]);
+    });
+  });
+
+  describe("trimIncompleteOldestOrder", () => {
+    it("keeps a window that begins at the start of an order", () => {
+      const messages = [
+        createMockMessageDoc("user", "user", "Question", 1, 0),
+        createMockMessageDoc("assistant", "assistant", "Answer", 1, 1),
+      ];
+
+      expect(trimIncompleteOldestOrder(messages)).toEqual(messages);
+    });
+
+    it("omits only the incomplete oldest order", () => {
+      const messages = [
+        createMockMessageDoc("partial", "assistant", "Partial", 1, 2),
+        createMockMessageDoc("next-user", "user", "Next question", 2, 0),
+        createMockMessageDoc("next-answer", "assistant", "Next answer", 2, 1),
+      ];
+
+      expect(trimIncompleteOldestOrder(messages)).toEqual(messages.slice(1));
     });
   });
 
@@ -442,6 +465,7 @@ describe("search.ts", () => {
       expect(result.length).toBe(2);
       expect(result[0]._id).toBe("1"); // Should be reversed back to asc order
       expect(result[1]._id).toBe("2");
+      expect(mockCtx.runQuery).toHaveBeenCalledTimes(1);
     });
 
     it("should skip recent messages when recentMessages is 0", async () => {
@@ -560,11 +584,13 @@ describe("search.ts", () => {
           _id: "ctx1",
           message: { role: "user", content: "Context message 1" },
           order: 1,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "ctx2",
           message: { role: "assistant", content: "Context response 1" },
           order: 2,
+          stepOrder: 0,
         } as MessageDoc,
       ];
 
@@ -588,6 +614,143 @@ describe("search.ts", () => {
         role: "user",
         content: "New prompt",
       });
+    });
+
+    it("should complete an order truncated by the recent messages limit", async () => {
+      const toolCallId = "call_issue_309";
+      vi.mocked(mockCtx.runQuery)
+        .mockResolvedValueOnce({
+          page: [
+            createMockMessageDoc(
+              "assistant-final",
+              "assistant",
+              [{ type: "text", text: "The result is 72." }],
+              1,
+              3,
+            ),
+            createMockMessageDoc(
+              "tool-result",
+              "tool",
+              [
+                {
+                  type: "tool-result",
+                  toolCallId,
+                  toolName: "getWeather",
+                  output: {
+                    type: "json",
+                    value: { temperature: 72 },
+                  },
+                },
+              ],
+              1,
+              2,
+            ),
+            createMockMessageDoc(
+              "assistant-tool-call",
+              "assistant",
+              [
+                {
+                  type: "tool-call",
+                  toolCallId,
+                  toolName: "getWeather",
+                  input: { city: "New York" },
+                },
+              ],
+              1,
+              1,
+            ),
+          ],
+          continueCursor: "complete-order",
+          isDone: false,
+        })
+        .mockResolvedValueOnce({
+          page: [
+            createMockMessageDoc(
+              "user",
+              "user",
+              "What is the weather?",
+              1,
+              0,
+            ),
+          ],
+          continueCursor: "done",
+          isDone: true,
+        });
+
+      const result = await fetchContextWithPrompt(
+        mockCtx,
+        components.agent,
+        {
+          ...baseArgs,
+          prompt: "What should I do next?",
+          messages: undefined,
+          promptMessageId: undefined,
+          contextOptions: { recentMessages: 3 },
+        },
+      );
+
+      expect(result.messages.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+        "user",
+      ]);
+      expect(mockCtx.runQuery).toHaveBeenNthCalledWith(2, expect.anything(), {
+        threadId: "thread123",
+        excludeToolMessages: undefined,
+        paginationOpts: { numItems: 1, cursor: "complete-order" },
+        upToAndIncludingMessageId: undefined,
+        order: "desc",
+        statuses: ["success"],
+      });
+    });
+
+    it("should omit an order when its boundary cannot be fetched", async () => {
+      vi.mocked(mockCtx.runQuery)
+        .mockResolvedValueOnce({
+          page: [
+            createMockMessageDoc(
+              "assistant-final",
+              "assistant",
+              "Partial answer",
+              1,
+              2,
+            ),
+          ],
+          continueCursor: "complete-order",
+          isDone: false,
+        })
+        .mockResolvedValueOnce({
+          page: [
+            createMockMessageDoc(
+              "assistant-step",
+              "assistant",
+              "Still partial",
+              1,
+              1,
+            ),
+          ],
+          continueCursor: "done",
+          isDone: true,
+        });
+
+      const result = await fetchContextWithPrompt(
+        mockCtx,
+        components.agent,
+        {
+          ...baseArgs,
+          prompt: "New prompt",
+          messages: undefined,
+          promptMessageId: undefined,
+          contextOptions: { recentMessages: 1 },
+        },
+      );
+
+      expect(result.messages).toEqual([
+        { role: "user", content: "New prompt" },
+      ]);
+      expect(mockCtx.runQuery).toHaveBeenCalledTimes(2);
     });
 
     it("should handle input messages correctly", async () => {
@@ -618,16 +781,19 @@ describe("search.ts", () => {
           _id: "msg1",
           message: { role: "user", content: "Before prompt" },
           order: 1,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "prompt-msg",
           message: { role: "user", content: "Original prompt" },
           order: 2,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "msg3",
           message: { role: "assistant", content: "After prompt" },
           order: 3,
+          stepOrder: 0,
         } as MessageDoc,
       ];
 
@@ -659,16 +825,19 @@ describe("search.ts", () => {
           _id: "msg1",
           message: { role: "user", content: "Before prompt" },
           order: 1,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "prompt-msg",
           message: { role: "user", content: "Original prompt" },
           order: 2,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "msg3",
           message: { role: "assistant", content: "After prompt" },
           order: 3,
+          stepOrder: 0,
         } as MessageDoc,
       ];
 
@@ -696,16 +865,19 @@ describe("search.ts", () => {
           _id: "ctx1",
           message: { role: "user", content: "Context 1" },
           order: 1,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "prompt-msg",
           message: { role: "user", content: "Prompt" },
           order: 3,
+          stepOrder: 0,
         } as MessageDoc,
         {
           _id: "ctx2",
           message: { role: "assistant", content: "Context 2" },
           order: 5,
+          stepOrder: 0,
         } as MessageDoc,
       ];
 
@@ -864,10 +1036,10 @@ describe("search.ts", () => {
       });
     });
 
-    it("should respect recentMessages limit", async () => {
+    it("should extend recentMessages to complete an order", async () => {
       const threadId = await createTestThread("user999");
 
-      // Create 5 messages but only fetch the most recent 2
+      // Start with a two-message window that splits the previous order.
       await createTestMessages(threadId, "user999", [
         { role: "user", content: "Message 1", order: 1 },
         { role: "assistant", content: "Response 1", order: 2 },
@@ -883,13 +1055,16 @@ describe("search.ts", () => {
         prompt: "New prompt",
         messages: undefined,
         promptMessageId: undefined,
-        contextOptions: { recentMessages: 2 }, // Only fetch 2 most recent
+        contextOptions: { recentMessages: 2 },
       });
 
-      expect(result.messages).toHaveLength(3); // 2 context + 1 prompt
-      expect(result.messages[0].content).toBe("Response 2"); // 4th message
-      expect(result.messages[1].content).toBe("Message 3"); // 5th message
-      expect(result.messages[2]).toEqual({
+      // The limit splits the previous order after its user message, so the
+      // context extends backward to include the whole order.
+      expect(result.messages).toHaveLength(4);
+      expect(result.messages[0].content).toBe("Message 2");
+      expect(result.messages[1].content).toBe("Response 2");
+      expect(result.messages[2].content).toBe("Message 3");
+      expect(result.messages[3]).toEqual({
         role: "user",
         content: "New prompt",
       });

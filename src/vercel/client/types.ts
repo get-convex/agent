@@ -203,6 +203,8 @@ export type ContextOptions = {
   /**
    * How many recent messages to include. These are added after the search
    * messages, and do not count against the search limit.
+   * If the limit splits an order, additional messages are included to complete
+   * that order. If it cannot be completed, the incomplete order is omitted.
    * Default: 100
    */
   recentMessages?: number;
