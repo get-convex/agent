@@ -1328,3 +1328,43 @@ describe("late saves racing a failed pending message (issue #320)", () => {
     expect(stream?.state.kind).toBe("aborted");
   });
 });
+
+describe("deleting a message aborts generation writing to it (issue #300)", () => {
+  test("a stream at the deleted order is aborted", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const prompt = messages[0];
+
+    await t.mutation(api.streams.create, {
+      threadId,
+      order: prompt.order,
+      stepOrder: prompt.stepOrder + 1,
+      userId: "u",
+      agentName: "a",
+      model: "m",
+      provider: "p",
+      format: "UIMessageChunk",
+    });
+
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [prompt._id as Id<"messages">],
+    });
+
+    const streaming = await t.query(api.streams.list, {
+      threadId,
+      statuses: ["streaming"],
+    });
+    const aborted = await t.query(api.streams.list, {
+      threadId,
+      statuses: ["aborted"],
+    });
+    expect(streaming).toHaveLength(0);
+    expect(aborted).toHaveLength(1);
+  });
+});

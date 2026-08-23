@@ -197,24 +197,29 @@ function publicStreamMessage(m: Doc<"streamingMessages">): StreamMessage {
   };
 }
 
+export async function abortStreamsAtOrder(
+  ctx: MutationCtx,
+  args: { threadId: Id<"threads">; order: number; reason: string },
+) {
+  const streams = await ctx.db
+    .query("streamingMessages")
+    .withIndex("threadId_state_order_stepOrder", (q) =>
+      q
+        .eq("threadId", args.threadId)
+        .eq("state.kind", "streaming")
+        .eq("order", args.order),
+    )
+    .take(100);
+  for (const stream of streams) {
+    await abortById(ctx, { streamId: stream._id, reason: args.reason });
+  }
+  return streams.length > 0;
+}
+
 export const abortByOrder = mutation({
   args: { threadId: v.id("threads"), order: v.number(), reason: v.string() },
   returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const streams = await ctx.db
-      .query("streamingMessages")
-      .withIndex("threadId_state_order_stepOrder", (q) =>
-        q
-          .eq("threadId", args.threadId)
-          .eq("state.kind", "streaming")
-          .eq("order", args.order),
-      )
-      .take(100);
-    for (const stream of streams) {
-      await abortById(ctx, { streamId: stream._id, reason: args.reason });
-    }
-    return streams.length > 0;
-  },
+  handler: abortStreamsAtOrder,
 });
 
 export const abort = mutation({

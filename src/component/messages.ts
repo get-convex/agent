@@ -44,6 +44,7 @@ import {
   getStreamingMessagesWithMetadata,
   finishHandler,
   releaseStreamFileOwnershipByIds,
+  abortStreamsAtOrder,
 } from "./streams.js";
 import { partial } from "convex-helpers/validators";
 
@@ -65,21 +66,45 @@ export async function deleteMessage(
   }
 }
 
+/**
+ * Deleting a message strands any generation still writing to its order, which
+ * would otherwise only surface as a missing-parent failure when that generation
+ * finalizes. Aborting the stream lets the in-flight run stop on its own.
+ */
+async function abortStreamsForDeleted(
+  ctx: MutationCtx,
+  deleted: (Doc<"messages"> | null)[],
+) {
+  const seen = new Set<string>();
+  for (const message of deleted) {
+    if (!message) continue;
+    const key = `${message.threadId}:${message.order}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await abortStreamsAtOrder(ctx, {
+      threadId: message.threadId,
+      order: message.order,
+      reason: "Message deleted",
+    });
+  }
+}
+
 export const deleteByIds = mutation({
   args: { messageIds: v.array(v.id("messages")) },
   returns: v.array(v.id("messages")),
   handler: async (ctx, args) => {
-    const deletedMessageIds = await Promise.all(
+    const deleted = await Promise.all(
       args.messageIds.map(async (id) => {
         const message = await ctx.db.get("messages", id);
         if (message) {
           await deleteMessage(ctx, message);
-          return id;
+          return message;
         }
         return null;
       }),
     );
-    return deletedMessageIds.filter((id) => id !== null);
+    await abortStreamsForDeleted(ctx, deleted);
+    return deleted.filter((m) => m !== null).map((m) => m._id);
   },
 });
 
@@ -145,6 +170,7 @@ export const deleteByOrder = mutation({
       })
       .take(64);
     await Promise.all(messages.map((m) => deleteMessage(ctx, m)));
+    await abortStreamsForDeleted(ctx, messages);
     return {
       isDone: messages.length < 64,
       lastOrder: messages.at(-1)?.order,
