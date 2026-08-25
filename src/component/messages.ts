@@ -183,6 +183,12 @@ const addMessagesArgs = {
   userId: v.optional(v.string()),
   threadId: v.id("threads"),
   promptMessageId: v.optional(v.id("messages")),
+  /**
+   * For saves that belong to a run anchored on promptMessageId: if that
+   * message is gone the run is obsolete, so abandon the save instead of
+   * throwing. A caller passing an id that never existed still gets an error.
+   */
+  abandonIfPromptMissing: v.optional(v.boolean()),
   order: v.optional(v.union(v.number(), v.literal("next"))),
   agentName: v.optional(v.string()),
   messages: v.array(vMessageWithMetadataInternal),
@@ -229,6 +235,7 @@ async function addMessagesHandler(
     finishStreamId,
     messages,
     promptMessageId,
+    abandonIfPromptMissing,
     order: requestedOrder,
     pendingMessageId,
     hideFromUserIdSearch,
@@ -293,6 +300,9 @@ async function addMessagesHandler(
     const maxMessage = await getMaxMessage(ctx, threadId, order);
     stepOrder = maxMessage?.stepOrder ?? -1;
   } else if (promptMessageId) {
+    if (!promptMessage && abandonIfPromptMissing) {
+      return { messages: [] };
+    }
     assert(promptMessage, `Parent message ${promptMessageId} not found`);
     if (promptMessage.status === "failed") {
       fail = true;

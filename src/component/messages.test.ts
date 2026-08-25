@@ -1368,3 +1368,56 @@ describe("deleting a message aborts generation writing to it (issue #300)", () =
     expect(aborted).toHaveLength(1);
   });
 });
+
+describe("abandoning a save whose prompt was deleted (issue #300)", () => {
+  test("abandons instead of throwing when the caller opts in", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const promptMessageId = messages[0]._id as Id<"messages">;
+
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+
+    const saved = await t.mutation(api.messages.addMessages, {
+      threadId,
+      promptMessageId,
+      abandonIfPromptMissing: true,
+      messages: [{ message: { role: "assistant", content: "answer" } }],
+    });
+    expect(saved.messages).toEqual([]);
+
+    // Nothing was grafted onto the thread.
+    const all = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(all.page).toHaveLength(0);
+  });
+
+  test("still throws for a caller that did not opt in", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const promptMessageId = messages[0]._id as Id<"messages">;
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId,
+        promptMessageId,
+        messages: [{ message: { role: "assistant", content: "answer" } }],
+      }),
+    ).rejects.toThrow("not found");
+  });
+});
