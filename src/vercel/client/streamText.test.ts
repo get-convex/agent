@@ -153,6 +153,43 @@ export const streamTextThrottledAwaited = action({
   },
 });
 
+export const streamTextNoStorage = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    await agent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      {
+        saveStreamDeltas: { chunking: "word", throttleMs: 0 },
+        storageOptions: { saveMessages: "none" },
+      },
+    );
+    return { ok: true };
+  },
+});
+
+export const streamTextNoStorageImmediate = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    const r = await agent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      {
+        saveStreamDeltas: {
+          returnImmediately: true,
+          chunking: "word",
+          throttleMs: 0,
+        },
+        storageOptions: { saveMessages: "none" },
+      },
+    );
+    await r.consumeStream();
+    return { ok: true };
+  },
+});
+
 export const streamTextCleanupFailure = action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
@@ -233,6 +270,8 @@ const testApi: ApiFromModules<{
     streamTextThrottled: typeof streamTextThrottled;
     streamTextThrottledAwaited: typeof streamTextThrottledAwaited;
     streamTextAbortedMidStream: typeof streamTextAbortedMidStream;
+    streamTextNoStorage: typeof streamTextNoStorage;
+    streamTextNoStorageImmediate: typeof streamTextNoStorageImmediate;
     streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
     streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
     streamTextCleanupFailure: typeof streamTextCleanupFailure;
@@ -537,5 +576,43 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
         .map((p) => (p as { delta?: string }).delta ?? "")
         .join(""),
     ).toBe(FINAL_TEXT);
+  });
+});
+
+describe("stream finish ownership without message storage", () => {
+  test("the row still terminates when saveMessages is none", async () => {
+    const t = initConvexTest(schema);
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "u1" }),
+    );
+
+    await t.action(testApi.streamTextNoStorage, { threadId });
+    await t.finishAllScheduledFunctions(() => {});
+
+    const streams = await t.run(async (ctx) =>
+      ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    );
+    expect(streams.map((s) => s.status)).toEqual(["finished"]);
+  });
+
+  test("the row still terminates on the returnImmediately path", async () => {
+    const t = initConvexTest(schema);
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "u1" }),
+    );
+
+    await t.action(testApi.streamTextNoStorageImmediate, { threadId });
+    await t.finishAllScheduledFunctions(() => {});
+
+    const streams = await t.run(async (ctx) =>
+      ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    );
+    expect(streams.map((s) => s.status)).toEqual(["finished"]);
   });
 });
