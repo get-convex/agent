@@ -135,6 +135,7 @@ export async function streamText<
   // When false (saveStreamDeltas.returnImmediately === true), we cannot
   // defer the final-step save to a post-await block — the function has
   // already returned by the time onStepFinish fires. See issue #265.
+  const savesMessages = options?.storageOptions?.saveMessages !== "none";
   const willAwaitStream =
     Boolean(threadId) &&
     (options.saveStreamDeltas === true ||
@@ -156,10 +157,10 @@ export async function streamText<
             materialize: (parts) =>
               materializeUIMessageChunkFiles(ctx, component, parts),
             abortSignal: args.abortSignal,
-            // Both paths below finish the stream row atomically with the
-            // message save (issue #181), so the streamer must never finish it
-            // itself at end-of-stream.
-            finishHandledExternally: true,
+            // The message save finishes the stream row atomically (issue
+            // #181) — but only when there is a save. With saveMessages set to
+            // "none" nothing does, so the streamer keeps finish ownership.
+            finishHandledExternally: savesMessages,
           },
           {
             threadId,
@@ -243,6 +244,9 @@ export async function streamText<
             false,
             finishStreamId,
           );
+          if (!savesMessages) {
+            await streamer.finish();
+          }
           initialResponseMessagesSaved = true;
         }
       } else {
