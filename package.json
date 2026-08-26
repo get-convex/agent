@@ -1,8 +1,8 @@
 {
   "name": "@convex-dev/agent",
-  "description": "A agent component for Convex.",
+  "description": "Convex component for AI agents with persistent chat threads, tool calling, streaming, and RAG.",
   "repository": "github:get-convex/agent",
-  "homepage": "https://github.com/get-convex/agent#readme",
+  "homepage": "https://docs.convex.dev/agents",
   "bugs": {
     "email": "support@convex.dev",
     "url": "https://github.com/get-convex/agent/issues"
@@ -11,9 +11,16 @@
   "license": "Apache-2.0",
   "keywords": [
     "convex",
+    "component",
     "ai",
     "agent",
-    "component"
+    "ai-agent",
+    "llm",
+    "tool-calling",
+    "chat",
+    "threads",
+    "streaming",
+    "rag"
   ],
   "type": "module",
   "scripts": {
