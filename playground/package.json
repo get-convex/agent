@@ -78,7 +78,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
     "date-fns": "^4.0.0",
-    "dotenv": "^16.5.0",
+    "dotenv": "^17.0.0",
     "embla-carousel-react": "^8.3.0",
     "input-otp": "^1.2.4",
     "lucide-react": "^0.577.0",
