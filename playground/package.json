@@ -113,7 +113,7 @@
     "eslint": "9.39.4",
     "eslint-plugin-react-hooks": "6.1.1",
     "eslint-plugin-react-refresh": "0.5.2",
-    "globals": "16.5.0",
+    "globals": "17.11.0",
     "react": "file:../node_modules/react",
     "react-dom": "file:../node_modules/react-dom",
     "typescript": "5.9.3",
