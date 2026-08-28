@@ -52,8 +52,8 @@ export const generateInvoices = internalMutation({
       const cachedPromptTokens =
         doc.providerMetadata?.openai?.cachedPromptTokens ?? 0;
       const tokens = {
-        inputTokens: doc.usage.promptTokens - cachedPromptTokens,
-        outputTokens: doc.usage.completionTokens,
+        inputTokens: (doc.usage.promptTokens ?? 0) - cachedPromptTokens,
+        outputTokens: doc.usage.completionTokens ?? 0,
         cachedInputTokens: cachedPromptTokens,
       };
       if (!currentInvoice) {
@@ -145,6 +145,7 @@ async function createInvoice(
     .withIndex("billingPeriod_userId", (q) =>
       q.eq("billingPeriod", billingPeriod).eq("userId", invoice.userId),
     )
+    // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many failed invoices
     .filter((q) => q.neq(q.field("status"), "failed"))
     .first();
   if (existingInvoice) {

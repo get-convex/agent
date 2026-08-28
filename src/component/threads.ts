@@ -3,8 +3,11 @@ import { paginator } from "convex-helpers/server/pagination";
 import { partial } from "convex-helpers/validators";
 import { paginationOptsValidator } from "convex/server";
 import type { ObjectType } from "convex/values";
-import { type ThreadDoc, vThreadDoc } from "../client/index.js";
-import { vPaginationResult } from "../validators.js";
+import {
+  type ThreadDoc,
+  vPaginationResult,
+  vThreadDoc,
+} from "../validators.js";
 import { api, internal } from "./_generated/api.js";
 import type { Doc } from "./_generated/dataModel.js";
 import {
@@ -32,7 +35,7 @@ function publicThread(thread: Doc<"threads">): ThreadDoc {
 export const getThread = query({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    return publicThreadOrNull(await ctx.db.get(args.threadId));
+    return publicThreadOrNull(await ctx.db.get("threads", args.threadId));
   },
   returns: v.union(vThreadDoc, v.null()),
 });
@@ -66,7 +69,7 @@ export const createThread = mutation({
       ...args,
       status: "active",
     });
-    return publicThread((await ctx.db.get(threadId))!);
+    return publicThread((await ctx.db.get("threads", threadId))!);
   },
   returns: vThreadDoc,
 });
@@ -84,10 +87,10 @@ export const updateThread = mutation({
     patch: v.object(partial(pick(vThread.fields, threadFieldsSupportingPatch))),
   },
   handler: async (ctx, args) => {
-    const thread = await ctx.db.get(args.threadId);
+    const thread = await ctx.db.get("threads", args.threadId);
     assert(thread, `Thread ${args.threadId} not found`);
-    await ctx.db.patch(args.threadId, args.patch);
-    return publicThread((await ctx.db.get(args.threadId))!);
+    await ctx.db.patch("threads", args.threadId, args.patch);
+    return publicThread((await ctx.db.get("threads", args.threadId))!);
   },
   returns: vThreadDoc,
 });
@@ -231,9 +234,9 @@ async function deletePageForThreadIdHandler(
     });
   await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
   if (messages.isDone) {
-    const thread = await ctx.db.get(args.threadId);
+    const thread = await ctx.db.get("threads", args.threadId);
     if (thread) {
-      await ctx.db.delete(args.threadId);
+      await ctx.db.delete("threads", args.threadId);
     }
   }
   return {

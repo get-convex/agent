@@ -2,11 +2,9 @@
 
 [![npm version](https://badge.fury.io/js/@convex-dev%2fagent.svg)](https://badge.fury.io/js/@convex-dev%2fagent)
 
-Convex provides powerful building blocks for building agentic AI applications,
-leveraging Components and existing Convex features.
-
-With Convex, you can separate your long-running agentic workflows from your UI,
-without the user losing reactivity and interactivity.
+Build AI agents on Convex with persistent chat threads, tool calling, streaming,
+and RAG. Long-running agent workflows stay separate from the UI while clients
+keep reactive updates.
 
 ```sh
 npm i @convex-dev/agent
@@ -17,9 +15,8 @@ npm i @convex-dev/agent
 AI Agents, built on Convex.
 [Check out the docs here](https://docs.convex.dev/agents).
 
-The Agent component is a core building block for building AI agents. It manages
-threads and messages, around which you Agents can cooperate in static or dynamic
-workflows.
+The Agent component manages threads and messages that agents can use in static
+or dynamic workflows.
 
 - [Agents](https://docs.convex.dev/agents/agent-usage) provide an abstraction
   for using LLMs to represent units of use-case-specific prompting with

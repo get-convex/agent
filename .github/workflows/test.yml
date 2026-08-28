@@ -9,6 +9,8 @@ on:
   pull_request:
     branches: ["**"]
 
+permissions: {}
+
 jobs:
   check:
     name: Test and lint
@@ -16,13 +18,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Node setup
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           cache-dependency-path: package.json
-          node-version: "20.x"
+          node-version: "24.x"
           cache: "npm"
 
       - name: Install and build
@@ -30,7 +34,7 @@ jobs:
           npm i
           npm run build
       - name: Publish package for testing branch
-        run: npx pkg-pr-new publish || echo "Have you set up pkg-pr-new for this repo?"
+        run: npx pkg-pr-new publish || echo "pkg-pr-new failed"
       - name: Test
         run: |
           npm run test

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preserve classified provider errors when streamed responses fail, including
+  aborts racing late message writes (#320). `DeltaStreamer.getOrCreateStreamId`
+  now accepts `{ ifAborted: "returnUndefined" }` for abort-aware writes; its
+  existing no-argument behavior is unchanged.
+
 - Add `hasSuccessfulToolCall(toolName)` stop-condition helper. Like the AI
   SDK's `hasToolCall` but only matches tool calls that produced a
   `tool-result` content part — failed tool calls (`tool-error` parts under
@@ -22,6 +27,43 @@
   content parts as completed outputs. Without this, AI SDK v6 agents
   would stop after a step where any tool call errored, even if the model
   had more work queued.
+
+## 0.7.1
+
+- Persists oversized streamed files (#307)
+- fix: preserve text-part metadata on user messages (#318)
+
+## 0.7.0
+
+- Breaking: requires AI SDK v7, provider packages v4, provider utilities v5, and
+  Node.js 22 or newer.
+- Migrates generation, streaming, tools, callbacks, usage, warnings, runtime
+  context, and provider types to AI SDK v7.
+- Uses one `UIMessageChunk` reducer for existing v0.6 stream data and new v0.7
+  streams. Existing persisted messages remain readable.
+- Adds AI SDK v7 message parts, tool-result forms, approval flows, and model
+  registry identifiers.
+- Deprecates top-level `system` in favor of `instructions`.
+- Does not yet offload every oversized inline file encoding. Reasoning files,
+  nested tool-result files, and tagged/base64/data-URL payloads will be
+  completed separately.
+
+## 0.6.4
+
+- Fix streaming UI message dedupe (#281)
+- chore(deltas): delete legacy TextStreamPart streaming path (#275)
+- fix(react): Fix O(n²) lag streaming long tool-input deltas (#190) (#270)
+- fix(mapping): preserve tool messages in multi-step history (#200) (#272)
+- fix: Stops a cleanup task from canceling itself (#285)
+
+## 0.6.3
+
+- Update types for `ctx` args to be more compatible with convex 1.41
+
+## 0.6.2
+
+- fix: persist final step when saveStreamDeltas.returnImmediately is true (#266)
+- fix: handle tool validation errors in stopWhen and willContinue (#241)
 
 ## 0.6.1
 

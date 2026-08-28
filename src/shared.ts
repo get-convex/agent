@@ -1,23 +1,19 @@
-import type {
-  FilePart,
-  ImagePart,
-  ReasoningPart,
-  ToolCallPart,
-  ToolResultPart,
-  ToolApprovalRequest,
-} from "@ai-sdk/provider-utils";
-import type {
-  ModelMessage,
-  TextPart,
-  UIDataTypes,
-  UIMessagePart,
-  UITools,
-} from "ai";
-import type { Message, MessageContentParts } from "./validators.js";
+type MessagePartLike = {
+  type: string;
+  text?: string;
+};
+
+type MessageLike =
+  | { role: "system"; content: string }
+  | {
+      role: "user" | "assistant";
+      content: string | readonly MessagePartLike[];
+    }
+  | { role: "tool"; content: readonly MessagePartLike[] };
 
 export const DEFAULT_RECENT_MESSAGES = 100;
 
-export function isTool(message: Message | ModelMessage) {
+export function isTool(message: MessageLike) {
   return (
     message.role === "tool" ||
     (message.role === "assistant" &&
@@ -26,7 +22,7 @@ export function isTool(message: Message | ModelMessage) {
   );
 }
 
-export function extractText(message: Message | ModelMessage) {
+export function extractText(message: MessageLike) {
   switch (message.role) {
     case "user":
       if (typeof message.content === "string") {
@@ -46,33 +42,27 @@ export function extractText(message: Message | ModelMessage) {
   return undefined;
 }
 
-export function joinText(
-  parts: (
-    | UIMessagePart<UIDataTypes, UITools>
-    | TextPart
-    | ImagePart
-    | FilePart
-    | ReasoningPart
-    | ToolCallPart
-    | ToolResultPart
-    | MessageContentParts
-    | ToolApprovalRequest
-  )[],
-) {
+export function joinText(parts: readonly MessagePartLike[]) {
   return parts
-    .filter((p) => p.type === "text")
-    .map((p) => p.text)
+    .filter(
+      (part): part is MessagePartLike & { text: string } =>
+        part.type === "text" && typeof part.text === "string",
+    )
+    .map((part) => part.text)
     .filter(Boolean)
     .join(" ");
 }
 
-export function extractReasoning(message: Message | ModelMessage) {
+export function extractReasoning(message: MessageLike) {
   if (typeof message.content === "string") {
     return undefined;
   }
   return message.content
-    .filter((c) => c.type === "reasoning")
-    .map((c) => c.text)
+    .filter(
+      (part): part is MessagePartLike & { text: string } =>
+        part.type === "reasoning" && typeof part.text === "string",
+    )
+    .map((part) => part.text)
     .join(" ");
 }
 

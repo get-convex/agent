@@ -1,4 +1,3 @@
-import type { ModelMessage } from "ai";
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import type { MessageDoc } from "../validators.js";
 import { validateVectorDimension } from "../component/vector/tables.js";
@@ -10,8 +9,6 @@ import {
   type MessageStatus,
   type MessageWithMetadata,
 } from "../validators.js";
-import { serializeMessage } from "../mapping.js";
-import { toUIMessages, type UIMessage } from "../UIMessages.js";
 import type {
   AgentComponent,
   MutationCtx,
@@ -62,21 +59,20 @@ export async function listMessages(
   });
 }
 
-export async function listUIMessages(
-  ctx: QueryCtx | MutationCtx | ActionCtx,
-  component: AgentComponent,
-  args: {
-    threadId: string;
-    paginationOpts: PaginationOptions;
-  },
-): Promise<PaginationResult<UIMessage>> {
-  const result = await listMessages(ctx, component, args);
-  return { ...result, page: toUIMessages(result.page) };
-}
+export type MessageOrder = number | "next";
 
 export type SaveMessagesArgs = {
   threadId: string;
   userId?: string | null;
+  /**
+   * Save the first message at this order. Pass `"next"` to allocate a new
+   * order after the current latest message. If the numeric order already
+   * contains messages, the message is appended at the next stepOrder.
+   * Numeric orders must be non-negative safe integers less than
+   * Number.MAX_SAFE_INTEGER.
+   * Cannot be combined with promptMessageId or pendingMessageId.
+   */
+  order?: MessageOrder;
   /**
    * The message that these messages are in response to. They will be
    * the same "order" as this message, at increasing stepOrder(s).
@@ -85,7 +81,7 @@ export type SaveMessagesArgs = {
   /**
    * The messages to save.
    */
-  messages: (ModelMessage | Message)[];
+  messages: Message[];
   /**
    * Metadata to save with the messages. Each element corresponds to the
    * message at the same index.
@@ -136,102 +132,16 @@ export async function saveMessages(
     userId: args.userId ?? undefined,
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
+    order: args.order,
     pendingMessageId: args.pendingMessageId,
     embeddings,
-    messages: await Promise.all(
-      args.messages.map(async (m, i) => {
-        const { message, fileIds } = await serializeMessage(ctx, component, m);
-        const base = args.metadata?.[i];
-        const allFileIds = [...(base?.fileIds ?? [])];
-        if (fileIds) allFileIds.push(...fileIds);
-
-        return parse(vMessageWithMetadata, {
-          ...base,
-          message,
-          ...(allFileIds.length > 0 ? { fileIds: allFileIds } : {}),
-        });
+    messages: args.messages.map((message, i) =>
+      parse(vMessageWithMetadata, {
+        ...args.metadata?.[i],
+        message,
       }),
     ),
     failPendingSteps: args.failPendingSteps ?? false,
   });
   return { messages: result.messages };
-}
-
-export type SaveMessageArgs = {
-  threadId: string;
-  userId?: string | null;
-  /**
-   * The message that these messages are in response to. They will be
-   * the same "order" as this message, at increasing stepOrder(s).
-   */
-  promptMessageId?: string;
-  /**
-   * Metadata to save with the messages. Each element corresponds to the
-   * message at the same index.
-   */
-  metadata?: Omit<MessageWithMetadata, "message">;
-  /**
-   * The embedding to save with the message.
-   */
-  embedding?: { vector: number[]; model: string };
-  /**
-   * A pending message ID to replace with this message.
-   */
-  pendingMessageId?: string;
-} & (
-  | {
-      prompt?: undefined;
-      /**
-       * The message to save.
-       */
-      message: ModelMessage | Message;
-    }
-  | {
-      /*
-       * The prompt to save with the message.
-       */
-      prompt: string;
-      message?: undefined;
-    }
-);
-
-/**
- * Save a message to the thread.
- * @param ctx A ctx object from a mutation or action.
- * @param args The message and what to associate it with (user / thread)
- * You can pass extra metadata alongside the message, e.g. associated fileIds.
- * @returns The messageId of the saved message.
- */
-export async function saveMessage(
-  ctx: MutationCtx | ActionCtx,
-  component: AgentComponent,
-  args: SaveMessageArgs & {
-    /**
-     * The agent name to associate with the message.
-     */
-    agentName?: string;
-  },
-) {
-  let embeddings: { vectors: number[][]; model: string } | undefined;
-  if (args.embedding && args.embedding.vector) {
-    embeddings = {
-      model: args.embedding.model,
-      vectors: [args.embedding.vector],
-    };
-  }
-  const { messages } = await saveMessages(ctx, component, {
-    threadId: args.threadId,
-    userId: args.userId ?? undefined,
-    agentName: args.agentName,
-    promptMessageId: args.promptMessageId,
-    pendingMessageId: args.pendingMessageId,
-    messages:
-      args.prompt !== undefined
-        ? [{ role: "user", content: args.prompt }]
-        : [args.message],
-    metadata: args.metadata ? [args.metadata] : undefined,
-    embeddings,
-  });
-  const message = messages.at(-1)!;
-  return { messageId: message._id, message };
 }
