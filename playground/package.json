@@ -84,7 +84,7 @@
     "lucide-react": "^0.577.0",
     "postcss": "^8.4.47",
     "react": "^19.2.3",
-    "react-day-picker": "^9.8.0",
+    "react-day-picker": "^10.0.0",
     "react-dom": "^19.2.3",
     "react-hook-form": "^7.53.0",
     "react-resizable-panels": "^2.1.3",
