@@ -127,7 +127,7 @@
     "convex-helpers": "0.1.122",
     "convex-test": "0.0.55",
     "dayjs": "1.11.20",
-    "dotenv": "16.6.1",
+    "dotenv": "17.4.2",
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",
