@@ -6,7 +6,7 @@
     "jsx": "react-jsx",
 
     "target": "ESNext",
-    "lib": ["ES2021", "dom", "dom.iterable"],
+    "lib": ["ES2022", "dom", "dom.iterable"],
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
     // We enforce stricter module resolution for Node16 compatibility
