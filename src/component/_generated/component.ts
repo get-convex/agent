@@ -137,6 +137,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         {
+          abandonIfPromptMissing?: boolean;
           agentName?: string;
           embeddings?: {
             dimension:

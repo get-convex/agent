@@ -1328,3 +1328,96 @@ describe("late saves racing a failed pending message (issue #320)", () => {
     expect(stream?.state.kind).toBe("aborted");
   });
 });
+
+describe("deleting a message aborts generation writing to it (issue #300)", () => {
+  test("a stream at the deleted order is aborted", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const prompt = messages[0];
+
+    await t.mutation(api.streams.create, {
+      threadId,
+      order: prompt.order,
+      stepOrder: prompt.stepOrder + 1,
+      userId: "u",
+      agentName: "a",
+      model: "m",
+      provider: "p",
+      format: "UIMessageChunk",
+    });
+
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [prompt._id as Id<"messages">],
+    });
+
+    const streaming = await t.query(api.streams.list, {
+      threadId,
+      statuses: ["streaming"],
+    });
+    const aborted = await t.query(api.streams.list, {
+      threadId,
+      statuses: ["aborted"],
+    });
+    expect(streaming).toHaveLength(0);
+    expect(aborted).toHaveLength(1);
+  });
+});
+
+describe("abandoning a save whose prompt was deleted (issue #300)", () => {
+  test("abandons instead of throwing when the caller opts in", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const promptMessageId = messages[0]._id as Id<"messages">;
+
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+
+    const saved = await t.mutation(api.messages.addMessages, {
+      threadId,
+      promptMessageId,
+      abandonIfPromptMissing: true,
+      messages: [{ message: { role: "assistant", content: "answer" } }],
+    });
+    expect(saved.messages).toEqual([]);
+
+    // Nothing was grafted onto the thread.
+    const all = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(all.page).toHaveLength(0);
+  });
+
+  test("still throws for a caller that did not opt in", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const promptMessageId = messages[0]._id as Id<"messages">;
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId,
+        promptMessageId,
+        messages: [{ message: { role: "assistant", content: "answer" } }],
+      }),
+    ).rejects.toThrow("not found");
+  });
+});
