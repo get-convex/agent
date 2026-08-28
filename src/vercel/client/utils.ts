@@ -1,6 +1,8 @@
 import type { Context } from "@ai-sdk/provider-utils";
 import type { StepResult, StopCondition, ToolSet } from "ai";
 
+export { errorToString } from "../../errors.js";
+
 /**
  * A stop condition that only matches tool calls which completed
  * successfully (i.e. produced a `tool-result`, not a `tool-error`).
@@ -44,11 +46,4 @@ export async function willContinue<
     );
   }
   return !!stopWhen && !(await stopWhen({ steps }));
-}
-
-export function errorToString(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }

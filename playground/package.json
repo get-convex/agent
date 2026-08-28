@@ -84,7 +84,7 @@
     "lucide-react": "^0.577.0",
     "postcss": "^8.4.47",
     "react": "^19.2.3",
-    "react-day-picker": "^9.8.0",
+    "react-day-picker": "^10.0.0",
     "react-dom": "^19.2.3",
     "react-hook-form": "^7.53.0",
     "react-resizable-panels": "^4.0.0",
@@ -106,7 +106,7 @@
   "devDependencies": {
     "@convex-dev/agent": "file:..",
     "@eslint/js": "9.39.4",
-    "@types/node": "22.20.1",
+    "@types/node": "24.13.3",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "convex": "file:../node_modules/convex",
