@@ -8,6 +8,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import { v } from "convex/values";
+import { errorToString } from "../../errors.js";
 import {
   vMessageDoc,
   vPaginationResult,
@@ -300,7 +301,10 @@ export class DeltaStreamer<T> {
     if (this.#finishedExternally) {
       return;
     }
-    await this.getStreamId();
+    const streamId = await this.getOrCreateStreamId({
+      ifAborted: "returnUndefined",
+    });
+    if (!streamId) return;
     this.#nextParts.push(...parts);
     if (
       !this.#ongoingWrite &&
@@ -319,9 +323,7 @@ export class DeltaStreamer<T> {
       // A provider can throw while responding to an abort. Join the durable
       // abort transition here, outside the active delta writer, before
       // preserving the provider error for the caller.
-      await this.#abort(
-        error instanceof Error ? error.message : "stream consumption failed",
-      ).catch(() => {});
+      await this.#abort(errorToString(error)).catch(() => {});
       throw error;
     }
     // Skip finish if it will be handled externally (atomically with message save)
@@ -348,8 +350,26 @@ export class DeltaStreamer<T> {
    * Get the stream ID, waiting for it to be created if necessary.
    * Useful for passing to addMessages for atomic finish.
    */
-  public async getOrCreateStreamId(): Promise<string> {
-    return this.getStreamId();
+  public async getOrCreateStreamId(): Promise<string>;
+  public async getOrCreateStreamId(options: {
+    ifAborted: "returnUndefined";
+  }): Promise<string | undefined>;
+  public async getOrCreateStreamId(options?: {
+    ifAborted?: "returnUndefined";
+  }): Promise<string | undefined> {
+    if (options?.ifAborted !== "returnUndefined") {
+      return this.getStreamId();
+    }
+    if (this.abortController.signal.aborted) {
+      await this.#abortPromise;
+      return undefined;
+    }
+    const streamId = await this.getStreamId();
+    if (this.abortController.signal.aborted) {
+      await this.#abortPromise;
+      return undefined;
+    }
+    return streamId;
   }
 
   async #sendDelta() {
@@ -368,7 +388,7 @@ export class DeltaStreamer<T> {
         delta,
       );
     } catch (e) {
-      await this.#abortDelta(e instanceof Error ? e.message : "unknown error");
+      await this.#abortDelta(errorToString(e));
       return;
     }
     if (!success) {

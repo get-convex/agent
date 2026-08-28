@@ -263,9 +263,7 @@ describe("agent", () => {
     const { messages } = await t.mutation(api.messages.addMessages, {
       threadId: thread._id as Id<"threads">,
       order: "next",
-      messages: [
-        { message: { role: "assistant", content: "separate reply" } },
-      ],
+      messages: [{ message: { role: "assistant", content: "separate reply" } }],
     });
 
     expect(messages[0]).toMatchObject({ order: 1, stepOrder: 0 });
@@ -1260,5 +1258,166 @@ describe("agent", () => {
     ).resolves.toMatchObject({
       refcount: 0,
     });
+  });
+});
+
+describe("late saves racing a failed pending message (issue #320)", () => {
+  const PROVIDER_ERROR = "invalid_prompt: Invalid prompt: flagged by policy.";
+
+  test("keeps the first durable failure authoritative", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "u1",
+    });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages: seeded } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [
+        { message: { role: "user", content: "hello" } },
+        { message: { role: "assistant", content: [] }, status: "pending" },
+      ],
+    });
+    const pending = seeded.at(-1)!;
+    expect(pending.status).toBe("pending");
+
+    const streamId = await t.mutation(api.streams.create, {
+      threadId,
+      order: pending.order,
+      stepOrder: pending.stepOrder,
+      format: "UIMessageChunk",
+    });
+
+    await t.mutation(api.messages.finalizeMessage, {
+      messageId: pending._id as Id<"messages">,
+      result: { status: "failed", error: PROVIDER_ERROR },
+    });
+    await t.mutation(api.streams.abort, { streamId, reason: PROVIDER_ERROR });
+
+    const { messages: late } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      pendingMessageId: pending._id as Id<"messages">,
+      finishStreamId: streamId,
+      failPendingSteps: false,
+      messages: [
+        { message: { role: "assistant", content: "partial response" } },
+      ],
+    });
+
+    const assistants = (
+      await t.run(async (ctx) =>
+        ctx.db
+          .query("messages")
+          .withIndex("threadId_status_tool_order_stepOrder", (q) =>
+            q.eq("threadId", threadId),
+          )
+          .collect(),
+      )
+    ).filter((message) => message.message?.role === "assistant");
+
+    expect(late).toHaveLength(1);
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]!._id).toBe(pending._id);
+    expect(assistants[0]!.status).toBe("failed");
+    expect(assistants[0]!.error).toBe(PROVIDER_ERROR);
+    expect(assistants[0]!.text).toBe("partial response");
+
+    const stream = await t.run((ctx) =>
+      ctx.db.get("streamingMessages", streamId),
+    );
+    expect(stream?.state.kind).toBe("aborted");
+  });
+});
+
+describe("deleting a message aborts generation writing to it (issue #300)", () => {
+  test("a stream at the deleted order is aborted", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const prompt = messages[0];
+
+    await t.mutation(api.streams.create, {
+      threadId,
+      order: prompt.order,
+      stepOrder: prompt.stepOrder + 1,
+      userId: "u",
+      agentName: "a",
+      model: "m",
+      provider: "p",
+      format: "UIMessageChunk",
+    });
+
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [prompt._id as Id<"messages">],
+    });
+
+    const streaming = await t.query(api.streams.list, {
+      threadId,
+      statuses: ["streaming"],
+    });
+    const aborted = await t.query(api.streams.list, {
+      threadId,
+      statuses: ["aborted"],
+    });
+    expect(streaming).toHaveLength(0);
+    expect(aborted).toHaveLength(1);
+  });
+});
+
+describe("abandoning a save whose prompt was deleted (issue #300)", () => {
+  test("abandons instead of throwing when the caller opts in", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const promptMessageId = messages[0]._id as Id<"messages">;
+
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+
+    const saved = await t.mutation(api.messages.addMessages, {
+      threadId,
+      promptMessageId,
+      abandonIfPromptMissing: true,
+      messages: [{ message: { role: "assistant", content: "answer" } }],
+    });
+    expect(saved.messages).toEqual([]);
+
+    // Nothing was grafted onto the thread.
+    const all = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "asc",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(all.page).toHaveLength(0);
+  });
+
+  test("still throws for a caller that did not opt in", async () => {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, { userId: "u" });
+    const threadId = thread._id as Id<"threads">;
+
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [{ message: { role: "user", content: "hello" } }],
+    });
+    const promptMessageId = messages[0]._id as Id<"messages">;
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+
+    await expect(
+      t.mutation(api.messages.addMessages, {
+        threadId,
+        promptMessageId,
+        messages: [{ message: { role: "assistant", content: "answer" } }],
+      }),
+    ).rejects.toThrow("not found");
   });
 });
