@@ -27,19 +27,22 @@ import { getModelName, getProviderName } from "../../shared.js";
 import { errorToString, willContinue } from "./utils.js";
 import { materializeUIMessageChunkFiles } from "../fileMaterialization.js";
 
-/** Finish every abort cleanup path before surfacing an internal failure. */
-export async function runAbortCleanup(cleanup: {
+export async function runStreamCleanup(cleanup: {
   failCall: () => Promise<void>;
   failStreamer: () => Promise<void>;
   onAbort?: () => PromiseLike<void> | void;
 }): Promise<void> {
   const results = await Promise.allSettled([
-    cleanup.failCall(),
-    cleanup.failStreamer(),
+    Promise.resolve().then(() => cleanup.failCall()),
+    Promise.resolve().then(() => cleanup.failStreamer()),
   ]);
-  await cleanup.onAbort?.();
-  const failure = results.find((result) => result.status === "rejected");
-  if (failure) throw failure.reason;
+  const [abortResult] = await Promise.allSettled([
+    Promise.resolve().then(() => cleanup.onAbort?.()),
+  ]);
+  const failure = [...results, abortResult].find(
+    (result) => result.status === "rejected",
+  );
+  if (failure?.status === "rejected") throw failure.reason;
 }
 
 /**
@@ -103,15 +106,11 @@ export async function streamText<
       Tools,
       object,
       RUNTIME_CONTEXT
-    >(
-      ctx,
-      component,
-      streamTextArgs,
-      options,
-      "streamText",
-    );
+    >(ctx, component, streamTextArgs, options, "streamText");
 
   const steps: StepResult<Tools, RUNTIME_CONTEXT>[] = [];
+  let firstStreamError: string | undefined;
+  let streamCleanupFailure: { error: unknown } | undefined;
   let initialResponseMessages: ModelMessage[] = [];
   let initialResponseMessagesSaved = false;
   const responseMessagesForStep = (
@@ -185,15 +184,26 @@ export async function streamText<
     ),
     onError: async (error) => {
       console.error("onError", error);
-      await call.fail(errorToString(error.error));
-      await streamer?.fail(errorToString(error.error));
+      const reason = (firstStreamError ??= errorToString(error.error));
+      try {
+        await runStreamCleanup({
+          failCall: () => call.fail(reason),
+          failStreamer: async () => streamer?.fail(reason),
+        });
+      } catch (cleanupError) {
+        streamCleanupFailure ??= { error: cleanupError };
+        console.error("Failed to clean up errored stream:", cleanupError);
+      }
       return streamTextArgs.onError?.(error);
     },
     onAbort: async (event) => {
+      const providerTriggeredAbort =
+        firstStreamError !== undefined && !args.abortSignal?.aborted;
+      if (providerTriggeredAbort) return;
       const reason = args.abortSignal?.reason
         ? errorToString(args.abortSignal.reason)
         : "streamText aborted";
-      await runAbortCleanup({
+      await runStreamCleanup({
         failCall: () => call.fail(reason),
         failStreamer: async () => streamer?.fail(reason),
         onAbort: () => streamTextArgs.onAbort?.(event),
@@ -235,19 +245,25 @@ export async function streamText<
           // returnImmediately path: streamText is about to return without
           // awaiting consumption, so the deferred-save block below won't
           // see this step. Save inline now (issue #265). Nothing awaits the
-          // stream here, so this is the last moment we can drain deltas — see
+          // stream here, so this is the last moment we can drain deltas, see
           // flushAndStopAccepting for the window that leaves.
           await streamer.flushAndStopAccepting();
-          const finishStreamId = await streamer.getOrCreateStreamId();
-          await call.save(
-            { step, responseMessages: responseMessagesForStep(step) },
-            false,
-            finishStreamId,
-          );
-          if (!savesMessages) {
-            await streamer.finish();
+          const finishStreamId = await streamer.getOrCreateStreamId({
+            ifAborted: "returnUndefined",
+          });
+          if (finishStreamId) {
+            await call.save(
+              { step, responseMessages: responseMessagesForStep(step) },
+              false,
+              finishStreamId,
+            );
+            // The save finishes the row only when it stores messages. With
+            // saveMessages "none" nothing else will, so do it here.
+            if (!savesMessages) {
+              await streamer.finish();
+            }
+            initialResponseMessagesSaved = true;
           }
-          initialResponseMessagesSaved = true;
         }
       } else {
         await call.save(
@@ -272,8 +288,11 @@ export async function streamText<
       // If the stream errored (e.g. onStepFinish threw), the DeltaStreamer's
       // finish() was never called, leaving the streaming message stuck in
       // "streaming" state. Clean it up by marking it as aborted.
-      await streamer?.fail(e instanceof Error ? e.message : String(e));
-      // Save the deferred final step if it was already generated but not yet persisted
+      try {
+        await streamer?.fail(errorToString(e));
+      } catch (cleanupError) {
+        streamCleanupFailure ??= { error: cleanupError };
+      }
       if (pendingFinalStep) {
         try {
           await call.save(pendingFinalStep, false);
@@ -286,10 +305,17 @@ export async function streamText<
     }
   }
 
+  if (streamCleanupFailure) throw streamCleanupFailure.error;
+
   // If we deferred the final step save, do it now with atomic stream finish.
   if (pendingFinalStep && streamer) {
-    const finishStreamId = await streamer.getOrCreateStreamId();
-    await call.save(pendingFinalStep, false, finishStreamId);
+    const finishStreamId = await streamer.getOrCreateStreamId({
+      ifAborted: "returnUndefined",
+    });
+    if (finishStreamId) {
+      await call.save(pendingFinalStep, false, finishStreamId);
+    }
+    pendingFinalStep = undefined;
   } else if (willAwaitStream && streamer) {
     // No final step was deferred (e.g. the generation produced none), so no
     // save will finish the stream. The streamer doesn't finish itself, so do

@@ -386,6 +386,7 @@ export async function startGeneration<
           threadId,
           agentName: opts.agentName,
           promptMessageId,
+          abandonIfPromptMissing: true,
           pendingMessageId,
           messages: serialized.messages,
           embeddings,
