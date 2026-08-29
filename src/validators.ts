@@ -15,6 +15,11 @@ export const vProviderMetadata = vProviderOptions;
 const providerMetadata = providerOptions;
 export type ProviderMetadata = Infer<typeof providerMetadata>;
 
+export const vProviderReference = v.object({
+  type: v.literal("reference"),
+  reference: v.record(v.string(), v.string()),
+});
+
 export const vThreadStatus = v.union(
   v.literal("active"),
   v.literal("archived"), // unused
@@ -42,7 +47,7 @@ export const vTextPart = v.object({
 
 export const vImagePart = v.object({
   type: v.literal("image"),
-  image: v.union(v.string(), v.bytes()),
+  image: v.union(v.string(), v.bytes(), vProviderReference),
   mediaType: v.optional(v.string()),
   /** @deprecated Use `mediaType` instead. */
   mimeType: v.optional(v.string()),
@@ -51,7 +56,7 @@ export const vImagePart = v.object({
 
 export const vFilePart = v.object({
   type: v.literal("file"),
-  data: v.union(v.string(), v.bytes()),
+  data: v.union(v.string(), v.bytes(), vProviderReference),
   filename: v.optional(v.string()),
   mediaType: v.optional(v.string()),
   /** @deprecated Use `mediaType` instead. */
@@ -73,6 +78,21 @@ export const vReasoningPart = v.object({
   providerMetadata,
 });
 
+export const vReasoningFilePart = v.object({
+  type: v.literal("reasoning-file"),
+  url: v.optional(v.string()),
+  data: v.optional(v.union(v.string(), v.bytes())),
+  mediaType: v.string(),
+  providerOptions,
+  providerMetadata,
+});
+
+export const vCustomContentPart = v.object({
+  type: v.literal("custom"),
+  kind: v.string(),
+  providerOptions,
+  providerMetadata,
+});
 export const vRedactedReasoningPart = v.object({
   type: v.literal("redacted-reasoning"),
   data: v.string(),
@@ -127,6 +147,8 @@ export const vToolCallPart = v.union(
     /** @deprecated Use `input` instead. */
     args: v.optional(v.any()),
     providerExecuted: v.optional(v.boolean()),
+    title: v.optional(v.string()),
+    toolMetadata: v.optional(v.record(v.string(), v.any())),
     providerOptions,
     providerMetadata,
   }),
@@ -139,6 +161,8 @@ export const vToolCallPart = v.union(
     args: v.any(),
     input: v.optional(v.any()),
     providerExecuted: v.optional(v.boolean()),
+    title: v.optional(v.string()),
+    toolMetadata: v.optional(v.record(v.string(), v.any())),
     providerOptions,
     providerMetadata,
   }),
@@ -178,6 +202,21 @@ export const vToolResultOutput = v.union(
           text: v.string(),
           providerOptions,
         }),
+        v.object({
+          type: v.literal("file"),
+          data: v.union(
+            v.object({ type: v.literal("url"), url: v.string() }),
+            vProviderReference,
+            v.object({
+              type: v.literal("data"),
+              data: v.union(v.string(), v.bytes()),
+            }),
+            v.object({ type: v.literal("text"), text: v.string() }),
+          ),
+          mediaType: v.string(),
+          filename: v.optional(v.string()),
+          providerOptions,
+        }),
         /** @deprecated Use `image-data` or `file-data` instead. */
         v.object({
           type: v.literal("media"),
@@ -199,6 +238,7 @@ export const vToolResultOutput = v.union(
         v.object({
           type: v.literal("file-url"),
           url: v.string(),
+          mediaType: v.optional(v.string()),
           providerOptions,
         }),
         v.object({
@@ -215,6 +255,11 @@ export const vToolResultOutput = v.union(
           providerOptions,
         }),
         v.object({
+          type: v.literal("file-reference"),
+          providerReference: v.record(v.string(), v.string()),
+          providerOptions,
+        }),
+        v.object({
           type: v.literal("image-data"),
           data: v.string(),
           /**
@@ -222,6 +267,11 @@ export const vToolResultOutput = v.union(
            * @see https://www.iana.org/assignments/media-types/media-types.xhtml
            */
           mediaType: v.string(),
+          providerOptions,
+        }),
+        v.object({
+          type: v.literal("image-file-reference"),
+          providerReference: v.record(v.string(), v.string()),
           providerOptions,
         }),
         v.object({
@@ -271,6 +321,8 @@ export const vToolApprovalRequest = v.object({
    * ID of the tool call that the approval request is for.
    */
   toolCallId: v.string(),
+  isAutomatic: v.optional(v.boolean()),
+  signature: v.optional(v.string()),
   /** @todo Should we continue to include? */
   providerMetadata,
   /** @todo Should we continue to include? */
@@ -334,6 +386,8 @@ export const vAssistantContent = v.union(
       vTextPart,
       vFilePart,
       vReasoningPart,
+      vReasoningFilePart,
+      vCustomContentPart,
       vRedactedReasoningPart,
       vToolCallPart,
       vToolResultPart,
@@ -383,6 +437,8 @@ export type MessageContentParts =
   | Infer<typeof vImagePart>
   | Infer<typeof vFilePart>
   | Infer<typeof vReasoningPart>
+  | Infer<typeof vReasoningFilePart>
+  | Infer<typeof vCustomContentPart>
   | Infer<typeof vRedactedReasoningPart>
   | Infer<typeof vToolCallPart>
   | Infer<typeof vToolResultPart>
@@ -431,15 +487,34 @@ export const vFinishReason = v.union(
 );
 
 export const vUsage = v.object({
-  promptTokens: v.number(),
-  completionTokens: v.number(),
-  totalTokens: v.number(),
+  promptTokens: v.optional(v.number()),
+  completionTokens: v.optional(v.number()),
+  totalTokens: v.optional(v.number()),
   reasoningTokens: v.optional(v.number()),
   cachedInputTokens: v.optional(v.number()),
+  nonCachedInputTokens: v.optional(v.number()),
+  cacheWriteInputTokens: v.optional(v.number()),
+  textOutputTokens: v.optional(v.number()),
+  raw: v.optional(v.record(v.string(), v.any())),
 });
 export type Usage = Infer<typeof vUsage>;
 
 export const vLanguageModelCallWarning = v.union(
+  v.object({
+    type: v.literal("unsupported"),
+    feature: v.string(),
+    details: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("compatibility"),
+    feature: v.string(),
+    details: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal("deprecated"),
+    setting: v.string(),
+    message: v.string(),
+  }),
   v.object({
     type: v.literal("unsupported-setting"),
     setting: v.string(),
@@ -515,8 +590,13 @@ export const vStorageOptions = v.object({
   ),
 });
 
-const vPromptFields = {
-  system: v.optional(v.string()),
+// Generated Convex actions keep the established `system` wire field. The
+// Vercel adapter translates it to AI SDK 7's `instructions` before invoking
+// the model, so action payloads never carry both spellings.
+const vActionPromptFields = {
+  system: v.optional(
+    v.union(v.string(), vSystemMessage, v.array(vSystemMessage)),
+  ),
   prompt: v.optional(v.string()),
   messages: v.optional(v.array(vMessage)),
   promptMessageId: v.optional(v.string()),
@@ -543,7 +623,8 @@ const vCommonArgs = {
   storageOptions: v.optional(vStorageOptions),
   providerOptions,
   callSettings: v.optional(vCallSettings),
-  ...vPromptFields,
+  allowSystemInMessages: v.optional(v.boolean()),
+  ...vActionPromptFields,
 };
 
 export const vTextArgs = v.object({

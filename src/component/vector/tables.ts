@@ -68,7 +68,7 @@ export type VectorSchema = SchemaDefinition<
 >;
 
 export const VectorDimensions = [
-  128, 256, 512, 768, 1024, 1408, 1536, 2048, 3072, 4096,
+  128, 256, 512, 768, 1024, 1408, 1536, 2048, 2560, 3072, 4096,
 ] as const;
 export function validateVectorDimension(
   dimension: number,

@@ -40,7 +40,12 @@ import {
   vVectorId,
 } from "./vector/tables.js";
 import { changeRefcount } from "./files.js";
-import { getStreamingMessagesWithMetadata, finishHandler } from "./streams.js";
+import {
+  getStreamingMessagesWithMetadata,
+  finishHandler,
+  releaseStreamFileOwnershipByIds,
+  abortStreamsAtOrder,
+} from "./streams.js";
 import { partial } from "convex-helpers/validators";
 
 function publicMessage(message: Doc<"messages">): MessageDoc {
@@ -61,27 +66,70 @@ export async function deleteMessage(
   }
 }
 
+/**
+ * Deleting a message strands any generation still writing to its order, which
+ * would otherwise only surface as a missing-parent failure when that generation
+ * finalizes. Aborting the stream lets the in-flight run stop on its own.
+ */
+async function abortStreamsForDeleted(
+  ctx: MutationCtx,
+  deleted: (Doc<"messages"> | null)[],
+) {
+  const seen = new Set<string>();
+  for (const message of deleted) {
+    if (!message) continue;
+    const key = `${message.threadId}:${message.order}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    await abortStreamsAtOrder(ctx, {
+      threadId: message.threadId,
+      order: message.order,
+      reason: "Message deleted",
+    });
+  }
+}
+
 export const deleteByIds = mutation({
   args: { messageIds: v.array(v.id("messages")) },
   returns: v.array(v.id("messages")),
   handler: async (ctx, args) => {
-    const deletedMessageIds = await Promise.all(
+    const deleted = await Promise.all(
       args.messageIds.map(async (id) => {
         const message = await ctx.db.get("messages", id);
         if (message) {
           await deleteMessage(ctx, message);
-          return id;
+          return message;
         }
         return null;
       }),
     );
-    return deletedMessageIds.filter((id) => id !== null);
+    await abortStreamsForDeleted(ctx, deleted);
+    return deleted.filter((m) => m !== null).map((m) => m._id);
   },
 });
 
 export const messageStatuses = vMessageDoc.fields.status.members.map(
   (m) => m.value,
 );
+
+const STREAM_RECOVERY_FAILURE =
+  "Failed to recover persisted assistant stream output";
+
+async function markPendingMessageFailed(
+  ctx: MutationCtx,
+  message: Doc<"messages">,
+  error: string,
+) {
+  if (message.embeddingId) {
+    const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
+    await ctx.db.delete(tableName, message.embeddingId);
+  }
+  await ctx.db.patch("messages", message._id, {
+    status: "failed",
+    error,
+    embeddingId: undefined,
+  });
+}
 
 export const deleteByOrder = mutation({
   args: {
@@ -122,6 +170,7 @@ export const deleteByOrder = mutation({
       })
       .take(64);
     await Promise.all(messages.map((m) => deleteMessage(ctx, m)));
+    await abortStreamsForDeleted(ctx, messages);
     return {
       isDone: messages.length < 64,
       lastOrder: messages.at(-1)?.order,
@@ -134,6 +183,13 @@ const addMessagesArgs = {
   userId: v.optional(v.string()),
   threadId: v.id("threads"),
   promptMessageId: v.optional(v.id("messages")),
+  /**
+   * For saves that belong to a run anchored on promptMessageId: if that
+   * message is gone the run is obsolete, so abandon the save instead of
+   * throwing. A caller passing an id that never existed still gets an error.
+   */
+  abandonIfPromptMissing: v.optional(v.boolean()),
+  order: v.optional(v.union(v.number(), v.literal("next"))),
   agentName: v.optional(v.string()),
   messages: v.array(vMessageWithMetadataInternal),
   embeddings: v.optional(vMessageEmbeddingsWithDimension),
@@ -152,6 +208,15 @@ export const addMessages = mutation({
   handler: addMessagesHandler,
   returns: v.object({ messages: v.array(vMessageDoc) }),
 });
+
+function incrementMessagePosition(value: number, field: "order" | "stepOrder") {
+  assert(
+    Number.isSafeInteger(value) && value < Number.MAX_SAFE_INTEGER,
+    `${field} cannot be incremented past Number.MAX_SAFE_INTEGER`,
+  );
+  return value + 1;
+}
+
 async function addMessagesHandler(
   ctx: MutationCtx,
   args: ObjectType<typeof addMessagesArgs>,
@@ -170,12 +235,30 @@ async function addMessagesHandler(
     finishStreamId,
     messages,
     promptMessageId,
+    abandonIfPromptMissing,
+    order: requestedOrder,
     pendingMessageId,
     hideFromUserIdSearch,
     ...rest
   } = args;
   const promptMessage =
     promptMessageId && (await ctx.db.get("messages", promptMessageId));
+  assert(
+    requestedOrder === undefined ||
+      requestedOrder === "next" ||
+      (Number.isSafeInteger(requestedOrder) &&
+        requestedOrder >= 0 &&
+        requestedOrder < Number.MAX_SAFE_INTEGER),
+    "order must be a non-negative safe integer less than Number.MAX_SAFE_INTEGER",
+  );
+  assert(
+    requestedOrder === undefined || !promptMessageId,
+    "order and promptMessageId cannot both be provided",
+  );
+  assert(
+    requestedOrder === undefined || !pendingMessageId,
+    "order and pendingMessageId cannot both be provided",
+  );
   if (failPendingSteps) {
     assert(args.threadId, "threadId is required to fail pending steps");
     const pendingMessages = await ctx.db
@@ -205,7 +288,21 @@ async function addMessagesHandler(
   let order, stepOrder;
   let fail = false;
   let error: string | undefined;
-  if (promptMessageId) {
+  const startsAtNextOrder = requestedOrder === "next";
+  const explicitOrder =
+    typeof requestedOrder === "number" ? requestedOrder : undefined;
+  if (startsAtNextOrder) {
+    const maxMessage = await getMaxMessage(ctx, threadId);
+    order = incrementMessagePosition(maxMessage?.order ?? -1, "order");
+    stepOrder = -1;
+  } else if (explicitOrder !== undefined) {
+    order = explicitOrder;
+    const maxMessage = await getMaxMessage(ctx, threadId, order);
+    stepOrder = maxMessage?.stepOrder ?? -1;
+  } else if (promptMessageId) {
+    if (!promptMessage && abandonIfPromptMissing) {
+      return { messages: [] };
+    }
     assert(promptMessage, `Parent message ${promptMessageId} not found`);
     if (promptMessage.status === "failed") {
       fail = true;
@@ -266,8 +363,8 @@ async function addMessagesHandler(
       if (pendingMessage.status === "failed") {
         fail = true;
         error =
-          `Trying to update a message that failed: ${pendingMessageId}, ` +
-          `error: ${pendingMessage.error ?? error}`;
+          pendingMessage.error ??
+          `Trying to update a message that failed: ${pendingMessageId}`;
         messageDoc.status = "failed";
         messageDoc.error = error;
       }
@@ -286,20 +383,28 @@ async function addMessagesHandler(
       toReturn.push((await ctx.db.get("messages", pendingMessage._id))!);
       continue;
     }
-    if (message.message.role === "user") {
-      if (promptMessage && promptMessage.order === order) {
-        // see if there's a later message than the parent message order
+    if ((startsAtNextOrder || explicitOrder !== undefined) && i === 0) {
+      stepOrder = incrementMessagePosition(stepOrder, "stepOrder");
+    } else if (message.message.role === "user") {
+      if (
+        (explicitOrder !== undefined && order === explicitOrder) ||
+        (promptMessage && promptMessage.order === order)
+      ) {
+        // Avoid colliding with a later order when saving from an older one.
         const maxMessage = await getMaxMessage(ctx, threadId);
-        order = (maxMessage?.order ?? order) + 1;
+        order = incrementMessagePosition(
+          Math.max(maxMessage?.order ?? order, order),
+          "order",
+        );
       } else {
-        order++;
+        order = incrementMessagePosition(order, "order");
       }
       stepOrder = 0;
     } else {
       if (order < 0) {
         order = 0;
       }
-      stepOrder++;
+      stepOrder = incrementMessagePosition(stepOrder, "stepOrder");
     }
     const messageId = await ctx.db.insert("messages", {
       ...messageDoc,
@@ -315,7 +420,10 @@ async function addMessagesHandler(
   // Atomically finish the stream if requested, preventing UI flickering
   // from separate mutations for message save and stream finish (issue #181).
   if (finishStreamId) {
-    await finishHandler(ctx, { streamId: finishStreamId });
+    await finishHandler(ctx, {
+      streamId: finishStreamId,
+    });
+    await releaseStreamFileOwnershipByIds(ctx, [finishStreamId]);
   }
   return { messages: toReturn.map(publicMessage) };
 }
@@ -390,11 +498,20 @@ export const finalizeMessage = mutation({
     }
     // See if we can add any in-progress data
     if (!message.message?.content.length) {
-      const messages = await getStreamingMessagesWithMetadata(
-        ctx,
-        message,
-        result,
-      );
+      const { messages, materializationFailures, streamsToRelease } =
+        await getStreamingMessagesWithMetadata(ctx, message, result);
+      if (materializationFailures.length > 0) {
+        console.error(
+          "Failed to materialize persisted assistant streams",
+          materializationFailures,
+        );
+        await markPendingMessageFailed(
+          ctx,
+          message,
+          result.status === "failed" ? result.error : STREAM_RECOVERY_FAILURE,
+        );
+        return;
+      }
       if (messages.length > 0) {
         await addMessagesHandler(ctx, {
           messages,
@@ -405,19 +522,12 @@ export const finalizeMessage = mutation({
           userId: message.userId,
           embeddings: undefined,
         });
+        await releaseStreamFileOwnershipByIds(ctx, streamsToRelease);
         return;
       }
     }
     if (result.status === "failed") {
-      if (message.embeddingId) {
-        const { tableName } = getVectorIdInfo(ctx, message.embeddingId);
-        await ctx.db.delete(tableName, message.embeddingId);
-      }
-      await ctx.db.patch("messages", messageId, {
-        status: "failed",
-        error: result.error,
-        embeddingId: undefined,
-      });
+      await markPendingMessageFailed(ctx, message, result.error);
     } else {
       await ctx.db.patch("messages", messageId, { status: "success" });
     }
@@ -830,16 +940,18 @@ export const _fetchSearchMessages = internalQuery({
         ),
       )
     )
-      .filter(
-        (m): m is Doc<"messages"> =>
-          m !== undefined &&
-          m !== null &&
-          !m.tool &&
-          (!beforeMessage ||
-            m.order < beforeMessage.order ||
-            (m.order === beforeMessage.order &&
-              m.stepOrder < beforeMessage.stepOrder)),
-      )
+      .filter((m): m is Doc<"messages"> => {
+        if (m === undefined || m === null || m.tool) return false;
+        if (!beforeMessage) return true;
+        // The order filter is only meaningful within the same thread.
+        // Messages from other threads have independent order sequences.
+        if (m.threadId !== beforeMessage.threadId) return true;
+        return (
+          m.order < beforeMessage.order ||
+          (m.order === beforeMessage.order &&
+            m.stepOrder < beforeMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
     messages.push(...(args.textSearchMessages ?? []));
     // TODO: prioritize more recent messages
@@ -922,12 +1034,16 @@ export const textSearch = query({
     const targetMessage =
       args.targetMessageId &&
       (await ctx.db.get("messages", args.targetMessageId));
-    const order = targetMessage?.order;
     const text = args.text || targetMessage?.text;
     if (!text) {
       console.warn("No text to search", targetMessage, args.text);
       return [];
     }
+    // When searching across threads (searchAllMessagesForUserId), the
+    // targetMessage's order is only meaningful within its own thread, so we
+    // can't apply it as a database-level filter. We still apply it post-fetch
+    // for same-thread results below.
+    const restrictOrderInDb = !args.searchAllMessagesForUserId && targetMessage;
     const messages = await ctx.db
       .query("messages")
       .withSearchIndex("text_search", (q) =>
@@ -939,20 +1055,24 @@ export const textSearch = query({
       // eslint-disable-next-line @convex-dev/no-filter-in-query -- we can't do this in the search index, but text search ideally isn't for really old orders
       .filter((q) => {
         const qq = q.eq(q.field("tool"), false);
-        if (order) {
-          return q.and(qq, q.lte(q.field("order"), order));
+        if (restrictOrderInDb) {
+          return q.and(qq, q.lte(q.field("order"), targetMessage.order));
         }
         return qq;
       })
       .take(args.limit);
     return messages
-      .filter(
-        (m) =>
-          !targetMessage ||
+      .filter((m) => {
+        if (!targetMessage) return true;
+        // Order is only meaningful within the same thread; cross-thread
+        // results have independent order sequences and should pass through.
+        if (m.threadId !== targetMessage.threadId) return true;
+        return (
           m.order < targetMessage.order ||
           (m.order === targetMessage.order &&
-            m.stepOrder < targetMessage.stepOrder),
-      )
+            m.stepOrder < targetMessage.stepOrder)
+        );
+      })
       .map(publicMessage);
   },
   returns: v.array(vMessageDoc),

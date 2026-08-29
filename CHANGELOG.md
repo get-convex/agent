@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- Preserve classified provider errors when streamed responses fail, including
+  aborts racing late message writes (#320). `DeltaStreamer.getOrCreateStreamId`
+  now accepts `{ ifAborted: "returnUndefined" }` for abort-aware writes; its
+  existing no-argument behavior is unchanged.
+
+- Add `hasSuccessfulToolCall(toolName)` stop-condition helper. Like the AI
+  SDK's `hasToolCall` but only matches tool calls that produced a
+  `tool-result` content part — failed tool calls (`tool-error` parts under
+  AI SDK v6) do not match. Use when you want the agent to retry on
+  argument-validation or runtime tool failures rather than stopping.
+
+  ```ts
+  import { hasSuccessfulToolCall, stepCountIs } from "@convex-dev/agent";
+
+  await agent.streamText(ctx, { threadId }, {
+    prompt: "...",
+    stopWhen: [hasSuccessfulToolCall("generateImage"), stepCountIs(5)],
+  });
+  ```
+
+- Fix: `willContinue` (the internal helper that decides whether to keep
+  looping after a step that has tool calls) now counts `tool-error`
+  content parts as completed outputs. Without this, AI SDK v6 agents
+  would stop after a step where any tool call errored, even if the model
+  had more work queued.
+
 - Add `listUIMessagesWithStreams` / `listMessagesWithStreams` helpers and
   `vStreamUIMessagesReturnValue` / `vSyncStreamsReturnValue` / `vUIMessage`
   validators so a from-scratch streaming chat query compiles without
@@ -9,9 +35,29 @@
   when combining `listUIMessages` with `returns: vStreamMessagesReturnValue`)
 - Accept queries with a `returns` validator (where `streams` is optional) in
   the hooks' `stream: true` type guard (`StreamQuery`)
-- Document the compatible `ai`/`@ai-sdk/*` provider versions (AI SDK v6 pairs
-  with v3.x providers) and add a complete streaming chat quickstart to the
+- Document the compatible `ai`/`@ai-sdk/*` provider versions (AI SDK v7 pairs
+  with v4.x providers) and add a complete streaming chat quickstart to the
   README
+
+## 0.7.1
+
+- Persists oversized streamed files (#307)
+- fix: preserve text-part metadata on user messages (#318)
+
+## 0.7.0
+
+- Breaking: requires AI SDK v7, provider packages v4, provider utilities v5, and
+  Node.js 22 or newer.
+- Migrates generation, streaming, tools, callbacks, usage, warnings, runtime
+  context, and provider types to AI SDK v7.
+- Uses one `UIMessageChunk` reducer for existing v0.6 stream data and new v0.7
+  streams. Existing persisted messages remain readable.
+- Adds AI SDK v7 message parts, tool-result forms, approval flows, and model
+  registry identifiers.
+- Deprecates top-level `system` in favor of `instructions`.
+- Does not yet offload every oversized inline file encoding. Reasoning files,
+  nested tool-result files, and tagged/base64/data-URL payloads will be
+  completed separately.
 
 ## 0.6.4
 

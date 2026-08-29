@@ -7,16 +7,7 @@
   "packageRules": [
     {
       "groupName": "Routine updates",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "automerge": true
-    },
-    {
-      "matchUpdateTypes": ["major"],
-      "automerge": false
-    },
-    {
-      "matchDepTypes": ["devDependencies"],
-      "automerge": true
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"]
     }
   ],
   "constraints": {

@@ -100,6 +100,15 @@ export const schema = defineSchema({
 
     threadId: v.id("threads"),
     order: v.number(),
+    /** Internal ownership sidecar for files materialized in stream deltas. */
+    fileRefs: v.optional(
+      v.array(
+        v.object({
+          url: v.string(),
+          fileId: v.id("files"),
+        }),
+      ),
+    ),
     /**
      * The step order of the first message in the stream.
      * If the stream ends up with both a tool call and a tool result,
@@ -117,7 +126,11 @@ export const schema = defineSchema({
         endedAt: v.number(),
         cleanupFnId: v.optional(v.id("_scheduled_functions")),
       }),
-      v.object({ kind: v.literal("aborted"), reason: v.string() }),
+      v.object({
+        kind: v.literal("aborted"),
+        reason: v.string(),
+        cleanupFnId: v.optional(v.id("_scheduled_functions")),
+      }),
     ),
   })
     // There should only be one per "order" index
@@ -158,7 +171,8 @@ export const schema = defineSchema({
     lastTouchedAt: v.number(),
   })
     .index("hash", ["hash"])
-    .index("refcount", ["refcount"]),
+    .index("refcount", ["refcount"])
+    .index("refcount_lastTouchedAt", ["refcount", "lastTouchedAt"]),
   ...vectorTables,
   // To authenticate playground usage
   // Delete a key to invalidate it

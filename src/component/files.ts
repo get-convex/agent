@@ -1,9 +1,11 @@
 import { paginator } from "convex-helpers/server/pagination";
-import type { Id } from "./_generated/dataModel.js";
+import type { Doc, Id } from "./_generated/dataModel.js";
 import { mutation, type MutationCtx, query } from "./_generated/server.js";
 import { schema, v } from "./schema.js";
 import { paginationOptsValidator } from "convex/server";
 import type { Infer } from "convex/values";
+
+const FILE_CLEANUP_GRACE_MS = 24 * 60 * 60 * 1000;
 
 const addFileArgs = v.object({
   storageId: v.string(),
@@ -28,18 +30,21 @@ export async function addFileHandler(
   args: Infer<typeof addFileArgs>,
 ) {
   // Support both mediaType (preferred) and mimeType (deprecated)
-  const mediaType = args.mediaType ?? args.mimeType;
+  const mediaType = normalizeMediaType(args.mediaType ?? args.mimeType);
 
-  const existingFile = await ctx.db
+  const existingFiles = await ctx.db
     .query("files")
     .withIndex("hash", (q) => q.eq("hash", args.hash))
     // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
     .filter((q) => q.eq(q.field("filename"), args.filename))
-    .first();
+    .collect();
+  const existingFile = existingFiles.find((file) =>
+    sameMediaType(file, mediaType),
+  );
   if (existingFile) {
-    // increment the refcount
+    // Registration is not ownership. Persisted messages and in-flight streams
+    // acquire ownership explicitly.
     await ctx.db.patch("files", existingFile._id, {
-      refcount: existingFile.refcount + 1,
       lastTouchedAt: Date.now(),
     });
     return {
@@ -83,14 +88,18 @@ export const useExistingFile = mutation({
   args: {
     hash: v.string(),
     filename: v.optional(v.string()),
+    mediaType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const file = await ctx.db
+    const files = await ctx.db
       .query("files")
       .withIndex("hash", (q) => q.eq("hash", args.hash))
       // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
       .filter((q) => q.eq(q.field("filename"), args.filename))
-      .first();
+      .collect();
+    const file = files.find((candidate) =>
+      sameMediaType(candidate, normalizeMediaType(args.mediaType)),
+    );
     if (!file) {
       return null;
     }
@@ -108,36 +117,51 @@ export const useExistingFile = mutation({
   ),
 });
 
+function normalizeMediaType(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+function sameMediaType(
+  file: Pick<Doc<"files">, "mediaType" | "mimeType">,
+  expected: string | undefined,
+) {
+  const actual = normalizeMediaType(file.mediaType ?? file.mimeType);
+  // File rows from before media-type tracking have no value to distinguish.
+  // Preserve the prior hash-and-filename reuse behavior for those rows.
+  return expected === undefined || actual === undefined || actual === expected;
+}
+
+/** Transfer ownership between two durable records. */
 export async function changeRefcount(
   ctx: MutationCtx,
-  prev: Id<"files">[],
+  previous: Id<"files">[],
   next: Id<"files">[],
 ) {
-  const prevSet = new Set(prev);
+  const previousSet = new Set(previous);
   const nextSet = new Set(next);
-  for (const fileId of prevSet) {
-    if (!nextSet.has(fileId)) {
-      const file = await ctx.db.get("files", fileId);
-      if (file) {
-        await ctx.db.patch("files", fileId, {
-          refcount: file.refcount - 1,
-        });
-      } else {
+  for (const fileId of new Set([...previousSet, ...nextSet])) {
+    const increment = Number(!previousSet.has(fileId) && nextSet.has(fileId));
+    const decrement = Number(previousSet.has(fileId) && !nextSet.has(fileId));
+    if (increment === 0 && decrement === 0) continue;
+    const file = await ctx.db.get("files", fileId);
+    if (!file) {
+      if (increment === 0) {
         console.error(`File ${fileId} not found when decrementing refcount`);
+        continue;
       }
+      throw new Error(`File ${fileId} not found when incrementing refcount`);
     }
-  }
-  for (const fileId of nextSet) {
-    if (!prevSet.has(fileId)) {
-      const file = await ctx.db.get("files", fileId);
-      if (file) {
-        await ctx.db.patch("files", fileId, {
-          refcount: file.refcount + 1,
-        });
-      } else {
-        throw new Error(`File ${fileId} not found when incrementing refcount`);
-      }
+    if (file.refcount < decrement) {
+      throw new Error(
+        `File ${fileId} refcount underflow: ${file.refcount} - ${decrement}`,
+      );
     }
+    const delta = increment - decrement;
+    await ctx.db.patch("files", fileId, {
+      refcount: file.refcount + delta,
+      lastTouchedAt: Date.now(),
+    });
   }
 }
 
@@ -153,22 +177,15 @@ export async function copyFileHandler(
   ctx: MutationCtx,
   args: { fileId: Id<"files"> },
 ) {
-  const file = await ctx.db.get("files", args.fileId);
-  if (!file) {
-    throw new Error("File not found");
-  }
-  await ctx.db.patch("files", args.fileId, {
-    refcount: file.refcount + 1,
-    lastTouchedAt: Date.now(),
-  });
+  await changeRefcount(ctx, [], [args.fileId]);
 }
 
 /**
  * Get files that are unused and can be deleted.
  * This is useful for cleaning up files that are no longer needed.
- * Note: recently added files that have not been saved yet will show up here.
- * You can inspect the `lastTouchedAt` field to see how recently it was used.
- * I'd recommend not deleting anything touched in the last 24 hours.
+ * Files remain protected for 24 hours after registration or their last
+ * ownership change, so a file cannot be removed between registration and the
+ * transaction that saves its message or stream reference.
  */
 export const getFilesToDelete = query({
   args: {
@@ -177,7 +194,11 @@ export const getFilesToDelete = query({
   handler: async (ctx, args) => {
     const files = await paginator(ctx.db, schema)
       .query("files")
-      .withIndex("refcount", (q) => q.eq("refcount", 0))
+      .withIndex("refcount_lastTouchedAt", (q) =>
+        q
+          .eq("refcount", 0)
+          .lte("lastTouchedAt", Date.now() - FILE_CLEANUP_GRACE_MS),
+      )
       .paginate(args.paginationOpts);
     return files;
   },
@@ -209,6 +230,13 @@ export const deleteFiles = mutation({
             );
             return null;
           }
+        }
+        if (
+          !args.force &&
+          file.lastTouchedAt > Date.now() - FILE_CLEANUP_GRACE_MS
+        ) {
+          console.error(`File ${fileId} is still within the cleanup grace period, skipping...`);
+          return null;
         }
         await ctx.db.delete("files", fileId);
         return fileId;

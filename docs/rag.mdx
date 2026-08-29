@@ -156,7 +156,7 @@ file around once you've retrieved it via searching.
 const description = await thread.generateText({
   message: {
     role: "user",
-    content: [{ type: "image", data: url, mimeType: blob.type }],
+    content: [{ type: "image", image: url, mediaType: blob.type }],
   },
 });
 ```
@@ -207,7 +207,7 @@ To see these examples in action, check out the
 
 Run the example with:
 
-```bash
+```sh
 git clone https://github.com/get-convex/rag.git
 cd rag
 npm run setup

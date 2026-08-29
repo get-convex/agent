@@ -127,7 +127,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       useExistingFile: FunctionReference<
         "mutation",
         "internal",
-        { filename?: string; hash: string },
+        { filename?: string; hash: string; mediaType?: string },
         null | { fileId: string; storageId: string },
         Name
       >;
@@ -137,6 +137,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         {
+          abandonIfPromptMissing?: boolean;
           agentName?: string;
           embeddings?: {
             dimension:
@@ -148,6 +149,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
             model: string;
@@ -185,7 +187,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            image: string | ArrayBuffer;
+                            image:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             mediaType?: string;
                             mimeType?: string;
                             providerOptions?: Record<
@@ -195,7 +203,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "image";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -230,7 +244,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -258,6 +278,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -281,7 +327,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -297,7 +345,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -365,6 +415,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "text";
                                       }
                                     | {
+                                        data:
+                                          | { type: "url"; url: string }
+                                          | {
+                                              reference: Record<string, string>;
+                                              type: "reference";
+                                            }
+                                          | {
+                                              data: string | ArrayBuffer;
+                                              type: "data";
+                                            }
+                                          | { text: string; type: "text" };
+                                        filename?: string;
+                                        mediaType: string;
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        type: "file";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         type: "media";
@@ -380,6 +450,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-data";
                                       }
                                     | {
+                                        mediaType?: string;
                                         providerOptions?: Record<
                                           string,
                                           Record<string, any>
@@ -396,6 +467,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-id";
                                       }
                                     | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "file-reference";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         providerOptions?: Record<
@@ -403,6 +485,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                           Record<string, any>
                                         >;
                                         type: "image-data";
+                                      }
+                                    | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "image-file-reference";
                                       }
                                     | {
                                         providerOptions?: Record<
@@ -476,6 +569,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -484,6 +578,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -553,6 +648,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "text";
                                   }
                                 | {
+                                    data:
+                                      | { type: "url"; url: string }
+                                      | {
+                                          reference: Record<string, string>;
+                                          type: "reference";
+                                        }
+                                      | {
+                                          data: string | ArrayBuffer;
+                                          type: "data";
+                                        }
+                                      | { text: string; type: "text" };
+                                    filename?: string;
+                                    mediaType: string;
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    type: "file";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     type: "media";
@@ -568,6 +683,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-data";
                                   }
                                 | {
+                                    mediaType?: string;
                                     providerOptions?: Record<
                                       string,
                                       Record<string, any>
@@ -584,6 +700,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-id";
                                   }
                                 | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "file-reference";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     providerOptions?: Record<
@@ -591,6 +715,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       Record<string, any>
                                     >;
                                     type: "image-data";
+                                  }
+                                | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "image-file-reference";
                                   }
                                 | {
                                     providerOptions?: Record<
@@ -682,13 +814,20 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             status?: "pending" | "success" | "failed";
             text?: string;
             usage?: {
+              cacheWriteInputTokens?: number;
               cachedInputTokens?: number;
-              completionTokens: number;
-              promptTokens: number;
+              completionTokens?: number;
+              nonCachedInputTokens?: number;
+              promptTokens?: number;
+              raw?: Record<string, any>;
               reasoningTokens?: number;
-              totalTokens: number;
+              textOutputTokens?: number;
+              totalTokens?: number;
             };
             warnings?: Array<
+              | { details?: string; feature: string; type: "unsupported" }
+              | { details?: string; feature: string; type: "compatibility" }
+              | { message: string; setting: string; type: "deprecated" }
               | {
                   details?: string;
                   setting: string;
@@ -698,6 +837,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | { message: string; type: "other" }
             >;
           }>;
+          order?: number | "next";
           pendingMessageId?: string;
           promptMessageId?: string;
           threadId: string;
@@ -738,7 +878,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            image: string | ArrayBuffer;
+                            image:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             mediaType?: string;
                             mimeType?: string;
                             providerOptions?: Record<
@@ -748,7 +894,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "image";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -783,7 +935,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -811,6 +969,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -834,7 +1018,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -850,7 +1036,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -918,6 +1106,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "text";
                                       }
                                     | {
+                                        data:
+                                          | { type: "url"; url: string }
+                                          | {
+                                              reference: Record<string, string>;
+                                              type: "reference";
+                                            }
+                                          | {
+                                              data: string | ArrayBuffer;
+                                              type: "data";
+                                            }
+                                          | { text: string; type: "text" };
+                                        filename?: string;
+                                        mediaType: string;
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        type: "file";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         type: "media";
@@ -933,6 +1141,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-data";
                                       }
                                     | {
+                                        mediaType?: string;
                                         providerOptions?: Record<
                                           string,
                                           Record<string, any>
@@ -949,6 +1158,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-id";
                                       }
                                     | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "file-reference";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         providerOptions?: Record<
@@ -956,6 +1176,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                           Record<string, any>
                                         >;
                                         type: "image-data";
+                                      }
+                                    | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "image-file-reference";
                                       }
                                     | {
                                         providerOptions?: Record<
@@ -1029,6 +1260,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -1037,6 +1269,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -1106,6 +1339,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "text";
                                   }
                                 | {
+                                    data:
+                                      | { type: "url"; url: string }
+                                      | {
+                                          reference: Record<string, string>;
+                                          type: "reference";
+                                        }
+                                      | {
+                                          data: string | ArrayBuffer;
+                                          type: "data";
+                                        }
+                                      | { text: string; type: "text" };
+                                    filename?: string;
+                                    mediaType: string;
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    type: "file";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     type: "media";
@@ -1121,6 +1374,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-data";
                                   }
                                 | {
+                                    mediaType?: string;
                                     providerOptions?: Record<
                                       string,
                                       Record<string, any>
@@ -1137,6 +1391,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-id";
                                   }
                                 | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "file-reference";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     providerOptions?: Record<
@@ -1144,6 +1406,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       Record<string, any>
                                     >;
                                     type: "image-data";
+                                  }
+                                | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "image-file-reference";
                                   }
                                 | {
                                     providerOptions?: Record<
@@ -1240,14 +1510,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             threadId: string;
             tool: boolean;
             usage?: {
+              cacheWriteInputTokens?: number;
               cachedInputTokens?: number;
-              completionTokens: number;
-              promptTokens: number;
+              completionTokens?: number;
+              nonCachedInputTokens?: number;
+              promptTokens?: number;
+              raw?: Record<string, any>;
               reasoningTokens?: number;
-              totalTokens: number;
+              textOutputTokens?: number;
+              totalTokens?: number;
             };
             userId?: string;
             warnings?: Array<
+              | { details?: string; feature: string; type: "unsupported" }
+              | { details?: string; feature: string; type: "compatibility" }
+              | { message: string; setting: string; type: "deprecated" }
               | {
                   details?: string;
                   setting: string;
@@ -1342,14 +1619,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          image: string | ArrayBuffer;
+                          image:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           mediaType?: string;
                           mimeType?: string;
                           providerOptions?: Record<string, Record<string, any>>;
                           type: "image";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -1378,7 +1667,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -1400,6 +1695,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -1417,7 +1732,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -1430,7 +1747,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -1494,6 +1813,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "text";
                                     }
                                   | {
+                                      data:
+                                        | { type: "url"; url: string }
+                                        | {
+                                            reference: Record<string, string>;
+                                            type: "reference";
+                                          }
+                                        | {
+                                            data: string | ArrayBuffer;
+                                            type: "data";
+                                          }
+                                        | { text: string; type: "text" };
+                                      filename?: string;
+                                      mediaType: string;
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      type: "file";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       type: "media";
@@ -1509,6 +1848,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-data";
                                     }
                                   | {
+                                      mediaType?: string;
                                       providerOptions?: Record<
                                         string,
                                         Record<string, any>
@@ -1525,6 +1865,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-id";
                                     }
                                   | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "file-reference";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       providerOptions?: Record<
@@ -1532,6 +1880,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         Record<string, any>
                                       >;
                                       type: "image-data";
+                                    }
+                                  | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "image-file-reference";
                                     }
                                   | {
                                       providerOptions?: Record<
@@ -1596,11 +1952,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -1670,6 +2028,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "text";
                                 }
                               | {
+                                  data:
+                                    | { type: "url"; url: string }
+                                    | {
+                                        reference: Record<string, string>;
+                                        type: "reference";
+                                      }
+                                    | {
+                                        data: string | ArrayBuffer;
+                                        type: "data";
+                                      }
+                                    | { text: string; type: "text" };
+                                  filename?: string;
+                                  mediaType: string;
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  type: "file";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   type: "media";
@@ -1685,6 +2063,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-data";
                                 }
                               | {
+                                  mediaType?: string;
                                   providerOptions?: Record<
                                     string,
                                     Record<string, any>
@@ -1701,6 +2080,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-id";
                                 }
                               | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "file-reference";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   providerOptions?: Record<
@@ -1708,6 +2095,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     Record<string, any>
                                   >;
                                   type: "image-data";
+                                }
+                              | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "image-file-reference";
                                 }
                               | {
                                   providerOptions?: Record<
@@ -1804,14 +2199,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           threadId: string;
           tool: boolean;
           usage?: {
+            cacheWriteInputTokens?: number;
             cachedInputTokens?: number;
-            completionTokens: number;
-            promptTokens: number;
+            completionTokens?: number;
+            nonCachedInputTokens?: number;
+            promptTokens?: number;
+            raw?: Record<string, any>;
             reasoningTokens?: number;
-            totalTokens: number;
+            textOutputTokens?: number;
+            totalTokens?: number;
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; setting: string; type: "deprecated" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
@@ -1881,7 +2283,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            image: string | ArrayBuffer;
+                            image:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             mediaType?: string;
                             mimeType?: string;
                             providerOptions?: Record<
@@ -1891,7 +2299,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "image";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -1926,7 +2340,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -1954,6 +2374,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -1977,7 +2423,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -1993,7 +2441,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -2061,6 +2511,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "text";
                                       }
                                     | {
+                                        data:
+                                          | { type: "url"; url: string }
+                                          | {
+                                              reference: Record<string, string>;
+                                              type: "reference";
+                                            }
+                                          | {
+                                              data: string | ArrayBuffer;
+                                              type: "data";
+                                            }
+                                          | { text: string; type: "text" };
+                                        filename?: string;
+                                        mediaType: string;
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        type: "file";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         type: "media";
@@ -2076,6 +2546,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-data";
                                       }
                                     | {
+                                        mediaType?: string;
                                         providerOptions?: Record<
                                           string,
                                           Record<string, any>
@@ -2092,6 +2563,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-id";
                                       }
                                     | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "file-reference";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         providerOptions?: Record<
@@ -2099,6 +2581,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                           Record<string, any>
                                         >;
                                         type: "image-data";
+                                      }
+                                    | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "image-file-reference";
                                       }
                                     | {
                                         providerOptions?: Record<
@@ -2172,6 +2665,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -2180,6 +2674,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -2249,6 +2744,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "text";
                                   }
                                 | {
+                                    data:
+                                      | { type: "url"; url: string }
+                                      | {
+                                          reference: Record<string, string>;
+                                          type: "reference";
+                                        }
+                                      | {
+                                          data: string | ArrayBuffer;
+                                          type: "data";
+                                        }
+                                      | { text: string; type: "text" };
+                                    filename?: string;
+                                    mediaType: string;
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    type: "file";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     type: "media";
@@ -2264,6 +2779,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-data";
                                   }
                                 | {
+                                    mediaType?: string;
                                     providerOptions?: Record<
                                       string,
                                       Record<string, any>
@@ -2280,6 +2796,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-id";
                                   }
                                 | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "file-reference";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     providerOptions?: Record<
@@ -2287,6 +2811,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       Record<string, any>
                                     >;
                                     type: "image-data";
+                                  }
+                                | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "image-file-reference";
                                   }
                                 | {
                                     providerOptions?: Record<
@@ -2383,14 +2915,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             threadId: string;
             tool: boolean;
             usage?: {
+              cacheWriteInputTokens?: number;
               cachedInputTokens?: number;
-              completionTokens: number;
-              promptTokens: number;
+              completionTokens?: number;
+              nonCachedInputTokens?: number;
+              promptTokens?: number;
+              raw?: Record<string, any>;
               reasoningTokens?: number;
-              totalTokens: number;
+              textOutputTokens?: number;
+              totalTokens?: number;
             };
             userId?: string;
             warnings?: Array<
+              | { details?: string; feature: string; type: "unsupported" }
+              | { details?: string; feature: string; type: "compatibility" }
+              | { message: string; setting: string; type: "deprecated" }
               | {
                   details?: string;
                   setting: string;
@@ -2452,14 +2991,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          image: string | ArrayBuffer;
+                          image:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           mediaType?: string;
                           mimeType?: string;
                           providerOptions?: Record<string, Record<string, any>>;
                           type: "image";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -2488,7 +3039,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -2510,6 +3067,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -2527,7 +3104,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -2540,7 +3119,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -2604,6 +3185,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "text";
                                     }
                                   | {
+                                      data:
+                                        | { type: "url"; url: string }
+                                        | {
+                                            reference: Record<string, string>;
+                                            type: "reference";
+                                          }
+                                        | {
+                                            data: string | ArrayBuffer;
+                                            type: "data";
+                                          }
+                                        | { text: string; type: "text" };
+                                      filename?: string;
+                                      mediaType: string;
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      type: "file";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       type: "media";
@@ -2619,6 +3220,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-data";
                                     }
                                   | {
+                                      mediaType?: string;
                                       providerOptions?: Record<
                                         string,
                                         Record<string, any>
@@ -2635,6 +3237,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-id";
                                     }
                                   | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "file-reference";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       providerOptions?: Record<
@@ -2642,6 +3252,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         Record<string, any>
                                       >;
                                       type: "image-data";
+                                    }
+                                  | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "image-file-reference";
                                     }
                                   | {
                                       providerOptions?: Record<
@@ -2706,11 +3324,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -2780,6 +3400,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "text";
                                 }
                               | {
+                                  data:
+                                    | { type: "url"; url: string }
+                                    | {
+                                        reference: Record<string, string>;
+                                        type: "reference";
+                                      }
+                                    | {
+                                        data: string | ArrayBuffer;
+                                        type: "data";
+                                      }
+                                    | { text: string; type: "text" };
+                                  filename?: string;
+                                  mediaType: string;
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  type: "file";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   type: "media";
@@ -2795,6 +3435,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-data";
                                 }
                               | {
+                                  mediaType?: string;
                                   providerOptions?: Record<
                                     string,
                                     Record<string, any>
@@ -2811,6 +3452,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-id";
                                 }
                               | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "file-reference";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   providerOptions?: Record<
@@ -2818,6 +3467,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     Record<string, any>
                                   >;
                                   type: "image-data";
+                                }
+                              | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "image-file-reference";
                                 }
                               | {
                                   providerOptions?: Record<
@@ -2914,14 +3571,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           threadId: string;
           tool: boolean;
           usage?: {
+            cacheWriteInputTokens?: number;
             cachedInputTokens?: number;
-            completionTokens: number;
-            promptTokens: number;
+            completionTokens?: number;
+            nonCachedInputTokens?: number;
+            promptTokens?: number;
+            raw?: Record<string, any>;
             reasoningTokens?: number;
-            totalTokens: number;
+            textOutputTokens?: number;
+            totalTokens?: number;
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; setting: string; type: "deprecated" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
@@ -2970,14 +3634,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          image: string | ArrayBuffer;
+                          image:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           mediaType?: string;
                           mimeType?: string;
                           providerOptions?: Record<string, Record<string, any>>;
                           type: "image";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -3006,7 +3682,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -3028,6 +3710,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -3045,7 +3747,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -3058,7 +3762,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -3122,6 +3828,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "text";
                                     }
                                   | {
+                                      data:
+                                        | { type: "url"; url: string }
+                                        | {
+                                            reference: Record<string, string>;
+                                            type: "reference";
+                                          }
+                                        | {
+                                            data: string | ArrayBuffer;
+                                            type: "data";
+                                          }
+                                        | { text: string; type: "text" };
+                                      filename?: string;
+                                      mediaType: string;
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      type: "file";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       type: "media";
@@ -3137,6 +3863,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-data";
                                     }
                                   | {
+                                      mediaType?: string;
                                       providerOptions?: Record<
                                         string,
                                         Record<string, any>
@@ -3153,6 +3880,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-id";
                                     }
                                   | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "file-reference";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       providerOptions?: Record<
@@ -3160,6 +3895,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         Record<string, any>
                                       >;
                                       type: "image-data";
+                                    }
+                                  | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "image-file-reference";
                                     }
                                   | {
                                       providerOptions?: Record<
@@ -3224,11 +3967,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -3298,6 +4043,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "text";
                                 }
                               | {
+                                  data:
+                                    | { type: "url"; url: string }
+                                    | {
+                                        reference: Record<string, string>;
+                                        type: "reference";
+                                      }
+                                    | {
+                                        data: string | ArrayBuffer;
+                                        type: "data";
+                                      }
+                                    | { text: string; type: "text" };
+                                  filename?: string;
+                                  mediaType: string;
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  type: "file";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   type: "media";
@@ -3313,6 +4078,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-data";
                                 }
                               | {
+                                  mediaType?: string;
                                   providerOptions?: Record<
                                     string,
                                     Record<string, any>
@@ -3329,6 +4095,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-id";
                                 }
                               | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "file-reference";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   providerOptions?: Record<
@@ -3336,6 +4110,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     Record<string, any>
                                   >;
                                   type: "image-data";
+                                }
+                              | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "image-file-reference";
                                 }
                               | {
                                   providerOptions?: Record<
@@ -3432,14 +4214,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           threadId: string;
           tool: boolean;
           usage?: {
+            cacheWriteInputTokens?: number;
             cachedInputTokens?: number;
-            completionTokens: number;
-            promptTokens: number;
+            completionTokens?: number;
+            nonCachedInputTokens?: number;
+            promptTokens?: number;
+            raw?: Record<string, any>;
             reasoningTokens?: number;
-            totalTokens: number;
+            textOutputTokens?: number;
+            totalTokens?: number;
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; setting: string; type: "deprecated" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
@@ -3481,7 +4270,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            image: string | ArrayBuffer;
+                            image:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             mediaType?: string;
                             mimeType?: string;
                             providerOptions?: Record<
@@ -3491,7 +4286,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "image";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -3526,7 +4327,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "text";
                           }
                         | {
-                            data: string | ArrayBuffer;
+                            data:
+                              | string
+                              | ArrayBuffer
+                              | {
+                                  reference: Record<string, string>;
+                                  type: "reference";
+                                };
                             filename?: string;
                             mediaType?: string;
                             mimeType?: string;
@@ -3554,6 +4361,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             type: "reasoning";
                           }
                         | {
+                            data?: string | ArrayBuffer;
+                            mediaType: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "reasoning-file";
+                            url?: string;
+                          }
+                        | {
+                            kind: string;
+                            providerMetadata?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            providerOptions?: Record<
+                              string,
+                              Record<string, any>
+                            >;
+                            type: "custom";
+                          }
+                        | {
                             data: string;
                             providerMetadata?: Record<
                               string,
@@ -3577,7 +4410,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -3593,7 +4428,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            title?: string;
                             toolCallId: string;
+                            toolMetadata?: Record<string, any>;
                             toolName: string;
                             type: "tool-call";
                           }
@@ -3661,6 +4498,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "text";
                                       }
                                     | {
+                                        data:
+                                          | { type: "url"; url: string }
+                                          | {
+                                              reference: Record<string, string>;
+                                              type: "reference";
+                                            }
+                                          | {
+                                              data: string | ArrayBuffer;
+                                              type: "data";
+                                            }
+                                          | { text: string; type: "text" };
+                                        filename?: string;
+                                        mediaType: string;
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        type: "file";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         type: "media";
@@ -3676,6 +4533,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-data";
                                       }
                                     | {
+                                        mediaType?: string;
                                         providerOptions?: Record<
                                           string,
                                           Record<string, any>
@@ -3692,6 +4550,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         type: "file-id";
                                       }
                                     | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "file-reference";
+                                      }
+                                    | {
                                         data: string;
                                         mediaType: string;
                                         providerOptions?: Record<
@@ -3699,6 +4568,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                           Record<string, any>
                                         >;
                                         type: "image-data";
+                                      }
+                                    | {
+                                        providerOptions?: Record<
+                                          string,
+                                          Record<string, any>
+                                        >;
+                                        providerReference: Record<
+                                          string,
+                                          string
+                                        >;
+                                        type: "image-file-reference";
                                       }
                                     | {
                                         providerOptions?: Record<
@@ -3772,6 +4652,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           }
                         | {
                             approvalId: string;
+                            isAutomatic?: boolean;
                             providerMetadata?: Record<
                               string,
                               Record<string, any>
@@ -3780,6 +4661,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                               string,
                               Record<string, any>
                             >;
+                            signature?: string;
                             toolCallId: string;
                             type: "tool-approval-request";
                           }
@@ -3849,6 +4731,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "text";
                                   }
                                 | {
+                                    data:
+                                      | { type: "url"; url: string }
+                                      | {
+                                          reference: Record<string, string>;
+                                          type: "reference";
+                                        }
+                                      | {
+                                          data: string | ArrayBuffer;
+                                          type: "data";
+                                        }
+                                      | { text: string; type: "text" };
+                                    filename?: string;
+                                    mediaType: string;
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    type: "file";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     type: "media";
@@ -3864,6 +4766,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-data";
                                   }
                                 | {
+                                    mediaType?: string;
                                     providerOptions?: Record<
                                       string,
                                       Record<string, any>
@@ -3880,6 +4783,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     type: "file-id";
                                   }
                                 | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "file-reference";
+                                  }
+                                | {
                                     data: string;
                                     mediaType: string;
                                     providerOptions?: Record<
@@ -3887,6 +4798,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       Record<string, any>
                                     >;
                                     type: "image-data";
+                                  }
+                                | {
+                                    providerOptions?: Record<
+                                      string,
+                                      Record<string, any>
+                                    >;
+                                    providerReference: Record<string, string>;
+                                    type: "image-file-reference";
                                   }
                                 | {
                                     providerOptions?: Record<
@@ -3976,14 +4895,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          image: string | ArrayBuffer;
+                          image:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           mediaType?: string;
                           mimeType?: string;
                           providerOptions?: Record<string, Record<string, any>>;
                           type: "image";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -4012,7 +4943,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "text";
                         }
                       | {
-                          data: string | ArrayBuffer;
+                          data:
+                            | string
+                            | ArrayBuffer
+                            | {
+                                reference: Record<string, string>;
+                                type: "reference";
+                              };
                           filename?: string;
                           mediaType?: string;
                           mimeType?: string;
@@ -4034,6 +4971,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                           type: "reasoning";
                         }
                       | {
+                          data?: string | ArrayBuffer;
+                          mediaType: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "reasoning-file";
+                          url?: string;
+                        }
+                      | {
+                          kind: string;
+                          providerMetadata?: Record<
+                            string,
+                            Record<string, any>
+                          >;
+                          providerOptions?: Record<string, Record<string, any>>;
+                          type: "custom";
+                        }
+                      | {
                           data: string;
                           providerMetadata?: Record<
                             string,
@@ -4051,7 +5008,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -4064,7 +5023,9 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          title?: string;
                           toolCallId: string;
+                          toolMetadata?: Record<string, any>;
                           toolName: string;
                           type: "tool-call";
                         }
@@ -4128,6 +5089,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "text";
                                     }
                                   | {
+                                      data:
+                                        | { type: "url"; url: string }
+                                        | {
+                                            reference: Record<string, string>;
+                                            type: "reference";
+                                          }
+                                        | {
+                                            data: string | ArrayBuffer;
+                                            type: "data";
+                                          }
+                                        | { text: string; type: "text" };
+                                      filename?: string;
+                                      mediaType: string;
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      type: "file";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       type: "media";
@@ -4143,6 +5124,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-data";
                                     }
                                   | {
+                                      mediaType?: string;
                                       providerOptions?: Record<
                                         string,
                                         Record<string, any>
@@ -4159,6 +5141,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                       type: "file-id";
                                     }
                                   | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "file-reference";
+                                    }
+                                  | {
                                       data: string;
                                       mediaType: string;
                                       providerOptions?: Record<
@@ -4166,6 +5156,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                         Record<string, any>
                                       >;
                                       type: "image-data";
+                                    }
+                                  | {
+                                      providerOptions?: Record<
+                                        string,
+                                        Record<string, any>
+                                      >;
+                                      providerReference: Record<string, string>;
+                                      type: "image-file-reference";
                                     }
                                   | {
                                       providerOptions?: Record<
@@ -4230,11 +5228,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                         }
                       | {
                           approvalId: string;
+                          isAutomatic?: boolean;
                           providerMetadata?: Record<
                             string,
                             Record<string, any>
                           >;
                           providerOptions?: Record<string, Record<string, any>>;
+                          signature?: string;
                           toolCallId: string;
                           type: "tool-approval-request";
                         }
@@ -4304,6 +5304,26 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "text";
                                 }
                               | {
+                                  data:
+                                    | { type: "url"; url: string }
+                                    | {
+                                        reference: Record<string, string>;
+                                        type: "reference";
+                                      }
+                                    | {
+                                        data: string | ArrayBuffer;
+                                        type: "data";
+                                      }
+                                    | { text: string; type: "text" };
+                                  filename?: string;
+                                  mediaType: string;
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  type: "file";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   type: "media";
@@ -4319,6 +5339,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-data";
                                 }
                               | {
+                                  mediaType?: string;
                                   providerOptions?: Record<
                                     string,
                                     Record<string, any>
@@ -4335,6 +5356,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                   type: "file-id";
                                 }
                               | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "file-reference";
+                                }
+                              | {
                                   data: string;
                                   mediaType: string;
                                   providerOptions?: Record<
@@ -4342,6 +5371,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                                     Record<string, any>
                                   >;
                                   type: "image-data";
+                                }
+                              | {
+                                  providerOptions?: Record<
+                                    string,
+                                    Record<string, any>
+                                  >;
+                                  providerReference: Record<string, string>;
+                                  type: "image-file-reference";
                                 }
                               | {
                                   providerOptions?: Record<
@@ -4438,14 +5475,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           threadId: string;
           tool: boolean;
           usage?: {
+            cacheWriteInputTokens?: number;
             cachedInputTokens?: number;
-            completionTokens: number;
-            promptTokens: number;
+            completionTokens?: number;
+            nonCachedInputTokens?: number;
+            promptTokens?: number;
+            raw?: Record<string, any>;
             reasoningTokens?: number;
-            totalTokens: number;
+            textOutputTokens?: number;
+            totalTokens?: number;
           };
           userId?: string;
           warnings?: Array<
+            | { details?: string; feature: string; type: "unsupported" }
+            | { details?: string; feature: string; type: "compatibility" }
+            | { message: string; setting: string; type: "deprecated" }
             | { details?: string; setting: string; type: "unsupported-setting" }
             | { details?: string; tool: any; type: "unsupported-tool" }
             | { message: string; type: "other" }
@@ -4481,7 +5525,13 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       addDelta: FunctionReference<
         "mutation",
         "internal",
-        { end: number; parts: Array<any>; start: number; streamId: string },
+        {
+          end: number;
+          fileRefs?: Array<{ fileId: string; url: string }>;
+          parts: Array<any>;
+          start: number;
+          streamId: string;
+        },
         boolean,
         Name
       >;
@@ -4770,6 +5820,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | string
               | string
               | string
+              | string
             >;
           },
           null,
@@ -4792,6 +5843,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
           },
@@ -4811,6 +5863,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
             vectors: Array<{
@@ -4823,6 +5876,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             }>;
           },
           Array<
+            | string
             | string
             | string
             | string
@@ -4853,12 +5907,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               | 1408
               | 1536
               | 2048
+              | 2560
               | 3072
               | 4096;
           },
           {
             continueCursor: string;
             ids: Array<
+              | string
               | string
               | string
               | string
@@ -4880,6 +5936,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           {
             vectors: Array<{
               id:
+                | string
                 | string
                 | string
                 | string

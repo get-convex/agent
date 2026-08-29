@@ -39,6 +39,9 @@ export const sendMessageFromHumanAgent = internalMutation({
   handler: async (ctx, args) => {
     const { messageId } = await saveMessage(ctx, components.agent, {
       threadId: args.threadId,
+      // Start a new order so the reply renders separately from the previous
+      // agent turn instead of merging into its UI message.
+      order: "next",
       agentName: args.agentName,
       message: {
         role: "assistant",
