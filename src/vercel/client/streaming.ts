@@ -215,6 +215,7 @@ export class DeltaStreamer<T> {
   #nextParts: T[] = [];
   #latestWrite: number = 0;
   #ongoingWrite: Promise<void> | undefined;
+  #flushTimer: ReturnType<typeof setTimeout> | undefined;
   #abortPromise: Promise<void> | undefined;
   #cursor: number = 0;
   public abortController: AbortController;
@@ -324,6 +325,39 @@ export class DeltaStreamer<T> {
       Date.now() - this.#latestWrite >= this.config.throttleMs
     ) {
       this.#ongoingWrite = this.#sendDelta();
+    } else {
+      this.#scheduleFlush();
+    }
+  }
+
+  // The throttle is only reconsidered when the next part arrives, so a pause in
+  // the stream would otherwise hold whatever is buffered until it resumes.
+  #scheduleFlush() {
+    if (this.#flushTimer) {
+      return;
+    }
+    const wait = Math.max(
+      0,
+      this.config.throttleMs - (Date.now() - this.#latestWrite),
+    );
+    this.#flushTimer = setTimeout(() => {
+      this.#flushTimer = undefined;
+      if (
+        this.#ongoingWrite ||
+        this.#nextParts.length === 0 ||
+        this.#stoppedAccepting ||
+        this.abortController.signal.aborted
+      ) {
+        return;
+      }
+      this.#ongoingWrite = this.#sendDelta();
+    }, wait);
+  }
+
+  #cancelScheduledFlush() {
+    if (this.#flushTimer) {
+      clearTimeout(this.#flushTimer);
+      this.#flushTimer = undefined;
     }
   }
 
@@ -395,6 +429,7 @@ export class DeltaStreamer<T> {
    * transition is complete, and is authoritative once the stream is finished.
    */
   public async flushAndStopAccepting(): Promise<void> {
+    this.#cancelScheduledFlush();
     await this.#flushPendingParts();
     this.#stoppedAccepting = true;
   }
@@ -426,6 +461,7 @@ export class DeltaStreamer<T> {
   }
 
   async #sendDelta() {
+    this.#cancelScheduledFlush();
     if (this.abortController.signal.aborted) {
       return;
     }
@@ -501,6 +537,7 @@ export class DeltaStreamer<T> {
   }
 
   public async finish() {
+    this.#cancelScheduledFlush();
     if (!this.streamId) {
       return;
     }
@@ -545,6 +582,7 @@ export class DeltaStreamer<T> {
 
   #abort(reason: string, waitForOngoingWrite = true): Promise<void> {
     if (!this.#abortPromise) {
+      this.#cancelScheduledFlush();
       this.abortController.abort();
       this.#abortPromise = this.#abortCreatedStream(
         reason,

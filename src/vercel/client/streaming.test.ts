@@ -522,4 +522,77 @@ describe("DeltaStreamer", () => {
     expect((sent[0] as { parts: string[] }).parts).toEqual(["A"]);
   });
 
+
+  test("flushes on the throttle window without another addParts call", async () => {
+    vi.useFakeTimers();
+    try {
+      const sent: unknown[] = [];
+      const runMutation = vi
+        .fn()
+        .mockImplementationOnce(() => Promise.resolve("stream-1"))
+        .mockImplementation((_ref: unknown, args: unknown) => {
+          sent.push(args);
+          return Promise.resolve(true);
+        });
+      const streamer = new DeltaStreamer<string>(
+        components.agent,
+        { runMutation } as unknown as MutationCtx,
+        { ...defaultTestOptions, throttleMs: 50 },
+        { ...testMetadata, threadId },
+      );
+
+      // Settle the first write without moving the clock, so the next part
+      // lands inside the throttle window.
+      await streamer.addParts(["A"]);
+      await vi.advanceTimersByTimeAsync(0);
+      const settled = sent.length;
+
+      // B arrives inside the throttle window and nothing else follows it.
+      await streamer.addParts(["B"]);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(49);
+      expect(sent).toHaveLength(settled);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(sent).toHaveLength(settled + 1);
+      expect((sent.at(-1) as { parts: string[] }).parts).toEqual(["B"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("leaves no timer behind when the stream fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const sent: unknown[] = [];
+      const runMutation = vi
+        .fn()
+        .mockImplementationOnce(() => Promise.resolve("stream-1"))
+        .mockImplementation((_ref: unknown, args: unknown) => {
+          sent.push(args);
+          return Promise.resolve(true);
+        });
+      const streamer = new DeltaStreamer<string>(
+        components.agent,
+        { runMutation } as unknown as MutationCtx,
+        { ...defaultTestOptions, throttleMs: 50 },
+        { ...testMetadata, threadId },
+      );
+
+      await streamer.addParts(["A"]);
+      await vi.advanceTimersByTimeAsync(0);
+      await streamer.addParts(["B"]);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await streamer.fail("boom");
+      expect(vi.getTimerCount()).toBe(0);
+
+      const before = sent.length;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(sent).toHaveLength(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });
