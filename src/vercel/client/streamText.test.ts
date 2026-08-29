@@ -11,13 +11,27 @@ import {
 import { v } from "convex/values";
 import { components, initConvexTest } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
-import { runAbortCleanup } from "./streamText.js";
+import { runStreamCleanup } from "./streamText.js";
+import { errorToString } from "./utils.js";
 
 const schema = defineSchema({});
 type DataModel = DataModelFromSchemaDefinition<typeof schema>;
 const action = actionGeneric as ActionBuilder<DataModel, "public">;
 
 const FINAL_TEXT = "Hello from the model";
+const PROVIDER_FAILURE_TEXT = "Mock provider failure";
+const CLEANUP_FAILURE_TEXT = "finalizeMessage rejected";
+
+function hasKeys(
+  value: unknown,
+  keys: string[],
+): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    keys.every((key) => key in value)
+  );
+}
 
 const agent = new Agent(components.agent, {
   name: "stream-test",
@@ -31,6 +45,14 @@ const emptyAgent = new Agent(components.agent, {
   languageModel: mockModel({
     content: [],
     providerMetadata: { mock: { emptyResponse: true } },
+  }),
+});
+
+const failingAgent = new Agent(components.agent, {
+  name: "failing-stream-test",
+  languageModel: mockModel({
+    content: [{ type: "text", text: "partial response" }],
+    fail: { error: PROVIDER_FAILURE_TEXT },
   }),
 });
 
@@ -168,6 +190,43 @@ export const streamTextNoStorageImmediate = action({
   },
 });
 
+export const streamTextCleanupFailure = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    const providerErrors: string[] = [];
+    let aborts = 0;
+    const failingCtx = {
+      ...ctx,
+      runMutation: (async (reference, args) => {
+        if (hasKeys(args, ["messageId", "result"])) {
+          throw new Error(CLEANUP_FAILURE_TEXT);
+        }
+        return ctx.runMutation(reference, args);
+      }) as typeof ctx.runMutation,
+    };
+    let caught: string | undefined;
+    try {
+      await failingAgent.streamText(
+        failingCtx,
+        { threadId },
+        {
+          prompt: "Test",
+          onError: ({ error }) => {
+            providerErrors.push(errorToString(error));
+          },
+          onAbort: () => {
+            aborts += 1;
+          },
+        },
+        { saveStreamDeltas: { chunking: "word", throttleMs: 0 } },
+      );
+    } catch (error) {
+      caught = errorToString(error);
+    }
+    return { providerErrors, aborts, caught };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     streamTextReturnImmediately: typeof streamTextReturnImmediately;
@@ -177,6 +236,7 @@ const testApi: ApiFromModules<{
     streamTextNoStorageImmediate: typeof streamTextNoStorageImmediate;
     streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
     streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
+    streamTextCleanupFailure: typeof streamTextCleanupFailure;
   };
 }>["fns"] = anyApi["streamText.test"] as any;
 
@@ -228,27 +288,63 @@ describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () =
 });
 
 describe("streamText abort cleanup", () => {
-  test("attempts every cleanup and rethrows the first internal failure", async () => {
+  test("finishes durable cleanup before invoking onAbort", async () => {
     const calls: string[] = [];
-    const firstFailure = new Error("failed pending message cleanup");
+    let resolveStreamer!: () => void;
+    const syncFailure = new Error("synchronous pending message cleanup");
 
-    await expect(
-      runAbortCleanup({
-        failCall: async () => {
-          calls.push("call.fail");
-          throw firstFailure;
-        },
-        failStreamer: async () => {
+    const cleanup = runStreamCleanup({
+      failCall: () => {
+        calls.push("call.fail");
+        throw syncFailure;
+      },
+      failStreamer: () =>
+        new Promise<void>((resolve) => {
           calls.push("streamer.fail");
-          throw new Error("failed stream cleanup");
-        },
-        onAbort: () => {
-          calls.push("user.onAbort");
-        },
-      }),
-    ).rejects.toBe(firstFailure);
+          resolveStreamer = resolve;
+        }),
+      onAbort: () => {
+        calls.push("user.onAbort");
+      },
+    });
+
+    await Promise.resolve();
+    expect(calls).toEqual(["call.fail", "streamer.fail"]);
+    resolveStreamer();
+    await expect(cleanup).rejects.toBe(syncFailure);
 
     expect(calls).toEqual(["call.fail", "streamer.fail", "user.onAbort"]);
+  });
+
+  test("surfaces a cleanup failure without hiding the provider error", async () => {
+    const t = initConvexTest(schema);
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "u1" }),
+    );
+
+    const { providerErrors, aborts, caught } = await t.action(
+      testApi.streamTextCleanupFailure,
+      { threadId },
+    );
+
+    expect(providerErrors).toEqual([PROVIDER_FAILURE_TEXT]);
+    expect(aborts).toBe(0);
+    expect(caught).toBe(CLEANUP_FAILURE_TEXT);
+
+    const streaming = await t.run(async (ctx) =>
+      ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["streaming"],
+      }),
+    );
+    const aborted = await t.run(async (ctx) =>
+      ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["aborted"],
+      }),
+    );
+    expect(streaming).toHaveLength(0);
+    expect(aborted).toHaveLength(1);
   });
 });
 

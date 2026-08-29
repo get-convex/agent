@@ -5,10 +5,7 @@ import type { GenericSchema, SchemaDefinition } from "convex/server";
 import { streamText } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
-import {
-  compressUIMessageChunks,
-  DeltaStreamer,
-} from "./streaming.js";
+import { compressUIMessageChunks, DeltaStreamer } from "./streaming.js";
 import { getParts } from "../deltas.js";
 import type { TestConvex } from "convex-test";
 
@@ -200,10 +197,71 @@ describe("DeltaStreamer", () => {
       expect(streamer.abortController.signal.aborted).toBe(true);
       await streamer.addParts(["ignored"]);
       expect(streamer.streamId).toBeUndefined();
+      await expect(
+        streamer.getOrCreateStreamId({ ifAborted: "returnUndefined" }),
+      ).resolves.toBeUndefined();
       await expect(streamer.getOrCreateStreamId()).rejects.toThrow(
         "Cannot create a stream after it has been aborted",
       );
+      await expect(streamer.getStreamId()).rejects.toThrow(
+        "Cannot create a stream after it has been aborted",
+      );
     });
+  });
+
+  test("preserves the public throwing behavior after an existing stream aborts", async () => {
+    await t.run(async (ctx) => {
+      const streamer = new DeltaStreamer<string>(
+        components.agent,
+        ctx,
+        { ...defaultTestOptions },
+        { ...testMetadata, threadId },
+      );
+      const streamId = await streamer.getStreamId();
+
+      await streamer.fail("provider error");
+
+      expect(streamer.streamId).toBe(streamId);
+      await expect(streamer.getStreamId()).rejects.toThrow(
+        "Cannot create a stream after it has been aborted",
+      );
+      await expect(streamer.getOrCreateStreamId()).rejects.toThrow(
+        "Cannot create a stream after it has been aborted",
+      );
+      await expect(
+        streamer.getOrCreateStreamId({ ifAborted: "returnUndefined" }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  test("does not return an ID when abort wins during stream creation", async () => {
+    let resolveCreate!: (streamId: string) => void;
+    const creatingStream = new Promise<string>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const runMutation = vi
+      .fn()
+      .mockImplementationOnce(() => creatingStream)
+      .mockResolvedValueOnce(true);
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      { ...defaultTestOptions },
+      { ...testMetadata, threadId },
+    );
+
+    const getting = streamer.getOrCreateStreamId({
+      ifAborted: "returnUndefined",
+    });
+    const failing = streamer.fail("provider error");
+    resolveCreate("stream-1");
+
+    await failing;
+    await expect(getting).resolves.toBeUndefined();
+    expect(streamer.streamId).toBe("stream-1");
+    await expect(streamer.getStreamId()).rejects.toThrow(
+      "Cannot create a stream after it has been aborted",
+    );
   });
 
   test("shares signal and fail cleanup while stream creation is in flight", async () => {
@@ -293,10 +351,13 @@ describe("DeltaStreamer", () => {
   });
 
   test("aborts the component stream when a delta write fails", async () => {
+    const deltaFailure = {
+      error: { code: "provider_disconnected", message: "Provider dropped" },
+    };
     const runMutation = vi
       .fn()
       .mockResolvedValueOnce("stream-1")
-      .mockRejectedValueOnce(new Error("delta failed"))
+      .mockRejectedValueOnce(deltaFailure)
       .mockResolvedValueOnce(undefined);
     let abortReason: string | undefined;
     const streamer = new DeltaStreamer<string>(
@@ -314,11 +375,14 @@ describe("DeltaStreamer", () => {
     await streamer.addParts(["A"]);
     await streamer.finish();
 
-    expect(abortReason).toBe("delta failed");
+    expect(abortReason).toBe("provider_disconnected: Provider dropped");
     expect(runMutation).toHaveBeenNthCalledWith(
       3,
       components.agent.streams.abort,
-      { streamId: "stream-1", reason: "delta failed" },
+      {
+        streamId: "stream-1",
+        reason: "provider_disconnected: Provider dropped",
+      },
     );
   });
 
