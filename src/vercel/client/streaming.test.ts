@@ -492,4 +492,34 @@ describe("DeltaStreamer", () => {
     );
   });
   // TODO: test fetching partial stream data - syncStreams w/ cursors
+
+  test("does not drop a part parked in stream creation when the final step lands", async () => {
+    let resolveCreate!: (streamId: string) => void;
+    const creating = new Promise<string>((r) => (resolveCreate = r));
+    const sent: unknown[] = [];
+    const runMutation = vi
+      .fn()
+      .mockImplementationOnce(() => creating)
+      .mockImplementation((_ref: unknown, args: unknown) => {
+        sent.push(args);
+        return Promise.resolve(true);
+      });
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      { ...defaultTestOptions },
+      { ...testMetadata, threadId },
+    );
+
+    // A part arrives and parks in streams.create.
+    const adding = streamer.addParts(["A"]);
+    // The final step lands while creation is still in flight.
+    const finishing = streamer.flushAndStopAccepting();
+    resolveCreate("stream-1");
+    await Promise.all([adding, finishing]);
+
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as { parts: string[] }).parts).toEqual(["A"]);
+  });
+
 });
