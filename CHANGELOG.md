@@ -28,6 +28,17 @@
   would stop after a step where any tool call errored, even if the model
   had more work queued.
 
+- Add `listUIMessagesWithStreams` / `listMessagesWithStreams` helpers and
+  `vStreamUIMessagesReturnValue` / `vSyncStreamsReturnValue` / `vUIMessage`
+  validators so a from-scratch streaming chat query compiles without
+  reconstructing the paginated + streams return shape (fixes a TS2719 landmine
+  when combining `listUIMessages` with `returns: vStreamMessagesReturnValue`)
+- Accept queries with a `returns` validator (where `streams` is optional) in
+  the hooks' `stream: true` type guard (`StreamQuery`)
+- Document the compatible `ai`/`@ai-sdk/*` provider versions (AI SDK v7 pairs
+  with v4.x providers) and add a complete streaming chat quickstart to the
+  README
+
 ## 0.7.1
 
 - Persists oversized streamed files (#307)
