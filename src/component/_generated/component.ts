@@ -59,6 +59,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           mediaType?: string;
           mimeType?: string;
           storageId: string;
+          userId?: string;
         },
         { fileId: string; storageId: string },
         Name
@@ -77,10 +78,17 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Array<string>,
         Name
       >;
+      deleteFilesWithStorageIds: FunctionReference<
+        "mutation",
+        "internal",
+        { fileIds: Array<string>; force?: boolean },
+        { deletedFileIds: Array<string>; storageIdsToDelete: Array<string> },
+        Name
+      >;
       get: FunctionReference<
         "query",
         "internal",
-        { fileId: string },
+        { fileId: string; requireUserId?: string },
         null | {
           _creationTime: number;
           _id: string;
@@ -91,6 +99,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           mimeType?: string;
           refcount: number;
           storageId: string;
+          userId?: string;
         },
         Name
       >;
@@ -120,6 +129,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             mimeType?: string;
             refcount: number;
             storageId: string;
+            userId?: string;
           }>;
         },
         Name
@@ -127,7 +137,12 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       useExistingFile: FunctionReference<
         "mutation",
         "internal",
-        { filename?: string; hash: string; mediaType?: string },
+        {
+          filename?: string;
+          hash: string;
+          mediaType?: string;
+          userId?: string;
+        },
         null | { fileId: string; storageId: string },
         Name
       >;

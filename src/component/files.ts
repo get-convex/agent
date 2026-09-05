@@ -8,6 +8,7 @@ import type { Infer } from "convex/values";
 const FILE_CLEANUP_GRACE_MS = 24 * 60 * 60 * 1000;
 
 const addFileArgs = v.object({
+  userId: v.optional(v.string()),
   storageId: v.string(),
   hash: v.string(),
   filename: v.optional(v.string()),
@@ -32,18 +33,10 @@ export async function addFileHandler(
   // Support both mediaType (preferred) and mimeType (deprecated)
   const mediaType = normalizeMediaType(args.mediaType ?? args.mimeType);
 
-  const existingFiles = await ctx.db
-    .query("files")
-    .withIndex("hash", (q) => q.eq("hash", args.hash))
-    // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
-    .filter((q) => q.eq(q.field("filename"), args.filename))
-    .collect();
-  const existingFile = existingFiles.find((file) =>
-    sameMediaType(file, mediaType),
-  );
+  const existingFile = await findExistingFile(ctx, { ...args, mediaType });
   if (existingFile) {
-    // Registration is not ownership. Persisted messages and in-flight streams
-    // acquire ownership explicitly.
+    // Registration does not retain the file. Persisted messages and in-flight
+    // streams acquire retention references explicitly.
     await ctx.db.patch("files", existingFile._id, {
       lastTouchedAt: Date.now(),
     });
@@ -53,6 +46,7 @@ export async function addFileHandler(
     };
   }
   const fileId = await ctx.db.insert("files", {
+    userId: args.userId,
     storageId: args.storageId,
     hash: args.hash,
     filename: args.filename,
@@ -71,35 +65,37 @@ export async function addFileHandler(
 export const get = query({
   args: {
     fileId: v.id("files"),
+    // The parent app authenticates the caller before supplying this identifier.
+    requireUserId: v.optional(v.string()),
   },
   returns: v.union(v.null(), v.doc("files")),
   handler: async (ctx, args) => {
-    return ctx.db.get("files", args.fileId);
+    const file = await ctx.db.get("files", args.fileId);
+    if (
+      args.requireUserId !== undefined &&
+      file?.userId !== args.requireUserId
+    ) {
+      return null;
+    }
+    return file;
   },
 });
 
 /**
  * If you plan to have the same file added over and over without a reference to
  * the fileId, you can use this query to get the fileId of the existing file.
- * Note: this will not increment the refcount. only saving messages does that.
- * It will only match if the filename is the same (or both are undefined).
+ * This does not increment refcount; messages and streams retain files explicitly.
+ * It will only match within the same user scope and filename (including unset).
  */
 export const useExistingFile = mutation({
   args: {
+    userId: v.optional(v.string()),
     hash: v.string(),
     filename: v.optional(v.string()),
     mediaType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const files = await ctx.db
-      .query("files")
-      .withIndex("hash", (q) => q.eq("hash", args.hash))
-      // eslint-disable-next-line @convex-dev/no-filter-in-query -- We do not expect many files with the same hash and different filenames
-      .filter((q) => q.eq(q.field("filename"), args.filename))
-      .collect();
-    const file = files.find((candidate) =>
-      sameMediaType(candidate, normalizeMediaType(args.mediaType)),
-    );
+    const file = await findExistingFile(ctx, args);
     if (!file) {
       return null;
     }
@@ -117,6 +113,30 @@ export const useExistingFile = mutation({
   ),
 });
 
+async function findExistingFile(
+  ctx: MutationCtx,
+  args: {
+    userId?: string;
+    hash: string;
+    filename?: string;
+    mediaType?: string;
+  },
+) {
+  const expected = normalizeMediaType(args.mediaType);
+  const candidates = ctx.db
+    .query("files")
+    .withIndex("userId_hash_filename", (q) =>
+      q
+        .eq("userId", args.userId)
+        .eq("hash", args.hash)
+        .eq("filename", args.filename),
+    );
+  for await (const candidate of candidates) {
+    if (sameMediaType(candidate, expected)) return candidate;
+  }
+  return null;
+}
+
 function normalizeMediaType(value: string | undefined) {
   const normalized = value?.trim().toLowerCase();
   return normalized || undefined;
@@ -132,7 +152,7 @@ function sameMediaType(
   return expected === undefined || actual === undefined || actual === expected;
 }
 
-/** Transfer ownership between two durable records. */
+/** Transfer retention references between two durable records. */
 export async function changeRefcount(
   ctx: MutationCtx,
   previous: Id<"files">[],
@@ -184,7 +204,7 @@ export async function copyFileHandler(
  * Get files that are unused and can be deleted.
  * This is useful for cleaning up files that are no longer needed.
  * Files remain protected for 24 hours after registration or their last
- * ownership change, so a file cannot be removed between registration and the
+ * reference change, so a file cannot be removed between registration and the
  * transaction that saves its message or stream reference.
  */
 export const getFilesToDelete = query({
@@ -209,39 +229,78 @@ export const getFilesToDelete = query({
   }),
 });
 
+const deleteFilesArgs = {
+  fileIds: v.array(v.id("files")),
+  force: v.optional(v.boolean()),
+};
+
+/** Delete file records. Use deleteFilesWithStorageIds when also deleting blobs. */
 export const deleteFiles = mutation({
-  args: {
-    fileIds: v.array(v.id("files")),
-    force: v.optional(v.boolean()),
-  },
+  args: deleteFilesArgs,
   returns: v.array(v.id("files")),
   handler: async (ctx, args) => {
-    const deletedFileIds = await Promise.all(
-      args.fileIds.map(async (fileId) => {
-        const file = await ctx.db.get("files", fileId);
-        if (!file) {
-          console.error(`File ${fileId} not found when deleting, skipping...`);
-          return null;
-        }
-        if (file.refcount && file.refcount > 0) {
-          if (!args.force) {
-            console.error(
-              `File ${fileId} has refcount ${file.refcount} > 0, skipping...`,
-            );
-            return null;
-          }
-        }
-        if (
-          !args.force &&
-          file.lastTouchedAt > Date.now() - FILE_CLEANUP_GRACE_MS
-        ) {
-          console.error(`File ${fileId} is still within the cleanup grace period, skipping...`);
-          return null;
-        }
-        await ctx.db.delete("files", fileId);
-        return fileId;
-      }),
-    );
-    return deletedFileIds.filter((fileId) => fileId !== null);
+    const deleted = await deleteFileRecords(ctx, args);
+    return deleted.map((file) => file._id);
   },
 });
+
+/**
+ * Delete eligible records and return blobs with no remaining file references.
+ * Call from a parent-app mutation and delete the returned storage IDs in that
+ * same mutation, so record and blob deletion commit or roll back together.
+ * This is a trusted maintenance operation, not an end-user deletion API.
+ */
+export const deleteFilesWithStorageIds = mutation({
+  args: deleteFilesArgs,
+  returns: v.object({
+    deletedFileIds: v.array(v.id("files")),
+    storageIdsToDelete: v.array(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const deleted = await deleteFileRecords(ctx, args);
+    const storageIdsToDelete: string[] = [];
+    for (const storageId of new Set(deleted.map((file) => file.storageId))) {
+      const remaining = await ctx.db
+        .query("files")
+        .withIndex("storageId", (q) => q.eq("storageId", storageId))
+        .first();
+      if (!remaining) storageIdsToDelete.push(storageId);
+    }
+    return {
+      deletedFileIds: deleted.map((file) => file._id),
+      storageIdsToDelete,
+    };
+  },
+});
+
+async function deleteFileRecords(
+  ctx: MutationCtx,
+  args: { fileIds: Id<"files">[]; force?: boolean },
+) {
+  const deleted: Doc<"files">[] = [];
+  for (const fileId of new Set(args.fileIds)) {
+    const file = await ctx.db.get("files", fileId);
+    if (!file) {
+      console.error(`File ${fileId} not found when deleting, skipping...`);
+      continue;
+    }
+    if (!args.force && file.refcount > 0) {
+      console.error(
+        `File ${fileId} has refcount ${file.refcount} > 0, skipping...`,
+      );
+      continue;
+    }
+    if (
+      !args.force &&
+      file.lastTouchedAt > Date.now() - FILE_CLEANUP_GRACE_MS
+    ) {
+      console.error(
+        `File ${fileId} is still within the cleanup grace period, skipping...`,
+      );
+      continue;
+    }
+    await ctx.db.delete("files", fileId);
+    deleted.push(file);
+  }
+  return deleted;
+}

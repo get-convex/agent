@@ -153,7 +153,7 @@ export async function streamText<
             onAsyncAbort: call.fail,
             compress: compressUIMessageChunks,
             materialize: (parts) =>
-              materializeUIMessageChunkFiles(ctx, component, parts),
+              materializeUIMessageChunkFiles(ctx, component, parts, { userId }),
             abortSignal: args.abortSignal,
           },
           {
