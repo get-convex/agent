@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add optional file ownership (#264): `storeFile` accepts `userId`,
+  deduplication is scoped to that user, and `getFile` accepts
+  `{ requireUserId }` to reject other users' and ownerless files before
+  returning storage URLs. Automatic file saving carries the message/generation
+  user through streaming and finalization. Existing unchecked calls remain
+  supported; legacy rows are not backfilled.
+- Add `files.deleteFilesWithStorageIds` for cleanup that preserves blobs shared
+  by multiple file records. Call it and delete its returned blobs in one app
+  mutation; update custom vacuum jobs accordingly.
+- Offload oversized base64/data-URL and reasoning files during message
+  serialization so SDK responses retain their streamed file references.
+
 - Preserve classified provider errors when streamed responses fail, including
   aborts racing late message writes (#320). `DeltaStreamer.getOrCreateStreamId`
   now accepts `{ ifAborted: "returnUndefined" }` for abort-aware writes; its

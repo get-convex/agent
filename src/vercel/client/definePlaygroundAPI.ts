@@ -28,6 +28,7 @@ import {
   isTool,
 } from "../../shared.js";
 import { serializeResponseMessages, toModelMessage } from "../mapping.js";
+import { resolveFileUserId } from "./files.js";
 import type { Agent } from "../index.js";
 import { listMessages as listMessages_ } from "./messages.js";
 import { syncStreams, vStreamMessagesReturnValue } from "./streaming.js";
@@ -271,6 +272,10 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
       const namedAgent = agents.find(({ name }) => name === agentName);
       if (!namedAgent) throw new Error(`Unknown agent: ${agentName}`);
       const { agent } = namedAgent;
+      const fileUserId = await resolveFileUserId(ctx, component, {
+        userId,
+        threadId,
+      });
       const { text, steps } = await agent.streamText(
         ctx,
         { threadId, userId },
@@ -292,6 +297,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
             provider: getProviderName(agent.options.languageModel),
           },
           step.response.messages,
+          { userId: fileUserId },
         );
         outputMessages.push(
           messages.map((messageWithMetadata, i) => {

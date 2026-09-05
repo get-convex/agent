@@ -45,6 +45,7 @@ export const uploadFile = action({
       components.agent,
       new Blob([args.bytes], { type: args.mimeType }),
       {
+        userId,
         filename: args.filename,
         sha256: args.sha256,
       },
@@ -69,6 +70,7 @@ export const submitFileQuestion = mutation({
       ctx,
       components.agent,
       args.fileId,
+      { requireUserId: userId },
     );
     const { messageId } = await saveMessage(ctx, components.agent, {
       threadId,

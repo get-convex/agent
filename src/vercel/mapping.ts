@@ -44,7 +44,10 @@ import {
 import type { ActionCtx, AgentComponent } from "./client/types.js";
 import type { MutationCtx } from "./client/types.js";
 import { MAX_FILE_SIZE, storeFile } from "./client/files.js";
-import { materializeCanonicalToolResultContentFiles } from "./fileMaterialization.js";
+import {
+  decodeInlineFileData,
+  materializeCanonicalToolResultContentFiles,
+} from "./fileMaterialization.js";
 import type { Infer } from "convex/values";
 import {
   convertUint8ArrayToBase64,
@@ -82,11 +85,13 @@ export async function serializeMessage(
   ctx: ActionCtx | MutationCtx,
   component: AgentComponent,
   message: ModelMessage | Message,
+  options: { userId?: string } = {},
 ): Promise<{ message: SerializedMessage; fileIds?: string[] }> {
   const { content, fileIds } = await serializeContent(
     ctx,
     component,
     message.content,
+    options,
   );
   return {
     message: {
@@ -290,8 +295,16 @@ export async function serializeResponseMessages<TOOLS extends ToolSet>(
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
   responseMessages: ModelMessage[],
+  options: { userId?: string } = {},
 ): Promise<{ messages: MessageWithMetadata[] }> {
-  return serializeStepMessages(ctx, component, step, model, responseMessages);
+  return serializeStepMessages(
+    ctx,
+    component,
+    step,
+    model,
+    responseMessages,
+    options,
+  );
 }
 
 async function serializeStepMessages<TOOLS extends ToolSet>(
@@ -300,6 +313,7 @@ async function serializeStepMessages<TOOLS extends ToolSet>(
   step: StepResult<TOOLS>,
   model: ModelOrMetadata | undefined,
   messagesToSerialize: ModelMessage[],
+  options: { userId?: string },
 ): Promise<{ messages: MessageWithMetadata[] }> {
   // If there are tool results, there's another message with the tool results
   // ref: https://github.com/vercel/ai/blob/main/packages/ai/src/generate-text/to-response-messages.ts#L120
@@ -323,7 +337,12 @@ async function serializeStepMessages<TOOLS extends ToolSet>(
 
   const messages: MessageWithMetadata[] = await Promise.all(
     messagesToSerialize.map(async (msg): Promise<MessageWithMetadata> => {
-      const { message, fileIds } = await serializeMessage(ctx, component, msg);
+      const { message, fileIds } = await serializeMessage(
+        ctx,
+        component,
+        msg,
+        options,
+      );
       return parse(vMessageWithMetadata, {
         message,
         ...(message.role === "tool" ? toolFields : assistantFields),
@@ -378,6 +397,7 @@ export async function serializeContent(
   ctx: ActionCtx | MutationCtx,
   component: AgentComponent,
   content: Content | Message["content"],
+  options: { userId?: string } = {},
 ): Promise<{ content: SerializedContent; fileIds?: string[] }> {
   if (typeof content === "string") {
     return { content };
@@ -404,9 +424,10 @@ export async function serializeContent(
           } satisfies Infer<typeof vTextPart>;
         }
         case "image": {
-          let image =
+          let image = inlineFileDataForStorage(
             toStoredProviderReference(part.image) ??
-            serializeDataOrUrl(part.image);
+              serializeDataOrUrl(part.image),
+          );
           if (
             image instanceof ArrayBuffer &&
             image.byteLength > MAX_FILE_SIZE
@@ -417,6 +438,7 @@ export async function serializeContent(
               new Blob([image], {
                 type: getMimeOrMediaType(part) || guessMimeType(image),
               }),
+              options,
             );
             image = file.url;
             fileIds.push(file.fileId);
@@ -429,14 +451,16 @@ export async function serializeContent(
           } satisfies Infer<typeof vImagePart>;
         }
         case "file": {
-          let data =
+          let data = inlineFileDataForStorage(
             toStoredProviderReference(part.data) ??
-            serializeDataOrUrl(part.data);
+              serializeDataOrUrl(part.data),
+          );
           if (data instanceof ArrayBuffer && data.byteLength > MAX_FILE_SIZE) {
             const { file } = await storeFile(
               ctx,
               component,
               new Blob([data], { type: getMimeOrMediaType(part) }),
+              options,
             );
             data = file.url;
             fileIds.push(file.fileId);
@@ -475,6 +499,7 @@ export async function serializeContent(
             ctx,
             component,
             output,
+            options,
           );
           fileIds.push(...materialized.fileRefs.map((ref) => ref.fileId));
           return serializeToolResult(
@@ -494,9 +519,26 @@ export async function serializeContent(
           } satisfies Infer<typeof vReasoningPart>;
         }
         case "reasoning-file": {
+          let fileData = serializeReasoningFile(part);
+          if (fileData.data !== undefined) {
+            fileData = { data: inlineFileDataForStorage(fileData.data) };
+          }
+          if (
+            fileData.data instanceof ArrayBuffer &&
+            fileData.data.byteLength > MAX_FILE_SIZE
+          ) {
+            const { file } = await storeFile(
+              ctx,
+              component,
+              new Blob([fileData.data], { type: part.mediaType }),
+              options,
+            );
+            fileData = { url: file.url };
+            fileIds.push(file.fileId);
+          }
           return {
             type: part.type,
-            ...serializeReasoningFile(part),
+            ...fileData,
             mediaType: part.mediaType,
             ...metadata,
           } satisfies Infer<typeof vReasoningFilePart>;
@@ -548,6 +590,17 @@ export async function serializeContent(
     content: serialized.filter((p) => p !== null) as SerializedContent,
     fileIds: fileIds.length > 0 ? fileIds : undefined,
   };
+}
+
+/** SDK responses can turn binary files into base64; retain small inline values. */
+function inlineFileDataForStorage<T>(value: T): T | ArrayBuffer {
+  if (typeof value !== "string") return value;
+  const bytes = decodeInlineFileData(value);
+  if (!bytes || bytes.byteLength <= MAX_FILE_SIZE) return value;
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
 }
 
 export function fromModelMessageContent(content: Content): Message["content"] {

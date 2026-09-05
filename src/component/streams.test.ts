@@ -17,6 +17,7 @@ async function seedStream(t: ReturnType<typeof initConvexTest>) {
     format: "UIMessageChunk",
   });
   const { fileId } = await t.mutation(api.files.addFile, {
+    userId: "stream-files",
     storageId: "stream-storage",
     hash: "stream-hash",
     filename: "stream.txt",
@@ -38,6 +39,7 @@ describe("streams", () => {
       fileRefs: [{ url, fileId }],
     });
     await expect(t.query(api.files.get, { fileId })).resolves.toMatchObject({
+      userId: "stream-files",
       refcount: 1,
     });
 
@@ -100,6 +102,7 @@ describe("streams", () => {
     await expect(t.query(api.files.get, { fileId })).resolves.toMatchObject({
       refcount: 1,
     });
+    await expect(t.query(api.files.get, { fileId, requireUserId: "stream-files" })).resolves.toMatchObject({ refcount: 1 });
     const stream = await t.run((ctx) =>
       ctx.db.get("streamingMessages", streamId),
     );

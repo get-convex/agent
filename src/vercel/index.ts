@@ -57,6 +57,7 @@ import {
   serializeObjectResult,
 } from "./mapping.js";
 import { getModelName, getProviderName } from "../shared.js";
+import { resolveFileUserId } from "./client/files.js";
 import {
   vMessageEmbeddings,
   vMessageWithMetadata,
@@ -553,7 +554,9 @@ export class Agent<
             {
               step,
               responseMessages: [
-                ...(initialResponseMessagesSaved ? [] : initialResponseMessages),
+                ...(initialResponseMessagesSaved
+                  ? []
+                  : initialResponseMessages),
                 ...step.response.messages,
               ],
             },
@@ -1301,6 +1304,7 @@ export class Agent<
       provider?: string;
     },
   ): Promise<{ messages: MessageDoc[] }> {
+    const userId = await resolveFileUserId(ctx, this.component, args);
     const { messages } = await serializeResponseMessages(
       ctx,
       this.component,
@@ -1312,14 +1316,15 @@ export class Agent<
       args.step.response.messages.length > 0
         ? args.step.response.messages
         : [{ role: "assistant", content: [] }],
+      { userId },
     );
     const embeddings = await this.generateEmbeddings(
       ctx,
-      { userId: args.userId, threadId: args.threadId },
+      { userId, threadId: args.threadId },
       messages.map((m) => m.message),
     );
     return ctx.runMutation(this.component.messages.addMessages, {
-      userId: args.userId,
+      userId,
       threadId: args.threadId,
       agentName: this.options.name,
       promptMessageId: args.promptMessageId,
@@ -1432,10 +1437,19 @@ export class Agent<
       };
     },
   ): Promise<void> {
+    const [existing] = await ctx.runQuery(
+      this.component.messages.getMessagesByIds,
+      {
+        messageIds: [args.messageId],
+      },
+    );
+    assert(existing, `Message ${args.messageId} not found`);
+    const userId = await resolveFileUserId(ctx, this.component, existing);
     const { message, fileIds } = await serializeMessage(
       ctx,
       this.component,
       args.patch.message,
+      { userId },
     );
     await ctx.runMutation(this.component.messages.updateMessage, {
       messageId: args.messageId,
