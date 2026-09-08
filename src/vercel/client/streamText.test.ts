@@ -394,17 +394,34 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
 
     const parts = deltas.flatMap((d) => d.parts);
     const types = parts.map((p) => p.type);
-    expect(types.at(0)).toBe("start");
-    expect(types).toContain("text-start");
-    expect(types).toContain("text-end");
-    // The stream-level "finish" chunk is emitted after the last step ends, so
-    // it cannot exist yet; the row's finished status carries that instead.
-    expect(types.at(-1)).toBe("finish-step");
-    expect(types).not.toContain("finish");
+    // Admission closes when the final step lands, so the persisted prefix ends
+    // at the last chunk handed over before that: both finish chunks are
+    // emitted after it. The row's finished status and the saved message carry
+    // the end of the generation instead.
+    expect(types).toEqual([
+      "start",
+      "start-step",
+      "text-start",
+      "text-delta",
+      "text-end",
+    ]);
     expect(
       parts
         .filter((p) => p.type === "text-delta")
         .map((p) => (p as { delta?: string }).delta ?? "")
+        .join(""),
+    ).toBe(FINAL_TEXT);
+
+    const messages = await t.run(async (ctx) =>
+      agent.listMessages(ctx, {
+        threadId,
+        paginationOpts: { cursor: null, numItems: 50 },
+      }),
+    );
+    expect(
+      messages.page
+        .filter((m) => m.message?.role === "assistant")
+        .map((m) => m.text)
         .join(""),
     ).toBe(FINAL_TEXT);
   });

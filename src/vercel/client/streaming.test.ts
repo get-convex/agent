@@ -522,4 +522,116 @@ describe("DeltaStreamer", () => {
     expect((sent[0] as { parts: string[] }).parts).toEqual(["A"]);
   });
 
+  test("does not buffer a part that arrives once shutdown has started", async () => {
+    const sent: string[] = [];
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce("stream-1")
+      .mockImplementation((_ref: unknown, args: { parts: string[] }) => {
+        sent.push(...args.parts);
+        return Promise.resolve(true);
+      });
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      { ...defaultTestOptions, finishHandledExternally: true },
+      { ...testMetadata, threadId },
+    );
+    await streamer.getStreamId();
+
+    const stopping = streamer.flushAndStopAccepting();
+    let adding: Promise<void> | undefined;
+    queueMicrotask(() => {
+      adding = streamer.addParts(["late"]);
+    });
+    await stopping;
+    await adding;
+
+    expect(sent).toEqual([]);
+    // The part must not be sitting in the buffer waiting for end-of-stream
+    // either: that write would land on an already finished row.
+    await streamer.consumeStream({
+      async *[Symbol.asyncIterator]() {},
+    } as unknown as Parameters<typeof streamer.consumeStream>[0]);
+    expect(sent).toEqual([]);
+  });
+
+  test("shutdown waits for the active write and the tail it buffered", async () => {
+    const sent: string[][] = [];
+    const releases: (() => void)[] = [];
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce("stream-1")
+      .mockImplementation((_ref: unknown, args: { parts: string[] }) => {
+        sent.push(args.parts);
+        return new Promise<boolean>((resolve) =>
+          releases.push(() => resolve(true)),
+        );
+      });
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      { ...defaultTestOptions, finishHandledExternally: true },
+      { ...testMetadata, threadId },
+    );
+
+    await streamer.addParts(["first"]);
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    await streamer.addParts(["tail"]);
+    let stopped = false;
+    const stopping = streamer.flushAndStopAccepting().then(() => {
+      stopped = true;
+    });
+    await streamer.addParts(["late"]);
+
+    expect(stopped).toBe(false);
+    releases[0]();
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    expect(stopped).toBe(false);
+    expect(sent).toEqual([["first"], ["tail"]]);
+
+    releases[1]();
+    await stopping;
+    await streamer.consumeStream({
+      async *[Symbol.asyncIterator]() {
+        yield "after";
+      },
+    } as unknown as Parameters<typeof streamer.consumeStream>[0]);
+    expect(sent).toEqual([["first"], ["tail"]]);
+  });
+
+  test("aborts the generation when a write is refused during shutdown", async () => {
+    let refuse!: () => void;
+    const writing = new Promise<boolean>((resolve) => {
+      refuse = () => resolve(false);
+    });
+    const onAsyncAbort = vi.fn().mockResolvedValue(undefined);
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce("stream-1")
+      .mockReturnValueOnce(writing)
+      .mockResolvedValue(undefined);
+    const streamer = new DeltaStreamer<string>(
+      components.agent,
+      { runMutation } as unknown as MutationCtx,
+      { ...defaultTestOptions, onAsyncAbort, finishHandledExternally: true },
+      { ...testMetadata, threadId },
+    );
+
+    await streamer.addParts(["accepted"]);
+    await vi.waitFor(() => expect(runMutation).toHaveBeenCalledTimes(2));
+    const stopping = streamer.flushAndStopAccepting();
+    refuse();
+    await stopping;
+
+    expect(onAsyncAbort).toHaveBeenCalledWith("async abort");
+    expect(streamer.abortController.signal.aborted).toBe(true);
+    await expect(
+      streamer.getOrCreateStreamId({ ifAborted: "returnUndefined" }),
+    ).resolves.toBeUndefined();
+    expect(runMutation).toHaveBeenLastCalledWith(
+      components.agent.streams.abort,
+      { streamId: "stream-1", reason: "async abort" },
+    );
+  });
 });
