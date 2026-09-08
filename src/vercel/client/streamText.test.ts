@@ -264,6 +264,24 @@ export const streamTextAbortedMidStream = action({
   },
 });
 
+// An empty generation on the awaited path with nothing stored: no part ever
+// reaches the streamer, so no row exists when consumption ends.
+export const streamTextEmptyNoStorageAwaited = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    await emptyAgent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      {
+        saveStreamDeltas: { chunking: "word", throttleMs: 0 },
+        storageOptions: { saveMessages: "none" },
+      },
+    );
+    return { ok: true };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     streamTextReturnImmediately: typeof streamTextReturnImmediately;
@@ -272,6 +290,7 @@ const testApi: ApiFromModules<{
     streamTextAbortedMidStream: typeof streamTextAbortedMidStream;
     streamTextNoStorage: typeof streamTextNoStorage;
     streamTextNoStorageImmediate: typeof streamTextNoStorageImmediate;
+    streamTextEmptyNoStorageAwaited: typeof streamTextEmptyNoStorageAwaited;
     streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
     streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
     streamTextCleanupFailure: typeof streamTextCleanupFailure;
@@ -596,6 +615,24 @@ describe("stream finish ownership without message storage", () => {
       }),
     );
     expect(streams.map((s) => s.status)).toEqual(["finished"]);
+  });
+
+  test("leaves no row behind when the generation produces nothing", async () => {
+    const t = initConvexTest(schema);
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "u1" }),
+    );
+
+    await t.action(testApi.streamTextEmptyNoStorageAwaited, { threadId });
+    await t.finishAllScheduledFunctions(() => {});
+
+    const streams = await t.run(async (ctx) =>
+      ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    );
+    expect(streams.filter((s) => s.status === "streaming")).toEqual([]);
   });
 
   test("the row still terminates on the returnImmediately path", async () => {
