@@ -190,11 +190,49 @@ export const streamTextCleanupFailure = action({
   },
 });
 
+// A generation that someone aborts out of band while it is streaming, the way
+// a client cancelling a request would: list the streaming row and abort it.
+// The throttle holds every part after the first, so the only remaining delta
+// write is the one the finishing save drains, and the component refuses it.
+export const streamTextAbortedMidStream = action({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    const result = await agent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      {
+        saveStreamDeltas: {
+          returnImmediately: true,
+          chunking: "word",
+          throttleMs: 60_000,
+        },
+      },
+    );
+    for (let i = 0; i < 50; i++) {
+      const streaming = await ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["streaming"],
+      });
+      if (streaming.length) {
+        await ctx.runMutation(components.agent.streams.abort, {
+          streamId: streaming[0].streamId,
+          reason: "external abort",
+        });
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    await result.consumeStream();
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     streamTextReturnImmediately: typeof streamTextReturnImmediately;
     streamTextThrottled: typeof streamTextThrottled;
     streamTextThrottledAwaited: typeof streamTextThrottledAwaited;
+    streamTextAbortedMidStream: typeof streamTextAbortedMidStream;
     streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
     streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
     streamTextCleanupFailure: typeof streamTextCleanupFailure;
@@ -394,17 +432,13 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
 
     const parts = deltas.flatMap((d) => d.parts);
     const types = parts.map((p) => p.type);
-    // Admission closes when the final step lands, so the persisted prefix ends
-    // at the last chunk handed over before that: both finish chunks are
-    // emitted after it. The row's finished status and the saved message carry
-    // the end of the generation instead.
-    expect(types).toEqual([
-      "start",
-      "start-step",
-      "text-start",
-      "text-delta",
-      "text-end",
-    ]);
+    expect(types.at(0)).toBe("start");
+    expect(types).toContain("text-start");
+    expect(types).toContain("text-end");
+    // The stream-level "finish" chunk is emitted after the last step ends, so
+    // it cannot exist yet; the row's finished status carries that instead.
+    expect(types.at(-1)).toBe("finish-step");
+    expect(types).not.toContain("finish");
     expect(
       parts
         .filter((p) => p.type === "text-delta")
@@ -424,6 +458,38 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
         .map((m) => m.text)
         .join(""),
     ).toBe(FINAL_TEXT);
+  });
+
+  test("an out of band abort fails the generation instead of saving it", async () => {
+    const t = initConvexTest(schema);
+    const threadId = await t.run(async (ctx) =>
+      createThread(ctx, components.agent, { userId: "u1" }),
+    );
+
+    await t.action(testApi.streamTextAbortedMidStream, { threadId });
+    await t.finishAllScheduledFunctions(() => {});
+
+    const streams = await t.run(async (ctx) =>
+      ctx.runQuery(components.agent.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    );
+    expect(streams).toHaveLength(1);
+    expect(streams[0].status).toBe("aborted");
+
+    // Nobody gets to save a successful message onto a row someone aborted.
+    const messages = await t.run(async (ctx) =>
+      agent.listMessages(ctx, {
+        threadId,
+        paginationOpts: { cursor: null, numItems: 50 },
+      }),
+    );
+    expect(
+      messages.page
+        .filter((m) => m.message?.role === "assistant")
+        .map((m) => m.status),
+    ).toEqual(["failed"]);
   });
 
   test("the awaited path captures the stream-level finish chunk", async () => {

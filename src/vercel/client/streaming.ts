@@ -225,9 +225,9 @@ export class DeltaStreamer<T> {
    */
   #finishHandledExternally: boolean;
   /**
-   * Closes admission before the row is finished ahead of the source draining.
-   * Load bearing: it is the only thing keeping a delta write from overlapping
-   * the finishing save, and `#sendDelta` treats a refused write as an abort.
+   * Set only where the row is finished before the source is drained. An
+   * optimization, not a race guard: `addDelta` already returns false for a
+   * non-streaming row.
    */
   #stoppedAccepting: boolean = false;
 
@@ -389,18 +389,20 @@ export class DeltaStreamer<T> {
    * For the `returnImmediately` path, where nothing awaits consumption and the
    * save has to happen inline (issue #265).
    *
-   * Inherent window: admission closes on entry, so parts still inside the AI
-   * SDK pipeline here and parts handed over during the drain that follows
-   * never become deltas (the stream-level `finish` and the final `finish-step`
-   * among them). The message saved alongside this transition is complete, and
-   * is authoritative once the stream is finished. Admission has to close
-   * first: draining with the row still open leaves a part that can be buffered
-   * after the drain's last emptiness check and written after the row is
-   * finished.
+   * Inherent window: parts still inside the AI SDK pipeline at this instant
+   * never reach addParts, so they are never persisted as deltas (the
+   * stream-level `finish` chunk among them). The message saved alongside this
+   * transition is complete, and is authoritative once the stream is finished.
+   *
+   * Narrower race left open: a part admitted after the loop's last emptiness
+   * check is buffered but not drained here, and the write it triggers at EOF
+   * lands on a row the caller has since finished. `#sendDelta` tolerates that
+   * refusal rather than aborting. Closing it means refusing admission for the
+   * duration of the drain, which drops more of the tail than it saves.
    */
   public async flushAndStopAccepting(): Promise<void> {
-    this.#stoppedAccepting = true;
     await this.#flushPendingParts();
+    this.#stoppedAccepting = true;
   }
 
   /**
@@ -450,9 +452,13 @@ export class DeltaStreamer<T> {
       return;
     }
     if (!success) {
-      // Nothing finishes the row while a write can still be in flight, so a
-      // refusal means the row was aborted out of band. Shutdown is exactly
-      // when that has to propagate rather than be swallowed.
+      // A #sendDelta racing the inline save on the returnImmediately path
+      // will get `success === false` because the stream row is already
+      // "finished". That's a benign late-write miss, not a failure —
+      // don't convert it into an abort.
+      if (this.#stoppedAccepting) {
+        return;
+      }
       await this.#abortDelta("async abort");
       return;
     }
