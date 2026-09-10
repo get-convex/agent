@@ -9,9 +9,11 @@ import {
   anyApi,
 } from "convex/server";
 import { v } from "convex/values";
+import type { LanguageModelV4Source } from "@ai-sdk/provider";
 import { components, initConvexTest } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
 import { runStreamCleanup } from "./streamText.js";
+import type { StreamingOptions } from "./streaming.js";
 import { errorToString } from "./utils.js";
 
 const schema = defineSchema({});
@@ -56,6 +58,31 @@ const failingAgent = new Agent(components.agent, {
   }),
 });
 
+const sourceParts: LanguageModelV4Source[] = [
+  {
+    type: "source",
+    sourceType: "url",
+    id: "source-url-1",
+    url: "https://example.com/reference",
+    title: "Reference",
+  },
+  {
+    type: "source",
+    sourceType: "document",
+    id: "source-document-1",
+    mediaType: "application/pdf",
+    title: "Document",
+    filename: "document.pdf",
+  },
+];
+
+const sourceAgent = new Agent(components.agent, {
+  name: "source-stream-test",
+  languageModel: mockModel({
+    content: [{ type: "text", text: FINAL_TEXT }, ...sourceParts],
+  }),
+});
+
 // Action that exercises streamText with saveStreamDeltas.returnImmediately=true.
 // It consumes the stream after streamText returns, simulating the HTTP response
 // path described in issue #265.
@@ -77,7 +104,6 @@ export const streamTextReturnImmediately = action({
     // Drain the stream the way an HTTP response would. This triggers
     // onStepFinish for every step, including the final one.
     await result.consumeStream();
-    return { ok: true };
   },
 });
 
@@ -282,6 +308,26 @@ export const streamTextEmptyNoStorageAwaited = action({
   },
 });
 
+export const streamTextWithSources = action({
+  args: { threadId: v.string(), sendSources: v.optional(v.boolean()) },
+  handler: async (ctx, { threadId, sendSources }) => {
+    const saveStreamDeltas: StreamingOptions = {
+      chunking: "word",
+      throttleMs: 0,
+    };
+    if (sendSources !== undefined) {
+      saveStreamDeltas.sendSources = sendSources;
+    }
+    await sourceAgent.streamText(
+      ctx,
+      { threadId },
+      { prompt: "Test" },
+      { saveStreamDeltas },
+    );
+    return { ok: true };
+  },
+});
+
 const testApi: ApiFromModules<{
   fns: {
     streamTextReturnImmediately: typeof streamTextReturnImmediately;
@@ -294,8 +340,89 @@ const testApi: ApiFromModules<{
     streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
     streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
     streamTextCleanupFailure: typeof streamTextCleanupFailure;
+    streamTextWithSources: typeof streamTextWithSources;
   };
 }>["fns"] = anyApi["streamText.test"] as any;
+
+describe("streamText source visibility", () => {
+  test.each([
+    { name: "omitted", sendSources: undefined },
+    { name: "enabled", sendSources: true },
+  ])(
+    "keeps awaited deltas healthy with sources $name",
+    async ({ sendSources }) => {
+      const t = initConvexTest(schema);
+      const threadId = await t.run(async (ctx) =>
+        createThread(ctx, components.agent, { userId: "u1" }),
+      );
+
+      await t.action(testApi.streamTextWithSources, {
+        threadId,
+        ...(sendSources === undefined ? {} : { sendSources }),
+      });
+
+      const streams = await t.run(async (ctx) =>
+        ctx.runQuery(components.agent.streams.list, {
+          threadId,
+          statuses: ["streaming", "finished", "aborted"],
+        }),
+      );
+      expect(streams).toEqual([
+        expect.objectContaining({ status: "finished" }),
+      ]);
+      const deltas = await t.run(async (ctx) =>
+        ctx.runQuery(components.agent.streams.listDeltas, {
+          threadId,
+          cursors: streams.map((stream) => ({
+            streamId: stream.streamId,
+            cursor: 0,
+          })),
+        }),
+      );
+      const parts = deltas.flatMap((delta) => delta.parts);
+      expect(
+        parts
+          .filter((part) => part.type === "text-delta")
+          .map((part) => part.delta)
+          .join(""),
+      ).toBe(FINAL_TEXT);
+      const streamedSources = parts.filter(
+        (part) => part.type === "source-url" || part.type === "source-document",
+      );
+      expect(streamedSources).toEqual(
+        sendSources
+          ? [
+              expect.objectContaining({
+                type: "source-url",
+                sourceId: "source-url-1",
+                url: "https://example.com/reference",
+                title: "Reference",
+              }),
+              expect.objectContaining({
+                type: "source-document",
+                sourceId: "source-document-1",
+                mediaType: "application/pdf",
+                title: "Document",
+                filename: "document.pdf",
+              }),
+            ]
+          : [],
+      );
+
+      const messages = await t.run(async (ctx) =>
+        sourceAgent.listMessages(ctx, {
+          threadId,
+          paginationOpts: { cursor: null, numItems: 50 },
+        }),
+      );
+      expect(
+        messages.page.filter(
+          (message) => message.message?.role === "assistant",
+        ),
+      ).toMatchObject([{ sources: sourceParts }]);
+    },
+  );
+});
 
 describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () => {
   test("persists the final assistant text to the messages table", async () => {
