@@ -207,6 +207,7 @@ export const deleteAllForThreadIdAsync = mutation({
     if (!isDone) {
       await ctx.scheduler.runAfter(0, api.threads.deleteAllForThreadIdAsync, {
         threadId: args.threadId,
+        limit: args.limit,
         cursor: messagesResult.cursor,
         messagesDone: messagesResult.isDone,
         streamsDone: streamResult.isDone,
