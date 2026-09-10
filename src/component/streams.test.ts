@@ -1,9 +1,11 @@
 /// <reference types="vite/client" />
 
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { initConvexTest } from "./setup.test.js";
+
+afterEach(() => vi.useRealTimers());
 
 async function seedStream(t: ReturnType<typeof initConvexTest>) {
   const thread = await t.mutation(api.threads.createThread, {
@@ -105,5 +107,56 @@ describe("streams", () => {
     );
     expect(stream?.state.kind).toBe("finished");
     expect(stream?.fileRefs).toBeUndefined();
+  });
+
+  test("bulk deletion preserves global stream order across status lanes", async () => {
+    vi.useFakeTimers();
+
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "stream-cleanup",
+    });
+    const threadId = thread._id as Id<"threads">;
+    const earlyStreamId = await t.run(async (ctx) => {
+      const streamId = await ctx.db.insert("streamingMessages", {
+        threadId,
+        order: 1,
+        stepOrder: 0,
+        format: "UIMessageChunk",
+        state: { kind: "streaming", lastHeartbeat: Date.now() },
+      });
+      await ctx.db.insert("streamingMessages", {
+        threadId,
+        order: 9,
+        stepOrder: 0,
+        format: "UIMessageChunk",
+        state: { kind: "aborted", reason: "retained regeneration" },
+      });
+      await ctx.db.insert("streamDeltas", {
+        streamId,
+        start: 0,
+        end: 1,
+        parts: [{ type: "text-start", id: "text" }],
+      });
+      return streamId;
+    });
+
+    await t.mutation(api.streams.deleteAllStreamsForThreadIdAsync, {
+      threadId,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(
+      await t.query(api.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    ).toEqual([]);
+    expect(
+      await t.query(api.streams.listDeltas, {
+        threadId,
+        cursors: [{ streamId: earlyStreamId, cursor: 0 }],
+      }),
+    ).toEqual([]);
   });
 });
