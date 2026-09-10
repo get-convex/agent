@@ -9,6 +9,7 @@ import type { Context } from "@ai-sdk/provider-utils";
 import { streamText as streamTextAi } from "ai";
 import {
   compressUIMessageChunks,
+  DEFAULT_STREAMING_OPTIONS,
   DeltaStreamer,
   mergeTransforms,
   type StreamingOptions,
@@ -278,7 +279,13 @@ export async function streamText<
     typeof streamTextAi<Tools, RUNTIME_CONTEXT, OUTPUT>
   >[0]) as StreamTextResult<Tools, RUNTIME_CONTEXT, OUTPUT>;
   const stream = streamer?.consumeStream(
-    result.toUIMessageStream<AIUIMessage<Tools>>(),
+    result.toUIMessageStream<AIUIMessage<Tools>>({
+      sendSources:
+        typeof options.saveStreamDeltas === "object"
+          ? (options.saveStreamDeltas.sendSources ??
+            DEFAULT_STREAMING_OPTIONS.sendSources)
+          : DEFAULT_STREAMING_OPTIONS.sendSources,
+    }),
   );
   if (willAwaitStream) {
     try {

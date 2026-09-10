@@ -134,6 +134,11 @@ export async function listStreams(
 
 export type StreamingOptions = {
   /**
+   * Whether source parts emitted by the model are included in the persisted
+   * delta stream. Defaults to false.
+   */
+  sendSources?: boolean;
+  /**
    * The minimum granularity of deltas to save.
    * Note: this is not a guarantee that every delta will be exactly one line.
    * E.g. if "line" is specified, it won't save any deltas until it encounters
@@ -156,6 +161,7 @@ export type StreamingOptions = {
   returnImmediately?: boolean;
 };
 export const DEFAULT_STREAMING_OPTIONS = {
+  sendSources: false,
   // This chunks by sentences / clauses. Punctuation followed by whitespace.
   chunking: /[\p{P}\s]/u,
   throttleMs: 250,
