@@ -470,8 +470,6 @@ export async function deleteStreamsPageForThreadId(
       );
   let deltaCursor = args.deltaCursor;
   const streamMessage = await mergedStream(allStreamMessages, [
-    "threadId",
-    "state.kind",
     "order",
     "stepOrder",
   ]).first();
