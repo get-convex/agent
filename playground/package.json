@@ -95,7 +95,7 @@
     "tailwindcss": "^3.4.11",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
-    "vite": "^6.3.5"
+    "vite": "^8.0.0"
   },
   "peerDependencies": {
     "@convex-dev/agent": ">=0.2.2-alpha.1",
