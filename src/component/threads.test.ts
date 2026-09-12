@@ -458,6 +458,45 @@ describe("threads", () => {
     vi.useRealTimers();
   });
 
+  test("deleteAllForThreadIdAsync preserves its limit across continuations", async () => {
+    vi.useFakeTimers();
+
+    const t = convexTest(schema, modules);
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "boundedDeleteUser",
+      title: "Bounded Delete Thread",
+    });
+    const threadId = thread._id as Id<"threads">;
+    await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: Array.from({ length: 4 }, (_, i) => ({
+        message: { role: "user" as const, content: `Message ${i}` },
+      })),
+    });
+
+    await t.mutation(api.threads.deleteAllForThreadIdAsync, {
+      threadId,
+      limit: 1,
+    });
+
+    vi.runOnlyPendingTimers();
+    await t.finishInProgressScheduledFunctions();
+    const afterOneContinuation = await t.query(
+      api.messages.listMessagesByThreadId,
+      {
+        threadId,
+        order: "asc",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    vi.useRealTimers();
+
+    expect(afterOneContinuation.page).toHaveLength(2);
+    expect(await t.query(api.threads.getThread, { threadId })).toBeNull();
+  });
+
   test("deleteAllForThreadIdSync handles thread with no messages", async () => {
     const t = convexTest(schema, modules);
 
