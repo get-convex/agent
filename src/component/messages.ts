@@ -48,8 +48,8 @@ import {
 } from "./streams.js";
 import { partial } from "convex-helpers/validators";
 import {
+  APPROVAL_LOOKUP_MESSAGES,
   planToolCallApprovals,
-  validateApprovalDecisions,
 } from "../approvals.js";
 
 function publicMessage(message: Doc<"messages">): MessageDoc {
@@ -600,11 +600,10 @@ export const respondToToolCallApprovals = mutation({
   },
   returns: v.object({ messageId: v.id("messages") }),
   handler: async (ctx, args) => {
-    validateApprovalDecisions(args.decisions);
     const page = await listMessagesByThreadIdHandler(ctx, {
       threadId: args.threadId,
       order: "desc",
-      paginationOpts: { cursor: null, numItems: 100 },
+      paginationOpts: { cursor: null, numItems: APPROVAL_LOOKUP_MESSAGES },
     });
     const plan = planToolCallApprovals(
       page.page,

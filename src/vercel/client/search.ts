@@ -718,48 +718,27 @@ export async function fetchContextWithPrompt(
     const storedOrderDocs = recentMessages.filter(
       (doc) => doc.order === promptMessage.order,
     );
-    const requestDocs = new Map<string, MessageDoc>();
-    for (const doc of storedOrderDocs) {
-      if (
-        doc.message?.role !== "assistant" ||
-        !Array.isArray(doc.message.content)
-      ) {
-        continue;
-      }
-      if (
-        doc.message.content.some(
-          (part) =>
-            part.type === "tool-approval-request" &&
-            responseIds.has(part.approvalId),
-        )
-      ) {
-        requestDocs.set(doc._id, doc);
-      }
-    }
-    if (requestDocs.size !== 1) {
-      throw new Error(
-        "Approval continuation requires one complete request message",
-      );
-    }
-    const requestDoc = requestDocs.values().next().value!;
-    if (
-      requestDoc.message?.role !== "assistant" ||
-      !Array.isArray(requestDoc.message.content)
-    ) {
+    const requestContents = storedOrderDocs.flatMap((doc) =>
+      doc.message?.role === "assistant" &&
+      Array.isArray(doc.message.content) &&
+      doc.message.content.some(
+        (part) =>
+          part.type === "tool-approval-request" &&
+          responseIds.has(part.approvalId),
+      )
+        ? [doc.message.content]
+        : [],
+    );
+    if (requestContents.length !== 1) {
       throw new Error(
         "Approval continuation requires one complete request message",
       );
     }
     const approvalIds = new Set(
-      requestDoc.message.content.flatMap((part) =>
+      requestContents[0].flatMap((part) =>
         part.type === "tool-approval-request" ? [part.approvalId] : [],
       ),
     );
-    if ([...responseIds].some((approvalId) => !approvalIds.has(approvalId))) {
-      throw new Error(
-        "Approval continuation requires one complete request message",
-      );
-    }
     processedMessages = prepareApprovalContext(
       processedMessages,
       approvalIds,

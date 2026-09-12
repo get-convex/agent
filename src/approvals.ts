@@ -1,33 +1,28 @@
 import type { Message, MessageDoc } from "./validators.js";
 
-type ToolCallApprovalDecision = {
+export type ToolCallApprovalDecision = {
   approvalId: string;
   approved: boolean;
   reason?: string;
 };
 
-export function validateApprovalDecisions(
-  decisions: ToolCallApprovalDecision[],
-) {
-  if (decisions.length === 0) {
-    throw new Error("An approval batch must contain at least one decision");
-  }
-  const approvalIds = new Set<string>();
-  for (const { approvalId } of decisions) {
-    if (approvalIds.has(approvalId)) {
-      throw new Error(`Duplicate approval ${approvalId} in batch`);
-    }
-    approvalIds.add(approvalId);
-  }
-}
+// The window a batch is resolved against. Approvals are near the end of a
+// thread, so one bounded page finds them.
+export const APPROVAL_LOOKUP_MESSAGES = 100;
 
 export function planToolCallApprovals(
   messages: MessageDoc[],
   decisions: ToolCallApprovalDecision[],
   threadId: string,
 ): { requestMessageId: string; message: Extract<Message, { role: "tool" }> } {
+  if (decisions.length === 0) {
+    throw new Error("An approval batch must contain at least one decision");
+  }
   const pending = new Set(decisions.map(({ approvalId }) => approvalId));
-  const requests = new Map<string, MessageDoc>();
+  if (pending.size !== decisions.length) {
+    throw new Error("Duplicate approval ids in batch");
+  }
+  let requestMessageId: string | undefined;
   const providerExecuted = new Set<string>();
 
   for (const doc of messages) {
@@ -48,7 +43,12 @@ export function planToolCallApprovals(
         part.type === "tool-approval-request" &&
         doc.message.role === "assistant"
       ) {
-        requests.set(part.approvalId, doc);
+        if (requestMessageId && requestMessageId !== doc._id) {
+          throw new Error(
+            "Approval decisions in one batch must belong to the same request message",
+          );
+        }
+        requestMessageId = doc._id;
         if (providerCalls.has(part.toolCallId)) {
           providerExecuted.add(part.approvalId);
         }
@@ -60,19 +60,12 @@ export function planToolCallApprovals(
 
   if (pending.size > 0) {
     throw new Error(
-      `Approval request ${pending.values().next().value} was not found in the last 100 messages of thread ${threadId}`,
-    );
-  }
-
-  const request = requests.get(decisions[0].approvalId)!;
-  if ([...requests.values()].some((doc) => doc._id !== request._id)) {
-    throw new Error(
-      "Approval decisions in one batch must belong to the same request message",
+      `Approval request ${pending.values().next().value} was not found in the last ${APPROVAL_LOOKUP_MESSAGES} messages of thread ${threadId}`,
     );
   }
 
   return {
-    requestMessageId: request._id,
+    requestMessageId: requestMessageId!,
     message: {
       role: "tool",
       content: decisions.map(({ approvalId, approved, reason }) => ({
