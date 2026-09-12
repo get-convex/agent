@@ -26,6 +26,49 @@ export function prepareApprovalContext(
     string,
     { part: Result; providerOptions: ToolModelMessage["providerOptions"] }
   >();
+  const storedRequests = new Map<string, string>();
+  const storedResultIds = new Set<string>();
+  const providerCallIds = new Set<string>();
+  const waitingProviderApprovalIds = new Set<string>();
+  const consumedProviderApprovalIds = new Set<string>();
+  for (const message of storedMessages) {
+    if (!Array.isArray(message.content)) continue;
+    if (message.role === "assistant") {
+      // Provider-owned approvals do not always produce a tool-result. A later
+      // assistant response is the durable evidence that they were consumed.
+      for (const approvalId of waitingProviderApprovalIds) {
+        consumedProviderApprovalIds.add(approvalId);
+      }
+      waitingProviderApprovalIds.clear();
+    }
+    for (const part of message.content) {
+      if (part.type === "tool-call" && part.providerExecuted) {
+        providerCallIds.add(part.toolCallId);
+      } else if (part.type === "tool-approval-request") {
+        storedRequests.set(part.approvalId, part.toolCallId);
+      } else if (part.type === "tool-approval-response") {
+        if (
+          providerCallIds.has(storedRequests.get(part.approvalId) ?? "")
+        ) {
+          waitingProviderApprovalIds.add(part.approvalId);
+        }
+      } else if (part.type === "tool-result") {
+        storedResultIds.add(part.toolCallId);
+      }
+    }
+  }
+  const deferredApprovalIds = new Set<string>();
+  const deferredCallIds = new Set<string>();
+  for (const [approvalId, toolCallId] of storedRequests) {
+    if (
+      !approvalIds.has(approvalId) &&
+      !storedResultIds.has(toolCallId) &&
+      !consumedProviderApprovalIds.has(approvalId)
+    ) {
+      deferredApprovalIds.add(approvalId);
+      deferredCallIds.add(toolCallId);
+    }
+  }
   const activeCallIds = new Set(
     messages.flatMap((message) =>
       Array.isArray(message.content)
@@ -106,8 +149,8 @@ export function prepareApprovalContext(
     );
   }
 
-  const storedResponseIds = new Set<string>();
-  const storedResultIds = new Set<string>();
+  const preservedResponseIds = new Set<string>();
+  const preservedResultIds = new Set<string>();
   for (const message of storedMessages) {
     if (!Array.isArray(message.content)) continue;
     for (const part of message.content) {
@@ -121,12 +164,12 @@ export function prepareApprovalContext(
         part.type === "tool-approval-response" &&
         approvalIds.has(part.approvalId)
       ) {
-        storedResponseIds.add(part.approvalId);
+        preservedResponseIds.add(part.approvalId);
         supplied = responses.get(part.approvalId);
       } else if (part.type === "tool-call" && callIds.has(part.toolCallId)) {
         supplied = calls.get(part.toolCallId);
       } else if (part.type === "tool-result" && callIds.has(part.toolCallId)) {
-        storedResultIds.add(part.toolCallId);
+        preservedResultIds.add(part.toolCallId);
         if (!results.has(part.toolCallId)) {
           throw new Error(
             `Continuation context removed result for ${part.toolCallId}`,
@@ -136,7 +179,10 @@ export function prepareApprovalContext(
       } else {
         continue;
       }
-      if (!supplied || signature(supplied) !== signature(part)) {
+      if (
+        !supplied ||
+        approvalPartSignature(supplied) !== approvalPartSignature(part)
+      ) {
         throw new Error(
           "Continuation context must preserve stored approval decisions and tool calls",
         );
@@ -144,10 +190,10 @@ export function prepareApprovalContext(
     }
   }
 
-  if ([...responses.keys()].some((id) => !storedResponseIds.has(id))) {
+  if ([...responses.keys()].some((id) => !preservedResponseIds.has(id))) {
     throw new Error("Continuation context cannot add approval decisions");
   }
-  if ([...results].some((id) => !storedResultIds.has(id))) {
+  if ([...results].some((id) => !preservedResultIds.has(id))) {
     throw new Error(
       "Continuation context cannot add results for approved tool calls",
     );
@@ -162,7 +208,12 @@ export function prepareApprovalContext(
         `Approval ${approvalId} is missing its request or tool call in continuation context`,
       );
     }
-    if (results.has(request.toolCallId)) continue;
+    if (
+      results.has(request.toolCallId) ||
+      consumedProviderApprovalIds.has(approvalId)
+    ) {
+      continue;
+    }
     if (responses.has(approvalId)) pending.add(request.toolCallId);
     else deferred.add(request.toolCallId);
   }
@@ -179,6 +230,19 @@ export function prepareApprovalContext(
       continue;
     }
     const content = message.content.filter((part) => {
+      if (
+        (part.type === "tool-call" ||
+          part.type === "tool-approval-request") &&
+        deferredCallIds.has(part.toolCallId)
+      ) {
+        return false;
+      }
+      if (
+        part.type === "tool-approval-response" &&
+        deferredApprovalIds.has(part.approvalId)
+      ) {
+        return false;
+      }
       if (
         part.type === "tool-result" &&
         resultMessages.has(part.toolCallId) &&
@@ -229,8 +293,9 @@ export function prepareApprovalContext(
           tool.providerOptions = message.providerOptions;
           toolOptionsSet = true;
           tool.content.push(part);
+          return false;
         }
-        return false;
+        return calls.get(request.toolCallId)?.providerExecuted === true;
       }
       return true;
     });
@@ -262,6 +327,32 @@ export function prepareApprovalContext(
 
   if (pending.size > 0) projected.push(assistant, tool);
   return projected;
+}
+
+function approvalPartSignature(part: Request | Call | Response): string {
+  if (part.type === "tool-approval-request") {
+    return signature({
+      type: part.type,
+      approvalId: part.approvalId,
+      toolCallId: part.toolCallId,
+    });
+  }
+  if (part.type === "tool-call") {
+    return signature({
+      type: part.type,
+      toolCallId: part.toolCallId,
+      toolName: part.toolName,
+      input: part.input,
+      providerExecuted: part.providerExecuted ?? false,
+    });
+  }
+  return signature({
+    type: part.type,
+    approvalId: part.approvalId,
+    approved: part.approved,
+    reason: part.reason,
+    providerExecuted: part.providerExecuted ?? false,
+  });
 }
 
 function signature(value: unknown): string {

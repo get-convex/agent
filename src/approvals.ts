@@ -27,7 +27,7 @@ export function planToolCallApprovals(
   threadId: string,
 ): { requestMessageId: string; message: Extract<Message, { role: "tool" }> } {
   const pending = new Set(decisions.map(({ approvalId }) => approvalId));
-  const requests = new Map<string, MessageDoc>();
+  let requestMessageId: string | undefined;
   const providerExecuted = new Set<string>();
 
   for (const doc of messages) {
@@ -48,7 +48,12 @@ export function planToolCallApprovals(
         part.type === "tool-approval-request" &&
         doc.message.role === "assistant"
       ) {
-        requests.set(part.approvalId, doc);
+        if (requestMessageId && requestMessageId !== doc._id) {
+          throw new Error(
+            "Approval decisions in one batch must belong to the same request message",
+          );
+        }
+        requestMessageId = doc._id;
         if (providerCalls.has(part.toolCallId)) {
           providerExecuted.add(part.approvalId);
         }
@@ -64,15 +69,8 @@ export function planToolCallApprovals(
     );
   }
 
-  const request = requests.get(decisions[0].approvalId)!;
-  if ([...requests.values()].some((doc) => doc._id !== request._id)) {
-    throw new Error(
-      "Approval decisions in one batch must belong to the same request message",
-    );
-  }
-
   return {
-    requestMessageId: request._id,
+    requestMessageId: requestMessageId!,
     message: {
       role: "tool",
       content: decisions.map(({ approvalId, approved, reason }) => ({

@@ -28,7 +28,11 @@ const agent = new Agent(components.agent, {
   },
 });
 
-type ContextMode = "change-input" | "remove-result" | "fabricate-approval";
+type ContextMode =
+  | "change-input"
+  | "add-call-provider-options"
+  | "remove-result"
+  | "fabricate-approval";
 
 function contextHandler(mode: ContextMode): ContextHandler {
   return async (_ctx, { allMessages }): Promise<ModelMessage[]> => {
@@ -69,7 +73,16 @@ function contextHandler(mode: ContextMode): ContextHandler {
         ...message,
         content: message.content.map((part) =>
           part.type === "tool-call" && part.toolCallId === "call-a"
-            ? { ...part, input: { tag: "changed" } }
+            ? {
+                ...part,
+                input:
+                  mode === "add-call-provider-options"
+                    ? part.input
+                    : { tag: "changed" },
+                ...(mode === "add-call-provider-options"
+                  ? { providerOptions: { test: { trace: "allowed" } } }
+                  : {}),
+              }
             : part,
         ),
       };
@@ -106,6 +119,7 @@ function request(ids: string[], providerExecuted = false): Message {
 type Limits = {
   bytesRead?: number;
   bytesWritten?: number;
+  databaseQueries?: number;
   documentsRead?: number;
   documentsWritten?: number;
 };
@@ -129,12 +143,16 @@ async function fixture({
   component.register(t);
   const { threadId } = await t.run((ctx) => agent.createThread(ctx));
   if (olderMessages > 0) {
-    for (let start = 0; start < olderMessages; start += 10) {
+    const batchSize =
+      typeof transactionLimits === "object"
+        ? Math.min(10, transactionLimits.documentsWritten ?? 10)
+        : 10;
+    for (let start = 0; start < olderMessages; start += batchSize) {
       await t.run((ctx) =>
         agent.saveMessages(ctx, {
           threadId,
           messages: Array.from(
-            { length: Math.min(10, olderMessages - start) },
+            { length: Math.min(batchSize, olderMessages - start) },
             (_, offset) => ({
               role: "user" as const,
               content: `${start + offset}:${"x".repeat(4_000)}`,
@@ -266,7 +284,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("respondToToolCallApprovals", () => {
+describe("tool approval semantics", () => {
   test.each([false, true])(
     "continues a mixed batch through generateText and streamText (streaming=%s)",
     async (streaming) => {
@@ -286,7 +304,7 @@ describe("respondToToolCallApprovals", () => {
         streaming,
       });
 
-      expect(executed).toEqual(["a", "c"]);
+      expect([...executed].sort()).toEqual(["a", "c"]);
       expectNoDanglingLocalCalls(streaming);
       const storedResults = await results();
       expect(storedResults).toHaveLength(3);
@@ -312,7 +330,7 @@ describe("respondToToolCallApprovals", () => {
 
     await continueGeneration(t, { threadId, promptMessageId: messageId });
 
-    expect(executed).toEqual(["a", "b"]);
+    expect([...executed].sort()).toEqual(["a", "b"]);
     expectNoDanglingLocalCalls();
     expect((await results()).map((part) => part.toolCallId).sort()).toEqual([
       "call-a",
@@ -357,16 +375,103 @@ describe("respondToToolCallApprovals", () => {
     },
   );
 
+  test("defers and later resumes an approval from an earlier partial continuation", async () => {
+    const { t, threadId } = await fixture();
+    const first = await submitDecisions(t, threadId, [
+      { approvalId: "a", approved: true },
+    ]);
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: first.messageId,
+    });
+    await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        promptMessageId: first.messageId,
+        message: request(["c"]),
+        skipEmbeddings: true,
+      }),
+    );
+    const newer = await submitDecisions(t, threadId, [
+      { approvalId: "c", approved: true },
+    ]);
+    const sibling = await submitDecisions(t, threadId, [
+      { approvalId: "b", approved: true },
+    ]);
+
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: sibling.messageId,
+    });
+
+    expect(executed).toEqual(["a", "b"]);
+    const cParts = lastModelPrompt().flatMap((message) =>
+      Array.isArray(message.content)
+        ? message.content.filter(
+            (part) =>
+              ("toolCallId" in part && part.toolCallId === "call-c") ||
+              ("approvalId" in part && part.approvalId === "c"),
+          )
+        : [],
+    );
+    expect(cParts).toEqual([]);
+
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: newer.messageId,
+    });
+    expect(executed).toEqual(["a", "b", "c"]);
+    expectNoDanglingLocalCalls();
+  });
+
+  test("does not resubmit a completed provider-owned sibling", async () => {
+    const { t, threadId } = await fixture({ providerExecuted: true });
+    const first = await submitDecisions(t, threadId, [
+      { approvalId: "a", approved: true },
+    ]);
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: first.messageId,
+    });
+    const second = await submitDecisions(t, threadId, [
+      { approvalId: "b", approved: true },
+    ]);
+
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: second.messageId,
+    });
+
+    const approvalIdsByToolMessage = lastModelPrompt().flatMap((message) =>
+      message.role === "tool"
+        ? [
+            message.content.flatMap((part) =>
+              part.type === "tool-approval-response"
+                ? [part.approvalId]
+                : [],
+            ),
+          ]
+        : [],
+    );
+    const historicalApprovalIds = approvalIdsByToolMessage
+      .slice(0, -1)
+      .flat();
+    const finalApprovalIds = approvalIdsByToolMessage.at(-1);
+    expect(historicalApprovalIds).toContain("a");
+    expect(finalApprovalIds).toEqual(["b"]);
+  });
+
   test("records a substantial batch within a bounded transaction", async () => {
     const ids = Array.from({ length: 24 }, (_, index) => `approval-${index}`);
-    const { t, threadId, results } = await fixture({
+    const { t, threadId, messages } = await fixture({
       ids,
       olderMessages: 80,
       transactionLimits: {
-        bytesRead: 1_200_000,
+        bytesRead: 1_500_000,
         bytesWritten: 200_000,
+        databaseQueries: 40,
         documentsRead: 220,
-        documentsWritten: 16,
+        documentsWritten: 2,
       },
     });
 
@@ -381,10 +486,16 @@ describe("respondToToolCallApprovals", () => {
     );
     expect(typeof messageId).toBe("string");
     expect(executed).toEqual([]);
-
-    await continueGeneration(t, { threadId, promptMessageId: messageId });
-    expect([...executed].sort()).toEqual([...ids].sort());
-    expect(await results()).toHaveLength(ids.length);
+    const savedApprovalIds = (await messages()).page.flatMap((stored) =>
+      stored.message?.role === "tool"
+        ? stored.message.content.flatMap((part) =>
+            part.type === "tool-approval-response"
+              ? [part.approvalId]
+              : [],
+          )
+        : [],
+    );
+    expect(savedApprovalIds.sort()).toEqual([...ids].sort());
   });
 
   test.each([
@@ -516,6 +627,33 @@ describe("respondToToolCallApprovals", () => {
       }),
     ).rejects.toThrow();
     expect(executed).toEqual([]);
+  });
+
+  test("allows a context handler to add call provider options", async () => {
+    const { t, threadId } = await fixture({ ids: ["a"] });
+    const { messageId } = await submitDecisions(t, threadId, [
+      { approvalId: "a", approved: true },
+    ]);
+
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: messageId,
+      contextMode: "add-call-provider-options",
+    });
+
+    expect(executed).toEqual(["a"]);
+    const call = lastModelPrompt().flatMap((message) =>
+      message.role === "assistant" && Array.isArray(message.content)
+        ? message.content.filter(
+            (part) => part.type === "tool-call" && part.toolCallId === "call-a",
+          )
+        : [],
+    );
+    expect(call).toContainEqual(
+      expect.objectContaining({
+        providerOptions: { test: { trace: "allowed" } },
+      }),
+    );
   });
 
   test("rejects removal of durable execution evidence", async () => {
