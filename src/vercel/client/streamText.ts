@@ -155,7 +155,7 @@ export async function streamText<
             onAsyncAbort: call.fail,
             compress: compressUIMessageChunks,
             materialize: (parts) =>
-              materializeUIMessageChunkFiles(ctx, component, parts),
+              materializeUIMessageChunkFiles(ctx, component, parts, { userId }),
             abortSignal: args.abortSignal,
             // The message save finishes the stream row atomically (issue
             // #181) — but only when there is a save. With saveMessages set to

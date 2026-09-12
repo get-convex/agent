@@ -7,6 +7,7 @@ import {
   type MessageWithMetadata,
 } from "../../validators.js";
 import { serializeMessage } from "../mapping.js";
+import { resolveFileUserId } from "./files.js";
 import { toUIMessages, type UIMessage } from "../UIMessages.js";
 import {
   listMessages,
@@ -88,12 +89,15 @@ export async function saveMessages(
     agentName?: string;
   },
 ): Promise<{ messages: MessageDoc[] }> {
+  const userId = await resolveFileUserId(ctx, component, args);
   const serialized = await Promise.all(
-    args.messages.map((message) => serializeMessage(ctx, component, message)),
+    args.messages.map((message) =>
+      serializeMessage(ctx, component, message, { userId }),
+    ),
   );
   return saveCanonicalMessages(ctx, component, {
     threadId: args.threadId,
-    userId: args.userId ?? undefined,
+    userId,
     agentName: args.agentName,
     promptMessageId: args.promptMessageId,
     order: args.order,

@@ -68,10 +68,28 @@ No message-data migration is required. Agent reads messages saved by v0.6 and
 writes new streams in the AI SDK 7 `UIMessageChunk` format. The stream reader
 uses one reducer for the v0.6-compatible subset and the v0.7 superset.
 
-This release does not offload every oversized inline file encoding. Top-level
-`ArrayBuffer` image/file inputs and URL-backed files continue to work.
-Reasoning files, nested tool-result files, and tagged/base64/data-URL payloads
-will gain durable offloading separately.
+Oversized inline images, files, reasoning files, and canonical tool-result files
+are saved to storage from actions, including tagged/base64/data-URL payloads.
+Mutations must store these files in an action first, then pass their URLs and
+file IDs. Application-defined tool output shapes remain opaque.
+
+File records now have optional `userId` ownership. New automatically stored
+files inherit the explicit user or thread owner; explicit `storeFile` calls
+should pass `{ userId }`. Deduplication stays within that user scope, so new
+uploads may duplicate older unscoped content. Existing file records are not
+backfilled because they may be shared across users.
+
+Use `getFile(ctx, component, fileId, { requireUserId })` with an authenticated
+user ID to enforce owner-only access. This rejects ownerless legacy rows as well
+as another user's rows. Existing calls without the option retain their trusted
+server behavior; upgrading alone does not secure an app's existing wrappers.
+Keep any custom sharing authorization in the application.
+
+If your vacuum job deletes storage blobs, switch from `files.deleteFiles` to
+`files.deleteFilesWithStorageIds`. Delete only its returned `storageIdsToDelete`
+in the same app mutation, allowing errors to roll back both operations. The new
+operation protects storage still referenced by another file record. See the
+[file documentation](./docs/files.mdx) for the updated flow.
 
 ## 5. Verify
 

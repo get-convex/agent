@@ -161,6 +161,7 @@ export const schema = defineSchema({
     .index("embeddingId", ["embeddingId"]),
 
   files: defineTable({
+    userId: v.optional(v.string()), // Unset for legacy or unscoped files
     storageId: v.string(),
     mediaType: v.optional(v.string()),
     /** @deprecated Use `mediaType` instead. */
@@ -171,6 +172,8 @@ export const schema = defineSchema({
     lastTouchedAt: v.number(),
   })
     .index("hash", ["hash"])
+    .index("userId_hash_filename", ["userId", "hash", "filename"])
+    .index("storageId", ["storageId"])
     .index("refcount", ["refcount"])
     .index("refcount_lastTouchedAt", ["refcount", "lastTouchedAt"]),
   ...vectorTables,

@@ -13,6 +13,7 @@ export async function materializeUIMessageChunkFiles(
   ctx: ActionCtx,
   component: AgentComponent,
   parts: readonly UIMessageChunk[],
+  options: { userId?: string } = {},
 ): Promise<{ parts: UIMessageChunk[]; fileRefs: MaterializedFileRef[] }> {
   const fileRefs: MaterializedFileRef[] = [];
   const materialized = await Promise.all(
@@ -22,6 +23,7 @@ export async function materializeUIMessageChunkFiles(
           ctx,
           component,
           part.output,
+          options,
         );
         fileRefs.push(...result.fileRefs);
         return { ...part, output: result.output };
@@ -34,6 +36,7 @@ export async function materializeUIMessageChunkFiles(
         component,
         part.url,
         part.mediaType,
+        options,
       );
       if (!file) {
         return { ...part };
@@ -53,6 +56,7 @@ export async function materializeCanonicalToolResultContentFiles(
   ctx: ActionCtx | MutationCtx,
   component: AgentComponent,
   output: unknown,
+  options: { userId?: string } = {},
 ): Promise<{ output: unknown; fileRefs: MaterializedFileRef[] }> {
   if (!isCanonicalToolResultContent(output)) {
     return { output, fileRefs: [] };
@@ -70,7 +74,7 @@ export async function materializeCanonicalToolResultContentFiles(
             ? part.data.data
             : new TextEncoder().encode(part.data.text),
         part.mediaType,
-        part.filename,
+        { ...options, filename: part.filename },
       );
       if (!file) return part;
       fileRefs.push({ url: file.url, fileId: file.fileId });
@@ -88,7 +92,7 @@ async function materializeInlineFile(
   component: AgentComponent,
   data: unknown,
   mediaType: string,
-  filename?: string,
+  { filename, userId }: { filename?: string; userId?: string } = {},
 ) {
   const bytes = decodeInlineFileData(data);
   if (!bytes) return undefined;
@@ -103,7 +107,7 @@ async function materializeInlineFile(
     new Blob([blobBytes], {
       type: mediaType || "application/octet-stream",
     }),
-    filename ? { filename } : {},
+    { filename, userId },
   );
   return file;
 }
@@ -140,7 +144,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function decodeInlineFileData(value: unknown): Uint8Array | undefined {
+export function decodeInlineFileData(value: unknown): Uint8Array | undefined {
   if (typeof value === "string") {
     if (!value.startsWith("data:")) {
       // Remote and already-stored files are references, not inline payloads.
