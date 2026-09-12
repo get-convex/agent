@@ -47,6 +47,10 @@ import {
   abortStreamsAtOrder,
 } from "./streams.js";
 import { partial } from "convex-helpers/validators";
+import {
+  planToolCallApprovals,
+  validateApprovalDecisions,
+} from "../approvals.js";
 
 function publicMessage(message: Doc<"messages">): MessageDoc {
   return omit(message, ["parentMessageId", "stepId", "files"]);
@@ -579,6 +583,42 @@ export const updateMessage = mutation({
 
     await ctx.db.patch("messages", args.messageId, patch);
     return publicMessage((await ctx.db.get("messages", args.messageId))!);
+  },
+});
+
+export const respondToToolCallApprovals = mutation({
+  args: {
+    threadId: v.id("threads"),
+    agentName: v.optional(v.string()),
+    decisions: v.array(
+      v.object({
+        approvalId: v.string(),
+        approved: v.boolean(),
+        reason: v.optional(v.string()),
+      }),
+    ),
+  },
+  returns: v.object({ messageId: v.id("messages") }),
+  handler: async (ctx, args) => {
+    validateApprovalDecisions(args.decisions);
+    const page = await listMessagesByThreadIdHandler(ctx, {
+      threadId: args.threadId,
+      order: "desc",
+      paginationOpts: { cursor: null, numItems: 100 },
+    });
+    const plan = planToolCallApprovals(
+      page.page,
+      args.decisions,
+      args.threadId,
+    );
+    const saved = await addMessagesHandler(ctx, {
+      threadId: args.threadId,
+      agentName: args.agentName,
+      promptMessageId: plan.requestMessageId as Id<"messages">,
+      failPendingSteps: false,
+      messages: [{ message: plan.message }],
+    });
+    return { messageId: saved.messages[0]._id as Id<"messages"> };
   },
 });
 

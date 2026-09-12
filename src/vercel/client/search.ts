@@ -34,6 +34,7 @@ import {
   docsToModelMessages,
   toModelMessage,
 } from "../mapping.js";
+import { prepareApprovalContext } from "./prepareApprovalContext.js";
 
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // Bound the rare boundary-extension query; incomplete orders are trimmed below.
@@ -701,6 +702,70 @@ export async function fetchContextWithPrompt(
         threadId,
       })
     : allMessages;
+
+  if (
+    args.prompt === undefined &&
+    promptMessage?.message?.role === "tool" &&
+    promptMessage.message.content.some(
+      (part) => part.type === "tool-approval-response",
+    )
+  ) {
+    const responseIds = new Set(
+      promptMessage.message.content.flatMap((part) =>
+        part.type === "tool-approval-response" ? [part.approvalId] : [],
+      ),
+    );
+    const storedOrderDocs = recentMessages.filter(
+      (doc) => doc.order === promptMessage.order,
+    );
+    const requestDocs = new Map<string, MessageDoc>();
+    for (const doc of storedOrderDocs) {
+      if (
+        doc.message?.role !== "assistant" ||
+        !Array.isArray(doc.message.content)
+      ) {
+        continue;
+      }
+      if (
+        doc.message.content.some(
+          (part) =>
+            part.type === "tool-approval-request" &&
+            responseIds.has(part.approvalId),
+        )
+      ) {
+        requestDocs.set(doc._id, doc);
+      }
+    }
+    if (requestDocs.size !== 1) {
+      throw new Error(
+        "Approval continuation requires one complete request message",
+      );
+    }
+    const requestDoc = requestDocs.values().next().value!;
+    if (
+      requestDoc.message?.role !== "assistant" ||
+      !Array.isArray(requestDoc.message.content)
+    ) {
+      throw new Error(
+        "Approval continuation requires one complete request message",
+      );
+    }
+    const approvalIds = new Set(
+      requestDoc.message.content.flatMap((part) =>
+        part.type === "tool-approval-request" ? [part.approvalId] : [],
+      ),
+    );
+    if ([...responseIds].some((approvalId) => !approvalIds.has(approvalId))) {
+      throw new Error(
+        "Approval continuation requires one complete request message",
+      );
+    }
+    processedMessages = prepareApprovalContext(
+      processedMessages,
+      approvalIds,
+      docsToModelMessages(storedOrderDocs),
+    );
+  }
 
   // Post-process: auto-deny unresolved approvals so the AI SDK sees a
   // complete history. Applied after contextHandler so custom handlers
