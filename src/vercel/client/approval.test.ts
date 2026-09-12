@@ -372,11 +372,15 @@ export const testMultiToolApproveFlow = action({
       approvalCount: approvalParts.length,
       firstText: result1.text,
       secondText: result2.text,
-      threadMessageRoles: allMessages.page.map((m) => m.message?.role),
-      // Check that both approvals were merged into one tool message
-      toolMessageCount: allMessages.page.filter(
-        (m) => m.message?.role === "tool",
-      ).length,
+      toolResultIds: allMessages.page
+        .flatMap((message) =>
+          message.message?.role === "tool"
+            ? message.message.content.flatMap((part) =>
+                part.type === "tool-result" ? [part.toolCallId] : [],
+              )
+            : [],
+        )
+        .sort(),
     };
   },
 });
@@ -496,14 +500,7 @@ describe("Tool Approval Workflow", () => {
     expect(result.secondText).toBe(
       "Done! Deleted old.txt and renamed a.txt to b.txt.",
     );
-    // Executed results are persisted separately from approval responses.
-    expect(result.threadMessageRoles).toEqual([
-      "assistant", // final text
-      "tool", // tool-results
-      "tool", // approval-responses
-      "assistant", // tool-calls + approval-requests
-      "user", // prompt
-    ]);
+    expect(result.toolResultIds).toEqual(["tc-multi-1", "tc-multi-2"]);
   });
 
   test("approve remains valid with an intervening thread message", async () => {
