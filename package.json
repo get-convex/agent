@@ -151,7 +151,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.57.1",
     "vite": "6.4.3",
-    "vitest": "4.1.0",
+    "vitest": "4.1.11",
     "zod": "3.25.76"
   },
   "types": "./dist/vercel/index.d.ts",
