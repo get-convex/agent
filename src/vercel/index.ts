@@ -1144,6 +1144,28 @@ export class Agent<
     return this.respondToToolCallApproval(ctx, { ...args, approved: false });
   }
 
+  /**
+   * Save approval decisions from one assistant request message atomically.
+   * Continue generation explicitly with the returned messageId.
+   */
+  async respondToToolCallApprovals(
+    ctx: MutationCtx,
+    args: {
+      threadId: string;
+      decisions: Array<{
+        approvalId: string;
+        approved: boolean;
+        reason?: string;
+      }>;
+    },
+  ): Promise<{ messageId: string }> {
+    return ctx.runMutation(this.component.messages.respondToToolCallApprovals, {
+      threadId: args.threadId,
+      agentName: this.options.name,
+      decisions: args.decisions,
+    });
+  }
+
   private async respondToToolCallApproval(
     ctx: MutationCtx,
     args: {
