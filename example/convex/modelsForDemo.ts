@@ -3,7 +3,7 @@ import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
-import { mockModel } from "@convex-dev/agent";
+import { convexGateway } from "@convex-dev/ai-sdk-provider";
 
 let languageModel: LanguageModelV4;
 // Note: This is only defined when OPENAI_API_KEY is set. Consumers should
@@ -20,10 +20,7 @@ if (process.env.ANTHROPIC_API_KEY) {
     "meta-llama/llama-4-scout-17b-16e-instruct",
   );
 } else {
-  languageModel = mockModel({});
-  console.warn(
-    "Run `npx convex env set GROQ_API_KEY=<your-api-key>` or `npx convex env set OPENAI_API_KEY=<your-api-key>` from the example directory to set the API key.",
-  );
+  languageModel = convexGateway("openai/gpt-4o-mini")
 }
 
 // If you want to use different models for examples, you can change them here.
