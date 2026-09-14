@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3
+
+- Preserve stream cleanup order across statuses (#365)
+- Preserve async thread deletion limits across continuations (#363)
+- Flush throttled deltas on a timer, not on the next part (#328)
+- Persist opted-in source parts (#362)
+- Finish the stream row when messages aren't stored (#327)
+- Drain deltas at end-of-stream, not at the final step (#326)
+
 ## 0.7.2
 
 - Preserve classified provider errors when streamed responses fail, including
