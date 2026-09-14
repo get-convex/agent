@@ -3,7 +3,9 @@ import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { groq } from "@ai-sdk/groq";
+import { getServiceToken } from "convex/server";
 import { convexGateway } from "@convex-dev/ai-sdk-provider";
+import { mockModel } from "@convex-dev/agent";
 
 let languageModel: LanguageModelV4;
 // Note: This is only defined when OPENAI_API_KEY is set. Consumers should
@@ -20,7 +22,48 @@ if (process.env.ANTHROPIC_API_KEY) {
     "meta-llama/llama-4-scout-17b-16e-instruct",
   );
 } else {
-  languageModel = convexGateway("openai/gpt-5.6-luna")
+  // No API key configured: use the Convex AI gateway where it's available, and
+  // fall back to a mock model where it isn't.
+  languageModel = gatewayWithMockFallback("openai/gpt-5.6-luna");
+}
+
+let gatewayAvailable: boolean | undefined;
+
+async function gatewayIsAvailable(): Promise<boolean> {
+  if (gatewayAvailable !== undefined) return gatewayAvailable;
+  try {
+    await getServiceToken("ai-gateway");
+    gatewayAvailable = true;
+  } catch (error) {
+    // AiGatewayDisabled: the team is on the free plan, or it's turned off.
+    // AiGatewayUnavailable: a local backend or self-hosted deployment.
+    if (/AiGatewayDisabled|AiGatewayUnavailable/.test(String(error))) {
+      gatewayAvailable = false;
+    }
+    console.warn(
+      `Can't use the Convex AI gateway from this deployment (${String(error)}), ` +
+        "so the examples will respond with mock text. Run " +
+        "`npx convex env set GROQ_API_KEY=<your-api-key>` or " +
+        "`npx convex env set OPENAI_API_KEY=<your-api-key>` from the example " +
+        "directory to use a real model.",
+    );
+    return false;
+  }
+  return gatewayAvailable;
+}
+
+function gatewayWithMockFallback(modelId: string): LanguageModelV4 {
+  const gateway = convexGateway(modelId);
+  const fallback = mockModel({});
+  const model = async () => ((await gatewayIsAvailable()) ? gateway : fallback);
+  return {
+    specificationVersion: gateway.specificationVersion,
+    provider: gateway.provider,
+    modelId: gateway.modelId,
+    supportedUrls: gateway.supportedUrls,
+    doGenerate: async (options) => (await model()).doGenerate(options),
+    doStream: async (options) => (await model()).doStream(options),
+  };
 }
 
 // If you want to use different models for examples, you can change them here.
