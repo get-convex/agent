@@ -20,7 +20,7 @@ if (process.env.ANTHROPIC_API_KEY) {
     "meta-llama/llama-4-scout-17b-16e-instruct",
   );
 } else {
-  languageModel = convexGateway("openai/gpt-4o-mini")
+  languageModel = convexGateway("openai/gpt-5.6-luna")
 }
 
 // If you want to use different models for examples, you can change them here.
