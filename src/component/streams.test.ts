@@ -165,9 +165,6 @@ describe("streams", () => {
     ).toEqual([]);
   });
 
-  // The same 28 large deltas as the async case. A synchronous delete cannot
-  // finish inside one transaction's read limit, so it must say so and leave
-  // the stream intact rather than fail partway with a raw limit error.
   test("sync deletion refuses a stream it cannot delete in one transaction", async () => {
     const t = convexTest({
       schema,
