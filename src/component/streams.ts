@@ -32,6 +32,7 @@ const MINUTE = 60 * SECOND;
 
 const MAX_DELTAS_PER_REQUEST = 1000;
 const MAX_DELTAS_PER_STREAM = 100;
+const MAX_BYTES_READ_PER_DELETE = 1024 * 1024;
 const TIMEOUT_INTERVAL = 10 * MINUTE;
 const DELETE_STREAM_DELAY = MINUTE * 5; // 5 minutes
 
@@ -411,6 +412,7 @@ async function deletePageForStreamId(
     .withIndex("streamId_start_end", (q) => q.eq("streamId", args.streamId))
     .paginate({
       numItems: MAX_DELTAS_PER_REQUEST,
+      maximumBytesRead: MAX_BYTES_READ_PER_DELETE,
       cursor: args.cursor ?? null,
     });
   await Promise.all(
