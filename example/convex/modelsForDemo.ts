@@ -35,17 +35,13 @@ async function gatewayIsAvailable(): Promise<boolean> {
     await getServiceToken("ai-gateway");
     gatewayAvailable = true;
   } catch (error) {
-    // AiGatewayDisabled: the team is on the free plan, or it's turned off.
-    // AiGatewayUnavailable: a local backend or self-hosted deployment.
-    if (/AiGatewayDisabled|AiGatewayUnavailable/.test(String(error))) {
-      gatewayAvailable = false;
-    }
     console.warn(
-      `Can't use the Convex AI gateway from this deployment (${String(error)}), ` +
-        "so the examples will respond with mock text. Run " +
-        "`npx convex env set GROQ_API_KEY=<your-api-key>` or " +
-        "`npx convex env set OPENAI_API_KEY=<your-api-key>` from the example " +
-        "directory to use a real model.",
+      `The AI gateway can't be used from this deployment. ` +
+        `Examples will respond with mock text. ` +
+        `Run "npx convex env set GROQ_API_KEY=<your-api-key>" or` +
+        `"npx convex env set OPENAI_API_KEY=<your-api-key>" from the ` +
+        `example directory to use a real model.` + 
+        `\n\nSyscall error: ${error}`
     );
     return false;
   }
