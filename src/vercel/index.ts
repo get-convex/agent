@@ -1120,7 +1120,16 @@ export class Agent<
     ctx: MutationCtx,
     args: { threadId: string; approvalId: string; reason?: string },
   ): Promise<{ messageId: string }> {
-    return this.respondToToolCallApproval(ctx, { ...args, approved: true });
+    return this.respondToToolCallApprovals(ctx, {
+      threadId: args.threadId,
+      decisions: [
+        {
+          approvalId: args.approvalId,
+          approved: true,
+          reason: args.reason,
+        },
+      ],
+    });
   }
 
   /**
@@ -1141,131 +1150,38 @@ export class Agent<
     ctx: MutationCtx,
     args: { threadId: string; approvalId: string; reason?: string },
   ): Promise<{ messageId: string }> {
-    return this.respondToToolCallApproval(ctx, { ...args, approved: false });
+    return this.respondToToolCallApprovals(ctx, {
+      threadId: args.threadId,
+      decisions: [
+        {
+          approvalId: args.approvalId,
+          approved: false,
+          reason: args.reason,
+        },
+      ],
+    });
   }
 
-  private async respondToToolCallApproval(
+  /**
+   * Save approval decisions from one assistant request message atomically.
+   * Continue generation explicitly with the returned messageId.
+   */
+  async respondToToolCallApprovals(
     ctx: MutationCtx,
     args: {
       threadId: string;
-      approvalId: string;
-      approved: boolean;
-      reason?: string;
+      decisions: Array<{
+        approvalId: string;
+        approved: boolean;
+        reason?: string;
+      }>;
     },
   ): Promise<{ messageId: string }> {
-    const { promptMessageId, existingResponseMessage } =
-      await this.findApprovalContext(ctx, {
-        threadId: args.threadId,
-        approvalId: args.approvalId,
-      });
-
-    const newPart = {
-      type: "tool-approval-response" as const,
-      approvalId: args.approvalId,
-      approved: args.approved,
-      reason: args.reason,
-    };
-
-    // Merge into an existing approval-response message for this step
-    // so the AI SDK sees a single tool message per step.
-    if (existingResponseMessage) {
-      const existingContent = existingResponseMessage.message?.content;
-      const mergedContent = Array.isArray(existingContent)
-        ? [...(existingContent as any[]), newPart]
-        : [newPart];
-      await this.updateMessage(ctx, {
-        messageId: existingResponseMessage._id,
-        patch: {
-          message: { role: "tool", content: mergedContent },
-          status: "success",
-        },
-      });
-      return { messageId: existingResponseMessage._id };
-    }
-
-    const { messageId } = await this.saveMessage(ctx, {
+    return ctx.runMutation(this.component.messages.respondToToolCallApprovals, {
       threadId: args.threadId,
-      promptMessageId,
-      skipEmbeddings: true,
-      message: {
-        role: "tool",
-        content: [newPart],
-      },
+      agentName: this.options.name,
+      decisions: args.decisions,
     });
-    return { messageId };
-  }
-
-  private async findApprovalContext(
-    ctx: MutationCtx,
-    args: { threadId: string; approvalId: string },
-  ): Promise<{
-    promptMessageId: string;
-    existingResponseMessage: MessageDoc | undefined;
-  }> {
-    // NOTE: This pagination returns messages in descending order (newest first).
-    // The "already handled" check (tool-approval-response) relies on seeing
-    // responses before their corresponding requests. If the pagination order
-    // changes, this logic will need to be updated.
-    let existingResponseMessage: MessageDoc | undefined;
-    // Limit the search to the most recent messages. Approvals should always
-    // be near the end of the thread.
-    const page = await this.listMessages(ctx, {
-      threadId: args.threadId,
-      paginationOpts: { cursor: null, numItems: 100 },
-    });
-    {
-      for (const message of page.page) {
-        const content = message.message?.content;
-        if (!Array.isArray(content)) continue;
-        // Check if this assistant message starts a different approval step.
-        // If so, any response message we've seen so far belongs to a newer
-        // step — reset it so we don't merge across step boundaries.
-        // Only reset if the target approval is NOT in this message (i.e.,
-        // this is a genuinely different step, not the same step with
-        // multiple tool calls).
-        if (
-          message.message?.role === "assistant" &&
-          content.some(
-            (p: any) =>
-              p.type === "tool-approval-request" &&
-              p.approvalId !== args.approvalId,
-          ) &&
-          !content.some(
-            (p: any) =>
-              p.type === "tool-approval-request" &&
-              p.approvalId === args.approvalId,
-          )
-        ) {
-          existingResponseMessage = undefined;
-        }
-        for (const part of content) {
-          const typedPart = part as { type?: unknown; approvalId?: unknown };
-          if (
-            typedPart.type === "tool-approval-response" &&
-            typedPart.approvalId === args.approvalId
-          ) {
-            throw new Error(`Approval ${args.approvalId} was already handled`);
-          }
-          // Track the most recent tool-approval-response message for merging
-          if (
-            typedPart.type === "tool-approval-response" &&
-            !existingResponseMessage
-          ) {
-            existingResponseMessage = message;
-          }
-          if (
-            typedPart.type === "tool-approval-request" &&
-            typedPart.approvalId === args.approvalId
-          ) {
-            return { promptMessageId: message._id, existingResponseMessage };
-          }
-        }
-      }
-    }
-
-    throw new Error(
-      `Approval request ${args.approvalId} was not found in the last 100 messages of thread ${args.threadId}`,
-    );
   }
 
   /**
