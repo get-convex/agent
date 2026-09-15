@@ -9,13 +9,14 @@ import {
   type PaginatedQueryArgs,
   type UsePaginatedQueryResult,
 } from "convex/react";
-import type {
-  FunctionArgs,
-  FunctionReference,
-  PaginationOptions,
-  PaginationResult,
+import {
+  getFunctionName,
+  type FunctionArgs,
+  type FunctionReference,
+  type PaginationOptions,
+  type PaginationResult,
 } from "convex/server";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { SyncStreamsReturnValue } from "../client/types.js";
 import type { StreamArgs } from "../../validators.js";
 import type { StreamQuery } from "./types.js";
@@ -34,6 +35,8 @@ export type UIMessageLike = {
   parts: UIMessage["parts"];
   role: UIMessage["role"];
 };
+
+type OldestOrderCompletion = "ready" | number | "idle";
 
 export type UIMessagesQuery<
   Args = unknown,
@@ -126,6 +129,10 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   query: Query,
   args: UIMessagesQueryArgs<Query> | "skip",
   options: {
+    /**
+     * Minimum page size. The hook may load additional records when pagination
+     * splits the oldest UI message across canonical message rows.
+     */
     initialNumItems: number;
     stream?: Query extends StreamQuery
       ? boolean
@@ -134,10 +141,10 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   },
 ): UsePaginatedQueryResult<UIMessagesQueryResult<Query>> {
   // These are full messages
-  const paginated = usePaginatedQuery(
+  const paginated = usePaginatedMessages(
     query,
     args as PaginatedQueryArgs<Query> | "skip",
-    { initialNumItems: options.initialNumItems },
+    options.initialNumItems,
   );
 
   const startOrder = paginated.results.length
@@ -162,6 +169,119 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   }, [paginated, streamMessages]);
 
   return merged as UIMessagesQueryResult<Query>;
+}
+
+/**
+ * usePaginatedQuery, extended to keep the oldest message whole. `initialNumItems`
+ * is a minimum, not an exact page size. A custom query that filters out a row at
+ * `stepOrder: 0` while keeping later steps of that order cannot be completed, and
+ * its oldest message is left split.
+ */
+export function usePaginatedMessages<
+  M extends { order: number; stepOrder: number },
+  Query extends FunctionReference<
+    "query",
+    "public",
+    any,
+    PaginationResult<M> & { streams?: SyncStreamsReturnValue }
+  >,
+>(query: Query, args: PaginatedQueryArgs<Query> | "skip", numItems: number) {
+  const paginated = usePaginatedQuery(query, args, {
+    initialNumItems: numItems,
+  });
+  const orderToComplete = useRef<OldestOrderCompletion>("ready");
+  // A new pagination session can skip "LoadingFirstPage" when Convex already
+  // has the query subscribed, so track identity rather than trusting status.
+  const queryKey =
+    args === "skip"
+      ? "skip"
+      : `${getFunctionName(query)}:${JSON.stringify(args)}`;
+  const activeQuery = useRef(queryKey);
+
+  useEffect(() => {
+    if (activeQuery.current !== queryKey) {
+      activeQuery.current = queryKey;
+      orderToComplete.current = "ready";
+    }
+    const decision = planOldestOrderCompletion(
+      paginated.results,
+      paginated.status,
+      orderToComplete.current,
+    );
+    orderToComplete.current = decision.order;
+    if (decision.loadMore) {
+      paginated.loadMore(numItems);
+    }
+  }, [
+    queryKey,
+    paginated.loadMore,
+    paginated.results,
+    paginated.status,
+    numItems,
+  ]);
+
+  return paginated;
+}
+
+/**
+ * UI messages are assembled from every canonical record at the same order.
+ * If row pagination starts partway through the oldest loaded order, fetch
+ * follow-up pages until that specific UI message is complete.
+ */
+export function planOldestOrderCompletion(
+  messages: Pick<UIMessageLike, "order" | "stepOrder">[],
+  status: UsePaginatedQueryResult<UIMessageLike>["status"],
+  orderToComplete: OldestOrderCompletion,
+): { order: OldestOrderCompletion; loadMore: boolean } {
+  if (status === "LoadingFirstPage") {
+    return { order: "ready", loadMore: false };
+  }
+  if (status === "LoadingMore") {
+    // A load started while idle came from the caller. Rearm completion for the
+    // new boundary. Automatic loads already carry their target order.
+    return {
+      order: orderToComplete === "idle" ? "ready" : orderToComplete,
+      loadMore: false,
+    };
+  }
+  if (status === "Exhausted") {
+    return { order: "idle", loadMore: false };
+  }
+  if (status !== "CanLoadMore" || messages.length === 0) {
+    return { order: orderToComplete, loadMore: false };
+  }
+
+  const oldestOrder = Math.min(...messages.map((message) => message.order));
+  if (orderToComplete === "idle") {
+    return { order: "idle", loadMore: false };
+  }
+
+  let targetOrder = orderToComplete;
+  if (targetOrder === "ready") {
+    const oldestOrderIsComplete = messages.some(
+      (message) => message.order === oldestOrder && message.stepOrder === 0,
+    );
+    if (oldestOrderIsComplete) {
+      return { order: "idle", loadMore: false };
+    }
+    targetOrder = oldestOrder;
+  }
+
+  const targetMessages = messages.filter(
+    (message) => message.order === targetOrder,
+  );
+  if (targetMessages.length === 0) {
+    return { order: "idle", loadMore: false };
+  }
+  if (targetMessages.some((message) => message.stepOrder === 0)) {
+    return { order: "idle", loadMore: false };
+  }
+  if (oldestOrder < targetOrder) {
+    // The query moved past the target without exposing its step zero. This can
+    // happen when a custom query filters the anchor; do not chase older orders.
+    return { order: "idle", loadMore: false };
+  }
+  return { order: targetOrder, loadMore: true };
 }
 
 export function mergeUIMessages<M extends UIMessageLike>(

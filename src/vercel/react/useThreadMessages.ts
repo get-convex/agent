@@ -5,7 +5,6 @@ import {
   type ErrorMessage,
   type Expand,
 } from "convex-helpers";
-import { usePaginatedQuery } from "convex-helpers/react";
 import {
   type PaginatedQueryArgs,
   type UsePaginatedQueryResult,
@@ -28,6 +27,7 @@ import type {
 } from "../../validators.js";
 import type { StreamQueryArgs, StreamQuery } from "./types.js";
 import { useStreamingUIMessages } from "./useStreamingUIMessages.js";
+import { usePaginatedMessages } from "./useUIMessages.js";
 
 export type MessageDocLike = {
   order: number;
@@ -120,6 +120,11 @@ export function useThreadMessages<Query extends ThreadMessagesQuery<any, any>>(
   query: Query,
   args: ThreadMessagesArgs<Query> | "skip",
   options: {
+    /**
+     * Minimum page size. The hook may load additional records, and briefly
+     * report "LoadingMore", when pagination splits a message across canonical
+     * rows sharing one `order`.
+     */
     initialNumItems: number;
     stream?: Query extends StreamQuery
       ? boolean
@@ -129,10 +134,10 @@ export function useThreadMessages<Query extends ThreadMessagesQuery<any, any>>(
   ThreadMessagesResult<Query> & { streaming: boolean; key: string }
 > {
   // These are full messages
-  const paginated = usePaginatedQuery(
+  const paginated = usePaginatedMessages(
     query,
     args as PaginatedQueryArgs<Query> | "skip",
-    { initialNumItems: options.initialNumItems },
+    options.initialNumItems,
   );
 
   let startOrder = paginated.results.at(-1)?.order ?? 0;
