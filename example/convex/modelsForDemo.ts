@@ -35,15 +35,15 @@ async function gatewayIsAvailable(): Promise<boolean> {
     await getServiceToken("ai-gateway");
     gatewayAvailable = true;
   } catch (error) {
+    gatewayAvailable = false;
     console.warn(
       `The AI gateway can't be used from this deployment. ` +
         `Examples will respond with mock text. ` +
-        `Run "npx convex env set GROQ_API_KEY=<your-api-key>" or` +
+        `Run "npx convex env set GROQ_API_KEY=<your-api-key>" or ` +
         `"npx convex env set OPENAI_API_KEY=<your-api-key>" from the ` +
-        `example directory to use a real model.` + 
-        `\n\nSyscall error: ${error}`
+        `example directory to use a real model.` +
+        `\n\nSyscall error: ${error}`,
     );
-    return false;
   }
   return gatewayAvailable;
 }
