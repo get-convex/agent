@@ -465,6 +465,73 @@ describe("mapping", () => {
     );
   });
 
+  test.each(["base64", "data URL", "multibyte data URL"])(
+    "stores oversized %s files with their owner",
+    async (encoding) => {
+      const text =
+        encoding === "multibyte data URL"
+          ? "漢".repeat(30_000)
+          : "A".repeat(65 * 1024);
+      const data =
+        encoding === "base64"
+          ? btoa(text)
+          : encoding === "data URL"
+            ? `data:text/plain;base64,${btoa(text)}`
+            : `data:text/plain,${text}`;
+      const store = vi.fn(async (_blob: Blob) => "storage-123");
+      const runMutation = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          fileId: "file-123",
+          storageId: "storage-123",
+        });
+      const ctx = {
+        runAction: async () => undefined,
+        runMutation,
+        storage: { store, getUrl: async () => "https://example.com/file" },
+      } as unknown as ActionCtx;
+      const result = await serializeContent(
+        ctx,
+        api as unknown as AgentComponent,
+        [{ type: "file", data, mediaType: "text/plain" }],
+        { userId: "alice" },
+      );
+      expect(result.fileIds).toEqual(["file-123"]);
+      expect(result.content).toMatchObject([
+        { type: "file", data: "https://example.com/file" },
+      ]);
+      expect(await store.mock.calls[0][0].text()).toBe(text);
+      expect(runMutation).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.objectContaining({ userId: "alice" }),
+      );
+      expect(runMutation).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        expect.objectContaining({ userId: "alice" }),
+      );
+    },
+  );
+
+  test("small decoded files stay inline even if their base64 exceeds 64 KiB", async () => {
+    const content = [
+      {
+        type: "file" as const,
+        data: btoa("A".repeat(50 * 1024)),
+        mediaType: "text/plain",
+      },
+    ];
+    const result = await serializeContent(
+      {} as ActionCtx,
+      {} as AgentComponent,
+      content,
+    );
+    expect(result.content).toMatchObject(content);
+    expect(result.fileIds).toBeUndefined();
+  });
+
   test("materializes oversized canonical tool-result files", async () => {
     const bytes = new Uint8Array(1024 * 65).fill(1);
     const ctx = {

@@ -367,6 +367,7 @@ export async function startGeneration<
             toSave.step,
             activeModel,
             responseMessagesToSave,
+            { userId },
           );
         }
         const embeddings = await embedMessages(

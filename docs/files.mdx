@@ -60,11 +60,16 @@ the client waiting.
 import { storeFile } from "@convex-dev/agent";
 import { components } from "./_generated/api";
 
+// Use your app's authentication helper and the same user IDs as your threads.
+const userId = await getAuthUserId(ctx);
+if (!userId) throw new Error("Unauthorized");
+
 const { file } = await storeFile(
   ctx,
   components.agent,
   new Blob([bytes], { type: mimeType }),
   {
+    userId,
     filename,
     sha256,
   },
@@ -75,8 +80,12 @@ const { fileId, url, storageId } = file;
 ### 2: Sending the message
 
 ```ts
-// in your mutation
-const { filePart, imagePart } = await getFile(ctx, components.agent, fileId);
+// In your mutation, authenticate again before resolving a client-provided fileId.
+const userId = await getAuthUserId(ctx);
+if (!userId) throw new Error("Unauthorized");
+const { filePart, imagePart } = await getFile(ctx, components.agent, fileId, {
+  requireUserId: userId,
+});
 const { messageId } = await fileAgent.saveMessage(ctx, {
   threadId,
   message: {
@@ -89,6 +98,28 @@ const { messageId } = await fileAgent.saveMessage(ctx, {
   metadata: { fileIds: [fileId] }, // IMPORTANT: this tracks the file usage.
 });
 ```
+
+`storeFile` deduplicates within the supplied `userId`, hash, filename, and
+compatible media type. Different users uploading identical content get separate
+file records and storage objects. Both helpers return `file.userId` alongside
+the other file metadata.
+
+`getFile(..., { requireUserId })` rejects other users' files and ownerless
+legacy files before resolving their storage URLs. Derive this identifier from
+your app's authentication, never a browser-supplied user ID. The repository
+examples use a demo `getAuthUserId` stub; replace it with real authentication in
+your app. Also authorize access to the destination thread before attaching the
+file.
+
+Omitting the fourth argument preserves the existing trusted-server lookup for
+apps that apply their own sharing policy. Existing ownerless files remain in an
+unscoped pool and are not assigned an owner automatically. Unscoped files do not
+isolate anonymous sessions. Scoped uploads never reuse ownerless rows, so
+upgrading can increase storage use for previously shared content.
+
+This check controls metadata and URL retrieval. Authorize message and stream
+reads separately, since their content already contains URLs. It does not add
+per-download authorization or revoke URLs previously returned to a caller.
 
 ### 3: Generating the response & querying the responses
 
@@ -110,6 +141,13 @@ You can also pass in an image / file direction when generating text, if you're
 in an action. Any image or file passed in the `message` argument will
 automatically be saved in file storage if it's larger than 64k, and a fileId
 will be saved to the message.
+
+Automatically saved files inherit the explicitly supplied user ID, falling back
+to the thread's user. This applies to input messages, generated files, reasoning
+files, canonical tool-result files, and persisted streaming chunks. Message
+updates use the existing message's user, falling back to its thread. An
+anonymous thread without an explicit user remains unscoped. Attaching or cloning
+an existing file reference does not transfer its owner.
 
 Example:
 
@@ -158,6 +196,38 @@ await thread.generateText({
   },
 });
 ```
+
+### Cleaning up unused files
+
+File reference counts track retention by messages and in-flight streams,
+separately from `userId`. Registration starts at zero references; registration,
+reuse, and reference changes protect a file for 24 hours before it becomes
+eligible for cleanup.
+
+Use `getFilesToDelete` to page through candidates. From an app **mutation**,
+call `deleteFilesWithStorageIds` to recheck eligibility and delete their
+records, then delete only the returned storage IDs in that same mutation:
+
+```ts
+const { storageIdsToDelete } = await ctx.runMutation(
+  components.agent.files.deleteFilesWithStorageIds,
+  { fileIds: candidates.page.map((file) => file._id) },
+);
+for (const storageId of storageIdsToDelete) {
+  await ctx.storage.delete(storageId as Id<"_storage">);
+}
+```
+
+Import `Id` from your app's generated data model. Let errors propagate so the
+record and blob deletions roll back together. Do not split these operations
+across action calls. A blob is returned for deletion only when no other file
+record references its storage ID, even when `force` is used. Keep cleanup
+internal to your app; it is a maintenance API, not a user-authorized delete API.
+See [files/vacuum.ts](../example/convex/files/vacuum.ts) for a paginated job.
+
+Existing `deleteFiles` calls still return deleted file IDs. Update custom vacuum
+jobs that also delete blobs to use `deleteFilesWithStorageIds` so that one file
+record's cleanup cannot delete another record's shared storage.
 
 ## Generating images
 

@@ -1182,6 +1182,7 @@ describe("agent", () => {
     });
     const pending = messages[0]!;
     const { fileId: recoveredFileId } = await t.mutation(api.files.addFile, {
+      userId: "stream-file-recovery",
       storageId: "recovered-storage",
       hash: "recovered-hash",
       filename: "recovered.txt",
@@ -1222,6 +1223,7 @@ describe("agent", () => {
     await expect(
       t.query(api.files.get, { fileId: recoveredFileId }),
     ).resolves.toMatchObject({
+      userId: "stream-file-recovery",
       refcount: 1,
     });
     expect(
@@ -1230,6 +1232,7 @@ describe("agent", () => {
     ).toBeUndefined();
 
     const { fileId: timedOutFileId } = await t.mutation(api.files.addFile, {
+      userId: "stream-file-recovery",
       storageId: "timeout-storage",
       hash: "timeout-hash",
       filename: "timeout.txt",
@@ -1256,6 +1259,7 @@ describe("agent", () => {
     await expect(
       t.query(api.files.get, { fileId: timedOutFileId }),
     ).resolves.toMatchObject({
+      userId: "stream-file-recovery",
       refcount: 0,
     });
   });
