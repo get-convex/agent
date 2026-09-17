@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { Toaster } from "./components/ui/toaster";
 import ChatBasic from "./chat/ChatBasic";
 import ChatStreaming from "./chat/ChatStreaming";
+import ChatAssistantUI from "./chat/ChatAssistantUI";
 import FilesImages from "./files/FilesImages";
 import RateLimiting from "./rate_limiting/RateLimiting";
 import { WeatherFashion } from "./workflows/WeatherFashion";
@@ -42,6 +43,7 @@ export function App() {
             <Route path="/" element={<Index />} />
             <Route path="/chat-basic" element={<ChatBasic />} />
             <Route path="/chat-streaming" element={<ChatStreaming />} />
+            <Route path="/chat-assistant-ui" element={<ChatAssistantUI />} />
             <Route path="/files-images" element={<FilesImages />} />
             <Route path="/rag-basic" element={<RagBasic />} />
             <Route path="/rate-limiting" element={<RateLimiting />} />
@@ -88,6 +90,18 @@ function Index() {
               A simple streaming chat interface with an AI agent. Shows how to
               stream responses from an LLM in real time (without HTTP
               streaming!).
+            </p>
+          </li>
+          <li className="border rounded p-4 hover:shadow transition">
+            <Link
+              to="/chat-assistant-ui"
+              className="text-xl font-semibold text-indigo-700 hover:underline"
+            >
+              assistant-ui Chat
+            </Link>
+            <p className="mt-2 text-gray-700">
+              Use assistant-ui with Convex Agent for persistent streaming chat,
+              tool results, and message history.
             </p>
           </li>
           <li className="border rounded p-4 hover:shadow transition">
