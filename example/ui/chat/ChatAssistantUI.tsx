@@ -11,18 +11,17 @@ import { useMutation } from "convex/react";
 import { useCallback, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { useDemoThread } from "../hooks/use-demo-thread";
-import { Thread } from "../components/assistant-ui/elements/thread.aui";
-import { Button } from "../components/ui/button";
-import "./assistant-ui.css";
+import { AssistantChat } from "./AssistantChat";
+import styles from "./AssistantChat.module.css";
 import { toAssistantUIMessage } from "./assistantUiMessages";
 
 export default function ChatAssistantUI() {
   const { threadId, resetThread } = useDemoThread("assistant-ui Example");
   return (
-    <div className="assistant-ui-example h-full min-h-0 flex flex-col bg-background text-foreground">
-      <header className="bg-background p-4 border-b">
-        <h1 className="text-xl font-semibold">assistant-ui Chat</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <h1 className={styles.title}>assistant-ui Chat</h1>
+        <p className={styles.muted}>
           assistant-ui components with persistent, streaming Convex Agent
           messages.
         </p>
@@ -31,7 +30,7 @@ export default function ChatAssistantUI() {
         // Remount the runtime when switching threads so drafts and errors reset.
         <Chat key={threadId} threadId={threadId} resetThread={resetThread} />
       ) : (
-        <p className="p-6" role="status">
+        <p className={styles.notice} role="status">
           Creating a thread...
         </p>
       )}
@@ -46,7 +45,6 @@ function Chat({
   threadId: string;
   resetThread: () => Promise<void>;
 }) {
-
   const {
     results: messages,
     status,
@@ -117,22 +115,20 @@ function Chat({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <div className="flex items-center justify-between px-4 py-2">
+      <div className={styles.toolbar}>
         <div>
           {(status === "CanLoadMore" || status === "LoadingMore") && (
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
+              className={styles.textButton}
               disabled={status !== "CanLoadMore"}
               onClick={() => loadMore(20)}
             >
               {status === "LoadingMore" ? "Loading..." : "Load older messages"}
-            </Button>
+            </button>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          className={styles.textButton}
           disabled={isRunning}
           onClick={() => {
             void resetThread().catch(() =>
@@ -141,20 +137,20 @@ function Chat({
           }}
         >
           New thread
-        </Button>
+        </button>
       </div>
       {error && (
-        <p role="alert" className="px-6 py-2 text-destructive">
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       )}
       {status === "LoadingFirstPage" && (
-        <p role="status" className="px-6 text-sm text-muted-foreground">
+        <p role="status" className={styles.notice}>
           Loading messages...
         </p>
       )}
-      <div className="flex-1 min-h-0">
-        <Thread />
+      <div className={styles.chatContainer}>
+        <AssistantChat canCancel={!!streamingMessage} />
       </div>
     </AssistantRuntimeProvider>
   );
