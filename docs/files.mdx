@@ -159,6 +159,52 @@ await thread.generateText({
 });
 ```
 
+### `Timeout while downloading <url>` from the provider
+
+When a message carries an image or file as a URL, the component passes that URL
+through and the model provider downloads it. A timeout with the provider's API
+URL in the error (for example `AI_APICallError` from `api.openai.com`) means the
+provider's fetch of your host timed out, not anything in Convex. Third-party
+hosts and CDNs vary in how quickly they answer the provider, which is why the
+same URL can work one minute and fail the next.
+
+The fix is to stop relying on that host. Fetch the image yourself in an action,
+where you control the timeout and can retry, and pass the bytes in the message.
+Bytes up to 64 KiB are sent to the provider inline, so nothing is fetched at
+all; larger images are saved to Convex file storage and the provider fetches a
+storage URL. Either way your host is out of the path:
+
+```ts
+export const ask = internalAction({
+  args: { threadId: v.string(), imageUrl: v.string(), prompt: v.string() },
+  handler: async (ctx, { threadId, imageUrl, prompt }) => {
+    const response = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+    const mediaType = response.headers.get("content-type");
+    if (!mediaType?.startsWith("image/")) {
+      throw new Error(`Not an image: ${mediaType}`);
+    }
+    const image = new Uint8Array(await response.arrayBuffer());
+    const { thread } = await agent.continueThread(ctx, { threadId });
+    await thread.generateText({
+      message: {
+        role: "user",
+        content: [
+          { type: "image", image, mediaType },
+          { type: "text", text: prompt },
+        ],
+      },
+    });
+  },
+});
+```
+
+Only fetch URLs your application trusts. The component does not download
+arbitrary URLs on your behalf, since a server that fetches whatever URL a user
+supplies can be pointed at internal hosts.
+
 ## Generating images
 
 There's an example in

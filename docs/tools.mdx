@@ -40,9 +40,9 @@ with the source message. See [Messages](./messages.mdx) for more details.
 ### Stopping the tool loop
 
 After each step, the loop continues if the model finished with tool calls and no
-`stopWhen` condition matched. `stopWhen` is the only control over this:
-`maxSteps` is a deprecated alias that applies only when `stopWhen` is not set,
-so passing both leaves you with just `stopWhen`.
+`stopWhen` condition matched. `stopWhen` is the control over this. `maxSteps` is
+a deprecated alias: `generateText` and `streamText` use it only when `stopWhen`
+is not set, so passing both leaves you with just `stopWhen`.
 
 Conditions in an array are ORed, so the loop stops as soon as any of them holds.
 Pair a tool condition with a step cap, otherwise a model that keeps calling the
