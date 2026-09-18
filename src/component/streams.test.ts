@@ -1,9 +1,11 @@
 /// <reference types="vite/client" />
 
+import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
-import { initConvexTest } from "./setup.test.js";
+import schema from "./schema.js";
+import { initConvexTest, modules } from "./setup.test.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -87,7 +89,10 @@ describe("streams", () => {
     expect(
       (await t.run((ctx) => ctx.db.get("streamingMessages", streamId)))
         ?.fileRefs,
-    ).toEqual([{ url, fileId }, { url: `${url}-alternate`, fileId }]);
+    ).toEqual([
+      { url, fileId },
+      { url: `${url}-alternate`, fileId },
+    ]);
 
     await t.mutation(api.messages.addMessages, {
       threadId,
@@ -156,6 +161,106 @@ describe("streams", () => {
       await t.query(api.streams.listDeltas, {
         threadId,
         cursors: [{ streamId: earlyStreamId, cursor: 0 }],
+      }),
+    ).toEqual([]);
+  });
+
+  // The same 28 large deltas as the async case. A synchronous delete cannot
+  // finish inside one transaction's read limit, so it must say so and leave
+  // the stream intact rather than fail partway with a raw limit error.
+  test("sync deletion refuses a stream it cannot delete in one transaction", async () => {
+    const t = convexTest({
+      schema,
+      modules,
+      transactionLimits: true,
+    });
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "bounded-stream-cleanup",
+    });
+    const threadId = thread._id as Id<"threads">;
+    const streamId = await t.mutation(api.streams.create, {
+      threadId,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk",
+    });
+    for (let i = 0; i < 28; i++) {
+      await t.mutation(api.streams.addDelta, {
+        streamId,
+        start: i,
+        end: i + 1,
+        parts: [
+          { type: "text-delta", id: "large-delta", delta: "x".repeat(600_000) },
+        ],
+      });
+    }
+
+    await expect(
+      t.mutation(api.streams.deleteStreamSync, { streamId }),
+    ).rejects.toThrow(/deleteStreamAsync/);
+
+    expect(
+      await t.query(api.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    ).toHaveLength(1);
+    expect(
+      await t.run((ctx) =>
+        ctx.db
+          .query("streamDeltas")
+          .withIndex("streamId_start_end", (q) => q.eq("streamId", streamId))
+          .first(),
+      ),
+    ).not.toBeNull();
+  });
+
+  test("async deletion stays within transaction read limits", async () => {
+    vi.useFakeTimers();
+
+    const t = convexTest({
+      schema,
+      modules,
+      transactionLimits: true,
+    });
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "bounded-stream-cleanup",
+    });
+    const threadId = thread._id as Id<"threads">;
+    const streamId = await t.mutation(api.streams.create, {
+      threadId,
+      order: 0,
+      stepOrder: 0,
+      format: "UIMessageChunk",
+    });
+    for (let i = 0; i < 28; i++) {
+      await t.mutation(api.streams.addDelta, {
+        streamId,
+        start: i,
+        end: i + 1,
+        parts: [
+          {
+            type: "text-delta",
+            id: "large-delta",
+            delta: "x".repeat(600_000),
+          },
+        ],
+      });
+    }
+
+    await t.mutation(api.streams.deleteStreamAsync, { streamId });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(
+      await t.query(api.streams.list, {
+        threadId,
+        statuses: ["streaming", "finished", "aborted"],
+      }),
+    ).toEqual([]);
+    expect(
+      await t.query(api.streams.listDeltas, {
+        threadId,
+        cursors: [{ streamId, cursor: 0 }],
       }),
     ).toEqual([]);
   });
