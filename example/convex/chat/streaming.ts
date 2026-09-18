@@ -3,8 +3,10 @@ import { paginationOptsValidator } from "convex/server";
 import {
   createThread,
   listUIMessages,
+  listUIMessagesWithStreams,
   syncStreams,
   vStreamArgs,
+  vStreamUIMessagesReturnValue,
 } from "@convex-dev/agent";
 import { components, internal } from "../_generated/api";
 import {
@@ -88,6 +90,24 @@ export const listThreadMessages = query({
     threadId: v.string(),
     paginationOpts: paginationOptsValidator, // Used to paginate the messages.
     streamArgs: vStreamArgs, // Used to stream messages.
+  },
+  // Optional, but recommended: it matches what the handler returns.
+  returns: vStreamUIMessagesReturnValue,
+  handler: async (ctx, args) => {
+    await authorizeThreadAccess(ctx, args.threadId);
+    // This fetches both the paginated (finished) messages and the stream
+    // deltas, in the shape the `useUIMessages` React hook expects.
+    return listUIMessagesWithStreams(ctx, components.agent, args);
+  },
+});
+
+// If you want to filter or enrich the messages or deltas, you can compose
+// `listUIMessages` and `syncStreams` yourself instead:
+export const listThreadMessagesCustom = query({
+  args: {
+    threadId: v.string(),
+    paginationOpts: paginationOptsValidator,
+    streamArgs: vStreamArgs,
   },
   handler: async (ctx, args) => {
     const { threadId, streamArgs } = args;
