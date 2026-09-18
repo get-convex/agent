@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { getConvexSize } from "convex/values";
+import { convexValueSize } from "./streams.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { initConvexTest } from "./setup.test.js";
@@ -87,7 +89,10 @@ describe("streams", () => {
     expect(
       (await t.run((ctx) => ctx.db.get("streamingMessages", streamId)))
         ?.fileRefs,
-    ).toEqual([{ url, fileId }, { url: `${url}-alternate`, fileId }]);
+    ).toEqual([
+      { url, fileId },
+      { url: `${url}-alternate`, fileId },
+    ]);
 
     await t.mutation(api.messages.addMessages, {
       threadId,
@@ -158,5 +163,29 @@ describe("streams", () => {
         cursors: [{ streamId: earlyStreamId, cursor: 0 }],
       }),
     ).toEqual([]);
+  });
+
+  // The recovery budget must measure reads the way Convex does, or a document
+  // shape the estimate undercounts lets the aggregate drift past the budget.
+  // Stored deltas carry their system fields, so value size is document size.
+  test.each([
+    ["numbers", { parts: [{ type: "data", data: Array(1000).fill(0) }] }],
+    [
+      "text",
+      { parts: [{ type: "text-delta", id: "t", delta: "x".repeat(1000) }] },
+    ],
+    [
+      "unicode",
+      { parts: [{ type: "text-delta", id: "t", delta: "🦉".repeat(250) }] },
+    ],
+    [
+      "nested",
+      {
+        parts: [{ type: "data", data: { a: [1, "b", null, true, { c: [] }] } }],
+      },
+    ],
+    ["bytes", { parts: [{ type: "file", data: new ArrayBuffer(777) }] }],
+  ])("delta sizing matches Convex accounting for %s", (_name, doc) => {
+    expect(convexValueSize(doc)).toBe(getConvexSize(doc));
   });
 });
