@@ -32,6 +32,38 @@ const MINUTE = 60 * SECOND;
 
 const MAX_DELTAS_PER_REQUEST = 1000;
 const MAX_DELTAS_PER_STREAM = 100;
+// Materializing canonical messages from their delta logs must read every log
+// for the step in one transaction. These budgets are shared across all of a
+// step's streams and sit at half the 16 MiB read and 32,000 document limits,
+// leaving room for the rest of finalizeMessage. Past them, recovery fails
+// through the materialization-failure path rather than truncating.
+export const MAX_MATERIALIZATION_BYTES = 8 * 1024 * 1024;
+export const MAX_MATERIALIZATION_ROWS = 16_000;
+// A step normally has one stream; more only arise from retries.
+export const MAX_MATERIALIZATION_STREAMS = 10;
+
+// Convex's read accounting, mirrored from convex/values size.js so the budget
+// tracks the paginator's own limit exactly. The export arrived in convex
+// 1.31.7, after the oldest version this package supports.
+export function convexValueSize(value: unknown): number {
+  if (value === undefined) return 0;
+  if (value === null || typeof value === "boolean") return 1;
+  if (typeof value === "number" || typeof value === "bigint") return 9;
+  if (typeof value === "string") return 2 + utf8Length(value);
+  if (value instanceof ArrayBuffer) return 2 + value.byteLength;
+  if (Array.isArray(value)) {
+    return value.reduce<number>((size, v) => size + convexValueSize(v), 2);
+  }
+  let size = 2;
+  for (const [key, v] of Object.entries(value as object)) {
+    if (v !== undefined) size += utf8Length(key) + 1 + convexValueSize(v);
+  }
+  return size;
+}
+
+function utf8Length(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
 const TIMEOUT_INTERVAL = 10 * MINUTE;
 const DELETE_STREAM_DELAY = MINUTE * 5; // 5 minutes
 
@@ -606,7 +638,7 @@ export async function getStreamingMessages(
         .order("desc"),
     ),
     ["stepOrder"],
-  ).take(10);
+  ).take(MAX_MATERIALIZATION_STREAMS + 1);
 }
 
 export async function getStreamingMessagesWithMetadata(
@@ -625,55 +657,70 @@ export async function getStreamingMessagesWithMetadata(
   }>;
   streamsToRelease: Id<"streamingMessages">[];
 }> {
-  // See if there are any streaming messages for this order
   const streamingMessages = await getStreamingMessages(
     ctx,
     threadId,
     order,
     stepOrder,
   );
-  const materializedStreams = await Promise.all(
-    streamingMessages.map(async (streamingMessage) => {
-      const deltas = await ctx.db
+  const failure = (streamId: Id<"streamingMessages">, reason: string) => ({
+    messages: [],
+    materializationFailures: [{ streamId, reason }],
+    streamsToRelease: [],
+  });
+  if (streamingMessages.length > MAX_MATERIALIZATION_STREAMS) {
+    return failure(
+      streamingMessages[0]._id,
+      `Order ${order} has more than ${MAX_MATERIALIZATION_STREAMS} streams to recover`,
+    );
+  }
+  let bytesRemaining = MAX_MATERIALIZATION_BYTES;
+  let rowsRemaining = MAX_MATERIALIZATION_ROWS;
+  const messages: MessageWithMetadataInternal[] = [];
+  const streamsToRelease: Id<"streamingMessages">[] = [];
+  for (const streamingMessage of streamingMessages) {
+    try {
+      const deltas = await paginator(ctx.db, schema)
         .query("streamDeltas")
         .withIndex("streamId_start_end", (q) =>
           q.eq("streamId", streamingMessage._id),
         )
-        .take(1000);
-      try {
-        const streamMessage = publicStreamMessage(streamingMessage);
-        const { parts } = getPersistedUIMessageChunkParts(deltas);
-        // We don't save messages that have already been saved
-        const numToSkip = stepOrder - streamingMessage.stepOrder;
-        return {
-          messages: projectPersistedUIMessageChunks(
-            streamMessage,
-            parts,
-            metadata,
-            streamingMessage.fileRefs,
-          ).slice(numToSkip),
-          failure: undefined,
-          streamToRelease: streamingMessage._id,
-        };
-      } catch (error) {
-        return {
-          messages: [],
-          failure: {
-            streamId: streamingMessage._id,
-            reason: error instanceof Error ? error.message : String(error),
-          },
-          streamToRelease: undefined,
-        };
+        .paginate({
+          numItems: rowsRemaining,
+          maximumRowsRead: rowsRemaining,
+          maximumBytesRead: bytesRemaining,
+          cursor: null,
+        });
+      if (!deltas.isDone) {
+        throw new Error(
+          `Delta logs for order ${order} exceed the ${MAX_MATERIALIZATION_BYTES} byte or ${MAX_MATERIALIZATION_ROWS} document recovery budget at stream ${streamingMessage._id}`,
+        );
       }
-    }),
-  );
-  return {
-    messages: materializedStreams.flatMap(({ messages }) => messages),
-    materializationFailures: materializedStreams.flatMap(({ failure }) =>
-      failure ? [failure] : [],
-    ),
-    streamsToRelease: materializedStreams.flatMap(({ streamToRelease }) =>
-      streamToRelease ? [streamToRelease] : [],
-    ),
-  };
+      rowsRemaining -= deltas.page.length;
+      for (const delta of deltas.page) {
+        bytesRemaining -= convexValueSize(delta);
+      }
+      const { parts } = getPersistedUIMessageChunkParts(deltas.page);
+      // We don't save messages that have already been saved
+      const numToSkip = stepOrder - streamingMessage.stepOrder;
+      messages.push(
+        ...projectPersistedUIMessageChunks(
+          publicStreamMessage(streamingMessage),
+          parts,
+          metadata,
+          streamingMessage.fileRefs,
+        ).slice(numToSkip),
+      );
+      streamsToRelease.push(streamingMessage._id);
+    } catch (error) {
+      // One failure discards every recovered message, and a stream that
+      // exhausted the budget has already spent it; reading on would let a
+      // second such stream push the transaction past the read limit.
+      return failure(
+        streamingMessage._id,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+  return { messages, materializationFailures: [], streamsToRelease };
 }

@@ -513,15 +513,29 @@ export const finalizeMessage = mutation({
         return;
       }
       if (messages.length > 0) {
-        await addMessagesHandler(ctx, {
-          messages,
-          threadId: message.threadId,
-          agentName: message.agentName,
-          failPendingSteps: false,
-          pendingMessageId: messageId,
-          userId: message.userId,
-          embeddings: undefined,
-        });
+        // A recovered message can exceed the document limit even when its
+        // delta log fit the read budget. The nested mutation rolls back on
+        // its own, so the failure lands on the recovery path instead of
+        // aborting finalizeMessage and leaving the message pending forever.
+        try {
+          await ctx.runMutation(api.messages.addMessages, {
+            messages,
+            threadId: message.threadId,
+            agentName: message.agentName,
+            failPendingSteps: false,
+            pendingMessageId: messageId,
+            userId: message.userId,
+            embeddings: undefined,
+          });
+        } catch (error) {
+          console.error("Failed to persist recovered assistant streams", error);
+          await markPendingMessageFailed(
+            ctx,
+            message,
+            result.status === "failed" ? result.error : STREAM_RECOVERY_FAILURE,
+          );
+          return;
+        }
         await releaseStreamFileOwnershipByIds(ctx, streamsToRelease);
         return;
       }
