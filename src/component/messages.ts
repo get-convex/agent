@@ -618,6 +618,7 @@ export const cloneMessageBatch = internalMutation({
       paginationOpts: args.paginationOpts,
       statuses: args.statuses,
       upToAndIncludingMessageId: args.upToAndIncludingMessageId,
+      completeOrders: false,
     });
 
     const existing =
@@ -736,6 +737,12 @@ export const listMessagesByThreadIdArgs = {
   paginationOpts: v.optional(paginationOptsValidator),
   statuses: v.optional(v.array(vMessageStatus)),
   upToAndIncludingMessageId: v.optional(v.id("messages")),
+  /**
+   * Extend each descending page to the end of its oldest order so a UI
+   * message is never split across pages. Defaults to true. Pass false when
+   * only the newest rows matter and the page size must be exact.
+   */
+  completeOrders: v.optional(v.boolean()),
 };
 export const listMessagesByThreadId = query({
   args: listMessagesByThreadIdArgs,
@@ -781,17 +788,66 @@ async function listMessagesByThreadIdHandler(
         ),
     ),
   );
+  const paginationOpts = args.paginationOpts ?? {
+    numItems: DEFAULT_RECENT_MESSAGES,
+    cursor: null,
+  };
   const messages = await mergedStream(streams, ["order", "stepOrder"]).paginate(
-    args.paginationOpts ?? {
-      numItems: DEFAULT_RECENT_MESSAGES,
-      cursor: null,
-    },
+    paginationOpts,
   );
   if (messages.page.length === 0) {
     messages.isDone = true;
+    return messages;
+  }
+  // A UI message is assembled from every row sharing one order, so a page
+  // that ends partway through an order leaves the client with a fragment it
+  // cannot render or reconcile with its streaming counterpart. Extend the
+  // page to the order boundary so the continue cursor never splits an order.
+  // Only "desc" is handled: the remaining rows of the oldest order are the
+  // ones with a lower stepOrder, a bounded set. With endCursor the range is
+  // fixed by the caller, and a caller-supplied row or byte limit, or a page
+  // the paginator already asked to split, means the caller is managing
+  // transaction budget and the page must not grow. An order with more than
+  // MAX_ORDER_COMPLETION_MESSAGES remaining rows is completed across
+  // subsequent pages instead.
+  const oldest = messages.page[messages.page.length - 1];
+  if (
+    order === "desc" &&
+    args.completeOrders !== false &&
+    !messages.isDone &&
+    !messages.pageStatus &&
+    !paginationOpts.endCursor &&
+    paginationOpts.maximumRowsRead === undefined &&
+    paginationOpts.maximumBytesRead === undefined &&
+    oldest.stepOrder > 0
+  ) {
+    const paginateFrom = (numItems: number) =>
+      mergedStream(streams, ["order", "stepOrder"]).paginate({
+        numItems,
+        cursor: messages.continueCursor,
+      });
+    let completion = await paginateFrom(
+      Math.min(oldest.stepOrder, MAX_ORDER_COMPLETION_MESSAGES),
+    );
+    // stepOrder overestimates when a filter or deletion removed rows from the
+    // order. The stream is ordered, so the order's rows are a prefix of the
+    // page; re-read exactly that prefix so the cursor stops at the boundary
+    // rather than past rows the caller never received.
+    const kept = completion.page.findIndex((m) => m.order !== oldest.order);
+    if (kept === 0) {
+      return messages;
+    }
+    if (kept > 0) {
+      completion = await paginateFrom(kept);
+    }
+    messages.page.push(...completion.page);
+    messages.continueCursor = completion.continueCursor;
+    messages.isDone = completion.isDone;
   }
   return messages;
 }
+
+const MAX_ORDER_COMPLETION_MESSAGES = 1_000;
 
 export const getMessagesByIds = query({
   args: { messageIds: v.array(v.id("messages")) },

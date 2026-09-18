@@ -2232,6 +2232,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "query",
         "internal",
         {
+          completeOrders?: boolean;
           excludeToolMessages?: boolean;
           order: "asc" | "desc";
           paginationOpts?: {

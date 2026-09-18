@@ -171,6 +171,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
               threadId: thread._id,
               order: "desc",
               paginationOpts: { numItems: 1, cursor: null },
+              completeOrders: false,
             });
             return {
               ...thread,
