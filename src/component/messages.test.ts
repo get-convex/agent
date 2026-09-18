@@ -1381,9 +1381,7 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
     });
     const promptMessageId = messages[0]._id as Id<"messages">;
 
-    await t.mutation(api.messages.deleteByIds, {
-      messageIds: [promptMessageId],
-    });
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
 
     const saved = await t.mutation(api.messages.addMessages, {
       threadId,
@@ -1412,9 +1410,7 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
       messages: [{ message: { role: "user", content: "hello" } }],
     });
     const promptMessageId = messages[0]._id as Id<"messages">;
-    await t.mutation(api.messages.deleteByIds, {
-      messageIds: [promptMessageId],
-    });
+    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
 
     await expect(
       t.mutation(api.messages.addMessages, {

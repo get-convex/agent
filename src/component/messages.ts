@@ -669,6 +669,9 @@ export const cloneMessageBatch = internalMutation({
               threadId: args.targetThreadId,
             });
           }
+          // parentMessageId would point into the source thread. Nothing
+          // reads it yet, and remapping needs the parent copied first, which
+          // descending batches do not guarantee, so the copy carries none.
           await ctx.db.insert("messages", {
             ...omit(m, [
               "_id",
@@ -676,6 +679,7 @@ export const cloneMessageBatch = internalMutation({
               "threadId",
               "order",
               "embeddingId",
+              "parentMessageId",
             ]),
             embeddingId,
             threadId: args.targetThreadId,
@@ -700,19 +704,20 @@ export const cloneThread = action({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
+    const { batchSize, limit, ...batchArgs } = args;
     let cursor: string | null = null;
     let copiedSoFar = 0;
-    while (copiedSoFar < (args.limit ?? Infinity)) {
+    while (copiedSoFar < (limit ?? Infinity)) {
       const numToCopy = Math.min(
-        args.batchSize ?? DEFAULT_RECENT_MESSAGES,
-        args.limit ?? Infinity - copiedSoFar,
+        batchSize ?? DEFAULT_RECENT_MESSAGES,
+        (limit ?? Infinity) - copiedSoFar,
       );
       const result: {
         numCopied: number;
         continueCursor: string;
         isDone: boolean;
       } = await ctx.runMutation(internal.messages.cloneMessageBatch, {
-        ...args,
+        ...batchArgs,
         paginationOpts: {
           cursor,
           numItems: numToCopy,
