@@ -37,6 +37,36 @@ and re-generating if you pass `stopWhen: stepCountIs(num)` where `num > 1` to
 The tool call and result will be stored as messages in the thread associated
 with the source message. See [Messages](./messages.mdx) for more details.
 
+### Stopping the tool loop
+
+After each step, the loop continues if the model finished with tool calls and no
+`stopWhen` condition matched. `stopWhen` is the only control over this:
+`maxSteps` is a deprecated alias that applies only when `stopWhen` is not set,
+so passing both leaves you with just `stopWhen`.
+
+Conditions in an array are ORed, so the loop stops as soon as any of them holds.
+Pair a tool condition with a step cap, otherwise a model that keeps calling the
+tool without producing the result you wanted will loop until the action times
+out:
+
+```ts
+import { hasSuccessfulToolCall, stepCountIs } from "@convex-dev/agent";
+
+await agent.generateText(
+  ctx,
+  { threadId },
+  {
+    prompt,
+    stopWhen: [hasSuccessfulToolCall("generateImage"), stepCountIs(5)],
+  },
+);
+```
+
+`hasSuccessfulToolCall` matches only when the tool returned a result. The AI
+SDK's `hasToolCall` matches on the call alone, so a tool that throws or fails
+input validation would stop the loop with no result rather than letting the
+model retry.
+
 ## Creating a tool with a Convex context
 
 There are two ways to create a tool that has access to the Convex context.

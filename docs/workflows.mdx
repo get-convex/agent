@@ -99,6 +99,19 @@ Each step in the workflow is run, with the result recorded. Even if the server
 fails mid-way, it will resume with the latest incomplete step, with configurable
 retry settings.
 
+## Action time limits
+
+A `generateText` or `streamText` call runs inside a single Convex action,
+including every step of its tool loop. Actions in the Convex runtime can run for
+30 minutes and Node actions (`"use node"`) for 10 minutes; see
+[limits](https://docs.convex.dev/production/state/limits). An agent that runs
+many tool calls for one user message can hit that ceiling.
+
+To run longer, split the work so that no single action has to finish it. Each
+`generateText` call saves its steps as it goes, so a follow-up call with
+`promptMessageId` set to the original prompt continues from the saved history.
+The Workflow component below is the durable way to chain such steps.
+
 ## Using the Workflow component for long-lived durable workflows
 
 The [Workflow component](https://convex.dev/components/workflow) is a great way

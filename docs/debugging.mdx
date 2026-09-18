@@ -134,6 +134,22 @@ If you get type errors about `components.agent`, ensure you've run
 library are in the npm library, and the types for `components.agent` currently
 come from generated code in your project (via `npx convex dev`).
 
+### `dynamic module import unsupported` from an unrelated query
+
+Queries and mutations run in the Convex runtime, which has no Node.js APIs. If a
+tool's `execute` imports a Node-only package, the whole module that defines the
+agent fails to load there, and the error surfaces from whichever query or
+mutation imports that module, typically the one listing thread messages.
+
+Keep the Node-only work in its own file marked `"use node"` as an
+`internalAction`, and have the tool call it with `ctx.runAction`. The agent
+module then stays loadable from the Convex runtime. To find which import pulls
+in Node APIs, run:
+
+```sh
+npx convex dev --once --debug-node-apis
+```
+
 ### Circular dependencies
 
 Having the return value of workflows depend on other Convex functions can lead
