@@ -126,6 +126,10 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   query: Query,
   args: UIMessagesQueryArgs<Query> | "skip",
   options: {
+    /**
+     * Minimum page size. A page is extended to the end of its oldest `order`
+     * so a UI message is never split across pages, so it can hold more rows.
+     */
     initialNumItems: number;
     stream?: Query extends StreamQuery
       ? boolean

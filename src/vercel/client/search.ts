@@ -37,7 +37,6 @@ import {
 
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // Bound the rare boundary-extension query; incomplete orders are trimmed below.
-const MAX_ORDER_COMPLETION_MESSAGES = 1_000;
 // 10k characters should be more than enough for most cases, and stays under
 // the 8k token limit for some models.
 const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
@@ -164,26 +163,7 @@ export async function fetchRecentAndSearchMessages(
       opts.recentMessages ?? DEFAULT_RECENT_MESSAGES,
       null,
     );
-    let page = firstPage.page;
-    const oldest = page.at(-1);
-    if (
-      oldest &&
-      oldest.stepOrder > 0 &&
-      !firstPage.isDone &&
-      firstPage.continueCursor
-    ) {
-      const completionPage = await fetchRecentPage(
-        Math.min(oldest.stepOrder, MAX_ORDER_COMPLETION_MESSAGES),
-        firstPage.continueCursor,
-      );
-      page = [
-        ...page,
-        ...completionPage.page.filter(
-          (message) => message.order === oldest.order,
-        ),
-      ];
-    }
-    const retained = trimIncompleteOldestOrder(sorted(page));
+    const retained = trimIncompleteOldestOrder(sorted(firstPage.page));
     included = new Set(retained.map((m) => m._id));
     recentMessages = filterOutOrphanedToolMessages(retained);
   }

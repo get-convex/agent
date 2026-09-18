@@ -616,78 +616,61 @@ describe("search.ts", () => {
       });
     });
 
-    it("should complete an order truncated by the recent messages limit", async () => {
+    it("keeps an order the component completed past the recent messages limit", async () => {
       const toolCallId = "call_issue_309";
-      vi.mocked(mockCtx.runQuery)
-        .mockResolvedValueOnce({
-          page: [
-            createMockMessageDoc(
-              "assistant-final",
-              "assistant",
-              [{ type: "text", text: "The result is 72." }],
-              1,
-              3,
-            ),
-            createMockMessageDoc(
-              "tool-result",
-              "tool",
-              [
-                {
-                  type: "tool-result",
-                  toolCallId,
-                  toolName: "getWeather",
-                  output: {
-                    type: "json",
-                    value: { temperature: 72 },
-                  },
+      vi.mocked(mockCtx.runQuery).mockResolvedValueOnce({
+        page: [
+          createMockMessageDoc(
+            "assistant-final",
+            "assistant",
+            [{ type: "text", text: "The result is 72." }],
+            1,
+            3,
+          ),
+          createMockMessageDoc(
+            "tool-result",
+            "tool",
+            [
+              {
+                type: "tool-result",
+                toolCallId,
+                toolName: "getWeather",
+                output: {
+                  type: "json",
+                  value: { temperature: 72 },
                 },
-              ],
-              1,
-              2,
-            ),
-            createMockMessageDoc(
-              "assistant-tool-call",
-              "assistant",
-              [
-                {
-                  type: "tool-call",
-                  toolCallId,
-                  toolName: "getWeather",
-                  input: { city: "New York" },
-                },
-              ],
-              1,
-              1,
-            ),
-          ],
-          continueCursor: "complete-order",
-          isDone: false,
-        })
-        .mockResolvedValueOnce({
-          page: [
-            createMockMessageDoc(
-              "user",
-              "user",
-              "What is the weather?",
-              1,
-              0,
-            ),
-          ],
-          continueCursor: "done",
-          isDone: true,
-        });
+              },
+            ],
+            1,
+            2,
+          ),
+          createMockMessageDoc(
+            "assistant-tool-call",
+            "assistant",
+            [
+              {
+                type: "tool-call",
+                toolCallId,
+                toolName: "getWeather",
+                input: { city: "New York" },
+              },
+            ],
+            1,
+            1,
+          ),
+          createMockMessageDoc("user", "user", "What is the weather?", 1, 0),
+        ],
+        continueCursor: "next-order",
+        isDone: false,
+      });
 
-      const result = await fetchContextWithPrompt(
-        mockCtx,
-        components.agent,
-        {
-          ...baseArgs,
-          prompt: "What should I do next?",
-          messages: undefined,
-          promptMessageId: undefined,
-          contextOptions: { recentMessages: 3 },
-        },
-      );
+      const result = await fetchContextWithPrompt(mockCtx, components.agent, {
+        ...baseArgs,
+        prompt: "What should I do next?",
+        messages: undefined,
+        promptMessageId: undefined,
+        contextOptions: { recentMessages: 3 },
+      });
 
       expect(result.messages.map((message) => message.role)).toEqual([
         "user",
@@ -696,61 +679,36 @@ describe("search.ts", () => {
         "assistant",
         "user",
       ]);
-      expect(mockCtx.runQuery).toHaveBeenNthCalledWith(2, expect.anything(), {
-        threadId: "thread123",
-        excludeToolMessages: undefined,
-        paginationOpts: { numItems: 1, cursor: "complete-order" },
-        upToAndIncludingMessageId: undefined,
-        order: "desc",
-        statuses: ["success"],
-      });
+      expect(mockCtx.runQuery).toHaveBeenCalledTimes(1);
     });
 
-    it("should omit an order when its boundary cannot be fetched", async () => {
-      vi.mocked(mockCtx.runQuery)
-        .mockResolvedValueOnce({
-          page: [
-            createMockMessageDoc(
-              "assistant-final",
-              "assistant",
-              "Partial answer",
-              1,
-              2,
-            ),
-          ],
-          continueCursor: "complete-order",
-          isDone: false,
-        })
-        .mockResolvedValueOnce({
-          page: [
-            createMockMessageDoc(
-              "assistant-step",
-              "assistant",
-              "Still partial",
-              1,
-              1,
-            ),
-          ],
-          continueCursor: "done",
-          isDone: true,
-        });
+    it("omits an order the component left incomplete", async () => {
+      vi.mocked(mockCtx.runQuery).mockResolvedValueOnce({
+        page: [
+          createMockMessageDoc(
+            "assistant-final",
+            "assistant",
+            "Partial answer",
+            1,
+            2,
+          ),
+        ],
+        continueCursor: "complete-order",
+        isDone: false,
+      });
 
-      const result = await fetchContextWithPrompt(
-        mockCtx,
-        components.agent,
-        {
-          ...baseArgs,
-          prompt: "New prompt",
-          messages: undefined,
-          promptMessageId: undefined,
-          contextOptions: { recentMessages: 1 },
-        },
-      );
+      const result = await fetchContextWithPrompt(mockCtx, components.agent, {
+        ...baseArgs,
+        prompt: "New prompt",
+        messages: undefined,
+        promptMessageId: undefined,
+        contextOptions: { recentMessages: 1 },
+      });
 
       expect(result.messages).toEqual([
         { role: "user", content: "New prompt" },
       ]);
-      expect(mockCtx.runQuery).toHaveBeenCalledTimes(2);
+      expect(mockCtx.runQuery).toHaveBeenCalledTimes(1);
     });
 
     it("should handle input messages correctly", async () => {
