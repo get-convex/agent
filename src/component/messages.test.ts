@@ -5,7 +5,11 @@ import { describe, expect, test, vi } from "vitest";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import { getMaxMessage } from "./messages.js";
-import { timeoutStreamHandler } from "./streams.js";
+import {
+  MAX_MATERIALIZATION_BYTES,
+  MAX_MATERIALIZATION_ROWS,
+  timeoutStreamHandler,
+} from "./streams.js";
 import schema from "./schema.js";
 import { initConvexTest, modules } from "./setup.test.js";
 
@@ -1017,6 +1021,175 @@ describe("agent", () => {
     expect(results.some((m) => m._id === targetMessages[0]._id)).toBe(false);
   });
 
+  // finalizeMessage rebuilds a pending assistant message from the delta logs
+  // of its aborted streams. The contract is complete recovery or an explicit
+  // failure; a partial message is never written and the mutation never aborts.
+  async function pendingWithStreams(
+    streamCount = 1,
+    transactionLimits: Parameters<
+      typeof convexTest
+    >[0]["transactionLimits"] = true,
+  ) {
+    const t = convexTest({ schema, modules, transactionLimits });
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "bounded-recovery-user",
+    });
+    const threadId = thread._id as Id<"threads">;
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [
+        { message: { role: "assistant", content: [] }, status: "pending" },
+      ],
+    });
+    const pending = messages[0]!;
+    const streamIds: Id<"streamingMessages">[] = [];
+    for (let i = 0; i < streamCount; i++) {
+      streamIds.push(
+        await t.run(async (ctx) =>
+          ctx.db.insert("streamingMessages", {
+            threadId,
+            order: pending.order,
+            stepOrder: pending.stepOrder,
+            format: "UIMessageChunk",
+            state: { kind: "aborted", reason: "interrupted" },
+          }),
+        ),
+      );
+    }
+    const addText = async (
+      streamId: Id<"streamingMessages">,
+      deltas: string[],
+    ) => {
+      await t.run((ctx) =>
+        ctx.db.insert("streamDeltas", {
+          streamId,
+          start: 0,
+          end: 1,
+          parts: [{ type: "text-start", id: "text" }],
+        }),
+      );
+      for (let i = 0; i < deltas.length; i += 4000) {
+        const batch = deltas.slice(i, i + 4000);
+        await t.run(async (ctx) => {
+          for (const [j, delta] of batch.entries()) {
+            await ctx.db.insert("streamDeltas", {
+              streamId,
+              start: i + j + 1,
+              end: i + j + 2,
+              parts: [{ type: "text-delta", id: "text", delta }],
+            });
+          }
+        });
+      }
+    };
+    const finalize = async (
+      result: { status: "success" } | { status: "failed"; error: string },
+    ) => {
+      await t.mutation(api.messages.finalizeMessage, {
+        messageId: pending._id as Id<"messages">,
+        result,
+      });
+      return t.run((ctx) =>
+        ctx.db.get("messages", pending._id as Id<"messages">),
+      );
+    };
+    // Every message recovered into the pending message's step, in order.
+    const recoveredTexts = async () => {
+      const { page } = await t.query(api.messages.listMessagesByThreadId, {
+        threadId,
+        order: "asc",
+      });
+      return page
+        .filter((m) => m.order === pending.order)
+        .map((m) => m.text ?? "");
+    };
+    return { streamIds, addText, finalize, recoveredTexts };
+  }
+
+  const fill = (count: number, size: number) =>
+    Array.from({ length: count }, () => "x".repeat(size));
+  // Each fits the recovery budget alone; enough of them together do not.
+  const largeDelta = Math.floor(MAX_MATERIALIZATION_BYTES / 9);
+
+  test.each([
+    {
+      name: "many deltas past the old 1,000 document cap",
+      streams: [[...fill(1000, 1), "accepted 🦉 tail"]],
+    },
+    {
+      name: "a few large deltas within the budget",
+      streams: [fill(4, largeDelta)],
+    },
+    {
+      name: "several streams sharing the budget",
+      streams: [fill(2, largeDelta), fill(2, largeDelta)],
+    },
+  ])("recovers every accepted delta: $name", async ({ streams }) => {
+    const { streamIds, addText, finalize, recoveredTexts } =
+      await pendingWithStreams(streams.length);
+    for (const [i, deltas] of streams.entries()) {
+      await addText(streamIds[i]!, deltas);
+    }
+    const finalized = await finalize({
+      status: "failed",
+      error: "interrupted",
+    });
+    expect(finalized?.status).toBe("failed");
+    expect(await recoveredTexts()).toEqual(streams.map((d) => d.join("")));
+  });
+
+  test.each([
+    {
+      name: "one stream over the byte budget",
+      streams: [fill(10, largeDelta)],
+    },
+    {
+      name: "streams that fit alone but not together",
+      streams: [fill(6, largeDelta), fill(6, largeDelta)],
+    },
+    {
+      name: "a second stream after the first exhausted the budget",
+      streams: [fill(10, largeDelta), fill(10, largeDelta)],
+    },
+    {
+      name: "one stream over the document budget",
+      streams: [fill(MAX_MATERIALIZATION_ROWS + 1, 1)],
+    },
+    {
+      // convex-test does not enforce the 1 MiB document ceiling, so a write
+      // budget the recovered message exceeds stands in for it.
+      name: "a recovered message the store rejects",
+      streams: [fill(3, 300_000)],
+      transactionLimits: { bytesWritten: 1024 * 1024 },
+    },
+    {
+      // Each message fits the write budget alone. The second write fails
+      // after the first succeeded, so the first must be rolled back too.
+      name: "a second recovered message the store rejects",
+      streams: [fill(2, 300_000), fill(2, 300_000)],
+      transactionLimits: { bytesWritten: 1024 * 1024 + 800_000 },
+    },
+    {
+      name: "more streams than recovery will attempt",
+      streams: Array.from({ length: 11 }, () => ["x"]),
+    },
+  ])(
+    "fails explicitly without a partial write: $name",
+    async ({ streams, transactionLimits }) => {
+      const { streamIds, addText, finalize, recoveredTexts } =
+        await pendingWithStreams(streams.length, transactionLimits ?? true);
+      for (const [i, deltas] of streams.entries()) {
+        await addText(streamIds[i]!, deltas);
+      }
+      const finalized = await finalize({ status: "success" });
+      expect(finalized?.status).toBe("failed");
+      expect(finalized?.error).toBe(
+        "Failed to recover persisted assistant stream output",
+      );
+      expect(await recoveredTexts()).toEqual([""]);
+    },
+  );
+
   test("finalizeMessage commits a failed pending message when stream recovery is malformed", async () => {
     const t = initConvexTest();
     const thread = await t.mutation(api.threads.createThread, {
@@ -1381,7 +1554,9 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
     });
     const promptMessageId = messages[0]._id as Id<"messages">;
 
-    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [promptMessageId],
+    });
 
     const saved = await t.mutation(api.messages.addMessages, {
       threadId,
@@ -1410,7 +1585,9 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
       messages: [{ message: { role: "user", content: "hello" } }],
     });
     const promptMessageId = messages[0]._id as Id<"messages">;
-    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [promptMessageId],
+    });
 
     await expect(
       t.mutation(api.messages.addMessages, {
