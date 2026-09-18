@@ -1381,7 +1381,9 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
     });
     const promptMessageId = messages[0]._id as Id<"messages">;
 
-    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [promptMessageId],
+    });
 
     const saved = await t.mutation(api.messages.addMessages, {
       threadId,
@@ -1410,7 +1412,9 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
       messages: [{ message: { role: "user", content: "hello" } }],
     });
     const promptMessageId = messages[0]._id as Id<"messages">;
-    await t.mutation(api.messages.deleteByIds, { messageIds: [promptMessageId] });
+    await t.mutation(api.messages.deleteByIds, {
+      messageIds: [promptMessageId],
+    });
 
     await expect(
       t.mutation(api.messages.addMessages, {
@@ -1419,5 +1423,179 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
         messages: [{ message: { role: "assistant", content: "answer" } }],
       }),
     ).rejects.toThrow("not found");
+  });
+});
+
+describe("listMessagesByThreadId completes split orders", () => {
+  // Three generations. Orders 0 and 2 are tool loops (four rows each), order
+  // 1 is a plain exchange (two rows).
+  async function seedThread() {
+    const t = initConvexTest();
+    const thread = await t.mutation(api.threads.createThread, {
+      userId: "test",
+    });
+    const threadId = thread._id as Id<"threads">;
+    const toolLoop = (tag: string) => [
+      { message: { role: "user" as const, content: `${tag} prompt` } },
+      {
+        message: {
+          role: "assistant" as const,
+          content: [
+            {
+              type: "tool-call" as const,
+              toolCallId: `${tag}-call`,
+              toolName: "echo",
+              input: {},
+            },
+          ],
+        },
+      },
+      {
+        message: {
+          role: "tool" as const,
+          content: [
+            {
+              type: "tool-result" as const,
+              toolCallId: `${tag}-call`,
+              toolName: "echo",
+              output: { type: "text" as const, value: "ok" },
+            },
+          ],
+        },
+      },
+      { message: { role: "assistant" as const, content: `${tag} answer` } },
+    ];
+    await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: toolLoop("a"),
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: [
+        { message: { role: "user", content: "b prompt" } },
+        { message: { role: "assistant", content: "b answer" } },
+      ],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId,
+      messages: toolLoop("c"),
+    });
+    return { t, threadId };
+  }
+
+  const positions = (page: { order: number; stepOrder: number }[]) =>
+    page.map((m) => `${m.order}/${m.stepOrder}`);
+
+  test("a page that ends inside an order is extended to the order boundary", async () => {
+    const { t, threadId } = await seedThread();
+    const first = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+    expect(positions(first.page)).toEqual(["2/3", "2/2", "2/1", "2/0"]);
+    expect(first.isDone).toBe(false);
+
+    const second = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: first.continueCursor, numItems: 3 },
+    });
+    expect(positions(second.page)).toEqual([
+      "1/1",
+      "1/0",
+      "0/3",
+      "0/2",
+      "0/1",
+      "0/0",
+    ]);
+    const third = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: second.continueCursor, numItems: 3 },
+    });
+    expect(third.page).toEqual([]);
+    expect(third.isDone).toBe(true);
+  });
+
+  test("a page that already ends on an order boundary is not extended", async () => {
+    const { t, threadId } = await seedThread();
+    const page = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: null, numItems: 4 },
+    });
+    expect(positions(page.page)).toEqual(["2/3", "2/2", "2/1", "2/0"]);
+  });
+
+  test("the completion request is exact when a filter hides rows of the order", async () => {
+    const { t, threadId } = await seedThread();
+    // Tool rows are the tool result and the assistant tool call, so with them
+    // excluded the stream for order 2 is 2/3, 2/0. A page of one row ends at
+    // 2/3, whose stepOrder would suggest three remaining rows, but only one
+    // exists in the filtered stream. Fetching three would pull 1/1 and 1/0
+    // into the page and the cursor would skip past them.
+    const first = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      excludeToolMessages: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(positions(first.page)).toEqual(["2/3", "2/0"]);
+
+    const second = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      excludeToolMessages: true,
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+    expect(positions(second.page)).toEqual(["1/1", "1/0"]);
+  });
+
+  test("re-reading a page with its endCursor returns the same extended range", async () => {
+    const { t, threadId } = await seedThread();
+    const first = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+    const reread = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: {
+        cursor: null,
+        numItems: 3,
+        endCursor: first.continueCursor,
+      },
+    });
+    expect(reread.page.map((m) => m._id)).toEqual(first.page.map((m) => m._id));
+    expect(reread.continueCursor).toBe(first.continueCursor);
+  });
+
+  test("completeOrders: false returns exactly the requested rows", async () => {
+    const { t, threadId } = await seedThread();
+    const page = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      completeOrders: false,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(positions(page.page)).toEqual(["2/3"]);
+  });
+
+  test("a caller-supplied read limit is honored instead of extending", async () => {
+    const { t, threadId } = await seedThread();
+    const rows = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: null, numItems: 3, maximumRowsRead: 1 },
+    });
+    expect(rows.page.length).toBeLessThanOrEqual(1);
+    const bytes = await t.query(api.messages.listMessagesByThreadId, {
+      threadId,
+      order: "desc",
+      paginationOpts: { cursor: null, numItems: 3, maximumBytesRead: 1 },
+    });
+    expect(bytes.page.length).toBeLessThanOrEqual(1);
   });
 });
