@@ -284,4 +284,61 @@ describe("streams", () => {
       }),
     ).toEqual([]);
   });
+
+  test.each([1, 2])(
+    "a client can walk every delta of %i large streams",
+    async (streamCount) => {
+      const t = convexTest({ schema, modules, transactionLimits: true });
+      const thread = await t.mutation(api.threads.createThread, {
+        userId: "large-deltas",
+      });
+      const threadId = thread._id as Id<"threads">;
+      const streamIds: Id<"streamingMessages">[] = [];
+      for (let s = 0; s < streamCount; s++) {
+        const streamId = await t.mutation(api.streams.create, {
+          threadId,
+          order: 0,
+          stepOrder: s,
+          format: "UIMessageChunk",
+        });
+        streamIds.push(streamId);
+        for (let i = 0; i < 30; i++) {
+          await t.mutation(api.streams.addDelta, {
+            streamId,
+            start: i,
+            end: i + 1,
+            parts: [
+              { type: "text-delta", id: "t", delta: "x".repeat(600_000) },
+            ],
+          });
+        }
+      }
+
+      const cursors = new Map<Id<"streamingMessages">, number>(
+        streamIds.map((id) => [id, 0]),
+      );
+      const received = new Map<Id<"streamingMessages">, number[]>(
+        streamIds.map((id) => [id, []]),
+      );
+      for (;;) {
+        const page = await t.query(api.streams.listDeltas, {
+          threadId,
+          cursors: [...cursors].map(([streamId, cursor]) => ({
+            streamId,
+            cursor,
+          })),
+        });
+        if (page.length === 0) break;
+        for (const delta of page) {
+          const streamId = delta.streamId as Id<"streamingMessages">;
+          expect(delta.start).toBe(cursors.get(streamId));
+          cursors.set(streamId, delta.end);
+          received.get(streamId)!.push(delta.start);
+        }
+      }
+      for (const starts of received.values()) {
+        expect(starts).toEqual(Array.from({ length: 30 }, (_, i) => i));
+      }
+    },
+  );
 });
