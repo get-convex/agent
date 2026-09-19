@@ -181,6 +181,54 @@ return result.toUIMessageStreamResponse();
 If you don't want to have the Agent involved at all, the next section will show
 you how to save the deltas yourself.
 
+### Using `useChat` from `@ai-sdk/react`
+
+`toUIMessageStreamResponse()` returns the response shape `useChat` consumes, so
+the AI SDK's React hook and the tooling built around it work against an
+`httpAction`. The hook posts its `messages` array; take the last user message as
+the prompt and let the agent load the rest of the history from the thread:
+
+```ts
+// convex/chat.ts
+export const chat = httpAction(async (ctx, request) => {
+  const { messages, threadId } = await request.json();
+  const last = messages.at(-1);
+  const prompt = last.parts
+    .filter((p: { type: string }) => p.type === "text")
+    .map((p: { text: string }) => p.text)
+    .join("");
+  const result = await agent.streamText(
+    ctx,
+    { threadId },
+    { prompt },
+    { saveStreamDeltas: { returnImmediately: true } },
+  );
+  return result.toUIMessageStreamResponse();
+});
+```
+
+Route it in `convex/http.ts` with CORS, as in
+[http.ts](../example/convex/http.ts), then point the transport at it:
+
+```tsx
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+
+const { messages, sendMessage } = useChat({
+  transport: new DefaultChatTransport({
+    api: `${import.meta.env.VITE_CONVEX_SITE_URL}/chat`,
+    body: { threadId },
+  }),
+});
+```
+
+The trade-off is where state lives. `useChat` holds the conversation in the
+browser tab that made the request; the agent still persists every message, but
+another tab or device sees nothing until it re-fetches. `useUIMessages` reads
+the same persisted messages and deltas reactively from the database, so every
+subscriber sees the stream. Use `useChat` when you need its ecosystem, and
+`useUIMessages` when you need the conversation to be shared.
+
 ## Advanced: Streaming deltas asynchronously without using an Agent
 
 To stream messages without using the Agent's wrapper of `streamText`, you can
