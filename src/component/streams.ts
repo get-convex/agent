@@ -59,6 +59,9 @@ export function convexValueSize(value: unknown): number {
 function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
+
+// Half the 16 MiB read limit across a request's cursors.
+const MAX_DELTA_BYTES_PER_REQUEST = 8 * 1024 * 1024;
 const MAX_BYTES_READ_PER_DELETE = 1024 * 1024;
 // Pages are read twice (paginate, then delete), so this is ~8 MiB per transaction.
 const MAX_SYNC_DELETE_PAGES = 4;
@@ -125,23 +128,28 @@ export const listDeltas = query({
   returns: v.array(vStreamDelta),
   handler: async (ctx, args): Promise<StreamDelta[]> => {
     let totalDeltas = 0;
+    let bytesRemaining = MAX_DELTA_BYTES_PER_REQUEST;
     const deltas: StreamDelta[] = [];
     for (const cursor of args.cursors) {
-      const streamDeltas = await ctx.db
+      const { page } = await paginator(ctx.db, schema)
         .query("streamDeltas")
         .withIndex("streamId_start_end", (q) =>
           q.eq("streamId", cursor.streamId).gte("start", cursor.cursor),
         )
-        .take(
-          Math.min(MAX_DELTAS_PER_STREAM, MAX_DELTAS_PER_REQUEST - totalDeltas),
-        );
-      totalDeltas += streamDeltas.length;
-      deltas.push(
-        ...streamDeltas.map((d) =>
-          pick(d, ["streamId", "start", "end", "parts"]),
-        ),
-      );
-      if (totalDeltas >= MAX_DELTAS_PER_REQUEST) {
+        .paginate({
+          numItems: Math.min(
+            MAX_DELTAS_PER_STREAM,
+            MAX_DELTAS_PER_REQUEST - totalDeltas,
+          ),
+          maximumBytesRead: bytesRemaining,
+          cursor: null,
+        });
+      totalDeltas += page.length;
+      for (const d of page) {
+        bytesRemaining -= convexValueSize(d);
+        deltas.push(pick(d, ["streamId", "start", "end", "parts"]));
+      }
+      if (totalDeltas >= MAX_DELTAS_PER_REQUEST || bytesRemaining <= 0) {
         break;
       }
     }
