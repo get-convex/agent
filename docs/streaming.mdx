@@ -222,12 +222,17 @@ const { messages, sendMessage } = useChat({
 });
 ```
 
+`VITE_CONVEX_SITE_URL` is not set by `npx convex dev`; add it to `.env.local`
+yourself with your deployment's `.convex.site` URL (Dashboard, Settings, URL and
+Deploy Key). It differs from the `.convex.cloud` value in `VITE_CONVEX_URL`.
+
 The trade-off is where state lives. `useChat` holds the conversation in the
 browser tab that made the request; the agent still persists every message, but
-another tab or device sees nothing until it re-fetches. `useUIMessages` reads
-the same persisted messages and deltas reactively from the database, so every
-subscriber sees the stream. Use `useChat` when you need its ecosystem, and
-`useUIMessages` when you need the conversation to be shared.
+another tab or device sees nothing, and `useChat` never re-fetches on its own,
+so on reload you seed its `messages` from a query over the thread.
+`useUIMessages` reads the same persisted messages and deltas reactively from the
+database, so every subscriber sees the stream. Use `useChat` when you need its
+ecosystem, and `useUIMessages` when you need the conversation to be shared.
 
 ## Advanced: Streaming deltas asynchronously without using an Agent
 

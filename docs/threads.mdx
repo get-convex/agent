@@ -128,9 +128,8 @@ const threads = await ctx.runQuery(
 
 Threads carry no `updatedAt`. Keeping one on the thread would mean patching the
 thread document on every message, which makes concurrent generations in one
-thread contend on a single row, and listing by it from the component would still
-cost one read per thread. Keep the activity index in your app instead, where the
-mutation that accepts a user message already runs:
+thread contend on a single row. Keep the activity index in your app instead,
+where the mutation that accepts a user message already runs:
 
 ```ts
 // convex/schema.ts
