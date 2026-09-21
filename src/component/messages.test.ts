@@ -1105,7 +1105,6 @@ describe("agent", () => {
 
   const fill = (count: number, size: number) =>
     Array.from({ length: count }, () => "x".repeat(size));
-  // Each fits the recovery budget alone; enough of them together do not.
   const largeDelta = Math.floor(MAX_MATERIALIZATION_BYTES / 9);
 
   test.each([

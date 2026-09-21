@@ -165,9 +165,6 @@ describe("streams", () => {
     ).toEqual([]);
   });
 
-  // The recovery budget must measure reads the way Convex does, or a document
-  // shape the estimate undercounts lets the aggregate drift past the budget.
-  // Stored deltas carry their system fields, so value size is document size.
   test.each([
     ["numbers", { parts: [{ type: "data", data: Array(1000).fill(0) }] }],
     [

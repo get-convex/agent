@@ -32,19 +32,14 @@ const MINUTE = 60 * SECOND;
 
 const MAX_DELTAS_PER_REQUEST = 1000;
 const MAX_DELTAS_PER_STREAM = 100;
-// Materializing canonical messages from their delta logs must read every log
-// for the step in one transaction. These budgets are shared across all of a
-// step's streams and sit at half the 16 MiB read and 32,000 document limits,
-// leaving room for the rest of finalizeMessage. Past them, recovery fails
-// through the materialization-failure path rather than truncating.
+// Half the 16 MiB read and 32,000 document transaction limits, shared across a
+// step's streams, leaving room for the rest of finalizeMessage.
 export const MAX_MATERIALIZATION_BYTES = 8 * 1024 * 1024;
 export const MAX_MATERIALIZATION_ROWS = 16_000;
-// A step normally has one stream; more only arise from retries.
 export const MAX_MATERIALIZATION_STREAMS = 10;
 
-// Convex's read accounting, mirrored from convex/values size.js so the budget
-// tracks the paginator's own limit exactly. The export arrived in convex
-// 1.31.7, after the oldest version this package supports.
+// Mirrors convex/values size.js; getConvexSize is newer than the oldest
+// convex this package supports.
 export function convexValueSize(value: unknown): number {
   if (value === undefined) return 0;
   if (value === null || typeof value === "boolean") return 1;
@@ -713,9 +708,6 @@ export async function getStreamingMessagesWithMetadata(
       );
       streamsToRelease.push(streamingMessage._id);
     } catch (error) {
-      // One failure discards every recovered message, and a stream that
-      // exhausted the budget has already spent it; reading on would let a
-      // second such stream push the transaction past the read limit.
       return failure(
         streamingMessage._id,
         error instanceof Error ? error.message : String(error),

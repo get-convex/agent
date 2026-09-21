@@ -513,10 +513,8 @@ export const finalizeMessage = mutation({
         return;
       }
       if (messages.length > 0) {
-        // A recovered message can exceed the document limit even when its
-        // delta log fit the read budget. The nested mutation rolls back on
-        // its own, so the failure lands on the recovery path instead of
-        // aborting finalizeMessage and leaving the message pending forever.
+        // Nested so an oversized recovered message rolls back on its own and
+        // the pending message is marked failed instead of stuck.
         try {
           await ctx.runMutation(api.messages.addMessages, {
             messages,
