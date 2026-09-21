@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai";
+import type { ModelMessage, ToolModelMessage } from "ai";
 import { defineSchema } from "convex/server";
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -28,217 +28,12 @@ const agent = new Agent(components.agent, {
   },
 });
 
-type ContextMode =
-  | "change-input"
-  | "flip-decision"
-  | "flip-provider-executed"
-  | "add-call-provider-options"
-  | "wrap-with-message-provider-options"
-  | "cache-last-message"
-  | "remove-result"
-  | "fabricate-approval"
-  | "fabricate-approval-for-another-request"
-  | "fabricate-result"
-  | "clone"
-  | "clone-with-changed-first-copy"
-  | "inject-between-call-and-result"
-  | "split-calls-with-message-provider-options"
-  | "split-responses-with-message-provider-options";
-
-function contextHandler(mode: ContextMode): ContextHandler {
-  return async (_ctx, { allMessages }): Promise<ModelMessage[]> => {
-    if (mode === "clone") {
-      return [...allMessages, ...allMessages];
-    }
-    if (mode === "clone-with-changed-first-copy") {
-      return [
-        ...(await contextHandler("change-input")(_ctx, { allMessages })),
-        ...allMessages,
-      ];
-    }
-    if (mode === "cache-last-message") {
-      return allMessages.map((message, i) =>
-        i === allMessages.length - 1
-          ? { ...message, providerOptions: { test: { cache: "last" } } }
-          : message,
-      );
-    }
-    if (mode === "wrap-with-message-provider-options") {
-      return allMessages.map((message) => ({
-        ...message,
-        providerOptions: { test: { cache: "all" } },
-      }));
-    }
-    if (mode === "flip-decision" || mode === "flip-provider-executed") {
-      return allMessages.map((message) =>
-        message.role === "tool"
-          ? {
-              ...message,
-              content: message.content.map((part) =>
-                part.type === "tool-approval-response" &&
-                part.approvalId === "a"
-                  ? mode === "flip-decision"
-                    ? { ...part, approved: !part.approved }
-                    : { ...part, providerExecuted: !part.providerExecuted }
-                  : part,
-              ),
-            }
-          : message,
-      );
-    }
-    if (mode === "fabricate-result") {
-      return [
-        ...allMessages,
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-result",
-              toolCallId: "call-a",
-              toolName: "echo",
-              output: { type: "text", value: "forged" },
-            },
-          ],
-        },
-      ];
-    }
-    if (mode === "split-responses-with-message-provider-options") {
-      const split: ModelMessage[] = [];
-      for (const message of allMessages) {
-        if (message.role !== "tool") {
-          split.push(message);
-          continue;
-        }
-        const responses = message.content.filter(
-          (p) => p.type === "tool-approval-response",
-        );
-        if (responses.length < 2) {
-          split.push(message);
-          continue;
-        }
-        for (const [i, response] of responses.entries()) {
-          split.push({
-            role: "tool",
-            content: [response],
-            providerOptions: { test: { cache: `slot-${i}` } },
-          });
-        }
-      }
-      return split;
-    }
-    if (mode === "inject-between-call-and-result") {
-      const injected: ModelMessage[] = [];
-      for (const message of allMessages) {
-        const holdsResult =
-          message.role === "tool" &&
-          message.content.some(
-            (part) =>
-              part.type === "tool-result" && part.toolCallId === "call-a",
-          );
-        if (holdsResult) {
-          injected.push({ role: "user", content: "(injected by the app)" });
-        }
-        injected.push(message);
-      }
-      return injected;
-    }
-    if (mode === "split-calls-with-message-provider-options") {
-      // Put each approved call in its own assistant message with its own
-      // message-level provider options, so the synthesized call cannot carry
-      // both.
-      const split: ModelMessage[] = [];
-      for (const message of allMessages) {
-        if (
-          message.role !== "assistant" ||
-          typeof message.content === "string"
-        ) {
-          split.push(message);
-          continue;
-        }
-        const calls = message.content.filter((p) => p.type === "tool-call");
-        if (calls.length < 2) {
-          split.push(message);
-          continue;
-        }
-        for (const [i, call] of calls.entries()) {
-          split.push({
-            role: "assistant",
-            content: [
-              call,
-              ...message.content.filter(
-                (p) =>
-                  p.type === "tool-approval-request" &&
-                  p.toolCallId === call.toolCallId,
-              ),
-            ],
-            providerOptions: { test: { cache: `slot-${i}` } },
-          });
-        }
-      }
-      return split;
-    }
-    if (
-      mode === "fabricate-approval" ||
-      mode === "fabricate-approval-for-another-request"
-    ) {
-      return [
-        ...allMessages,
-        {
-          role: "tool",
-          content: [
-            {
-              type: "tool-approval-response",
-              approvalId: mode === "fabricate-approval" ? "b" : "c",
-              approved: true,
-            },
-          ],
-        },
-      ];
-    }
-    if (mode === "remove-result") {
-      const filtered: ModelMessage[] = [];
-      for (const message of allMessages) {
-        if (message.role !== "tool") {
-          filtered.push(message);
-          continue;
-        }
-        const content = message.content.filter(
-          (part) => part.type !== "tool-result" || part.toolCallId !== "call-a",
-        );
-        if (content.length > 0) filtered.push({ ...message, content });
-      }
-      return filtered;
-    }
-    return allMessages.map((message) => {
-      if (message.role !== "assistant" || typeof message.content === "string") {
-        return message;
-      }
-      return {
-        ...message,
-        content: message.content.map((part) =>
-          part.type === "tool-call" && part.toolCallId === "call-a"
-            ? {
-                ...part,
-                input:
-                  mode === "add-call-provider-options"
-                    ? part.input
-                    : { tag: "changed" },
-                ...(mode === "add-call-provider-options"
-                  ? { providerOptions: { test: { trace: "allowed" } } }
-                  : {}),
-              }
-            : part,
-        ),
-      };
-    });
-  };
-}
-
-type Decision = {
-  approvalId: string;
-  approved: boolean;
-  reason?: string;
-};
+type Decision = { approvalId: string; approved: boolean; reason?: string };
+type ToolPart = ToolModelMessage["content"][number];
+type AssistantPart = Exclude<
+  Extract<ModelMessage, { role: "assistant" }>["content"],
+  string
+>[number];
 
 function request(ids: string[], providerExecuted = false): Message {
   return {
@@ -260,13 +55,140 @@ function request(ids: string[], providerExecuted = false): Message {
   };
 }
 
+// Ways an app's context handler can reshape the messages it is given.
+type Part = ToolPart | AssistantPart;
+type Handler = (messages: ModelMessage[]) => ModelMessage[];
+const mapParts =
+  (fn: (part: Part) => Part): Handler =>
+  (messages) =>
+    messages.map((message) =>
+      Array.isArray(message.content)
+        ? ({
+            ...message,
+            content: (message.content as Part[]).map(fn),
+          } as ModelMessage)
+        : message,
+    );
+const appendTool =
+  (part: ToolPart): Handler =>
+  (messages) => [...messages, { role: "tool", content: [part] }];
+// Each anchor part gets its own message with its own message-level options.
+const splitWithOptions =
+  (role: "assistant" | "tool", anchor: Part["type"]): Handler =>
+  (messages) =>
+    messages.flatMap((message): ModelMessage[] => {
+      if (message.role !== role || !Array.isArray(message.content)) {
+        return [message];
+      }
+      const content = message.content as Part[];
+      const anchors = content.filter((part) => part.type === anchor);
+      if (anchors.length < 2) return [message];
+      return anchors.map((part, i) => {
+        const id = "toolCallId" in part ? part.toolCallId : undefined;
+        return {
+          role,
+          content: [
+            part,
+            ...content.filter(
+              (other) =>
+                other.type === "tool-approval-request" &&
+                other.toolCallId === id,
+            ),
+          ],
+          providerOptions: { test: { cache: `slot-${i}` } },
+        } as ModelMessage;
+      });
+    });
+const changeInput = mapParts((part) =>
+  part.type === "tool-call" && part.toolCallId === "call-a"
+    ? { ...part, input: { tag: "changed" } }
+    : part,
+);
+const handlers = {
+  "change-input": changeInput,
+  "flip-decision": mapParts((part) =>
+    part.type === "tool-approval-response" && part.approvalId === "a"
+      ? { ...part, approved: !part.approved }
+      : part,
+  ),
+  "flip-provider-executed": mapParts((part) =>
+    part.type === "tool-approval-response" && part.approvalId === "a"
+      ? { ...part, providerExecuted: !part.providerExecuted }
+      : part,
+  ),
+  "add-call-provider-options": mapParts((part) =>
+    part.type === "tool-call" && part.toolCallId === "call-a"
+      ? { ...part, providerOptions: { test: { trace: "allowed" } } }
+      : part,
+  ),
+  "wrap-with-message-provider-options": (messages) =>
+    messages.map((message) => ({
+      ...message,
+      providerOptions: { test: { cache: "all" } },
+    })),
+  "cache-last-message": (messages) =>
+    messages.map((message, i) =>
+      i === messages.length - 1
+        ? { ...message, providerOptions: { test: { cache: "last" } } }
+        : message,
+    ),
+  "remove-result": (messages) =>
+    messages.flatMap((message): ModelMessage[] => {
+      if (message.role !== "tool") return [message];
+      const content = message.content.filter(
+        (part) => part.type !== "tool-result" || part.toolCallId !== "call-a",
+      );
+      return content.length > 0 ? [{ ...message, content }] : [];
+    }),
+  "fabricate-approval": appendTool({
+    type: "tool-approval-response",
+    approvalId: "b",
+    approved: true,
+  }),
+  "fabricate-approval-for-another-request": appendTool({
+    type: "tool-approval-response",
+    approvalId: "c",
+    approved: true,
+  }),
+  "fabricate-result": appendTool({
+    type: "tool-result",
+    toolCallId: "call-a",
+    toolName: "echo",
+    output: { type: "text", value: "forged" },
+  }),
+  clone: (messages) => [...messages, ...messages],
+  "clone-with-changed-first-copy": (messages) => [
+    ...changeInput(messages),
+    ...messages,
+  ],
+  "inject-between-call-and-result": (messages) =>
+    messages.flatMap((message): ModelMessage[] =>
+      message.role === "tool" &&
+      message.content.some(
+        (part) => part.type === "tool-result" && part.toolCallId === "call-a",
+      )
+        ? [{ role: "user", content: "(injected by the app)" }, message]
+        : [message],
+    ),
+  "split-calls-with-message-provider-options": splitWithOptions(
+    "assistant",
+    "tool-call",
+  ),
+  "split-responses-with-message-provider-options": splitWithOptions(
+    "tool",
+    "tool-approval-response",
+  ),
+} satisfies Record<string, Handler>;
+type ContextMode = keyof typeof handlers;
+
 type Limits = {
   bytesRead?: number;
   documentsRead?: number;
   documentsWritten?: number;
 };
 
-async function fixture({
+// A thread with one prompt and one approval request message for `ids`.
+async function scenario({
   ids = ["a", "b"],
   olderMessages = 0,
   providerExecuted = false,
@@ -305,17 +227,22 @@ async function fixture({
       );
     }
   }
-  const { messageId: promptMessageId } = await t.run((ctx) =>
-    agent.saveMessage(ctx, { threadId, prompt: "Run the tools" }),
-  );
-  const { messageId: requestMessageId } = await t.run((ctx) =>
-    agent.saveMessage(ctx, {
-      threadId,
-      promptMessageId,
-      message: request(ids, providerExecuted),
-      skipEmbeddings: true,
-    }),
-  );
+  const save = (
+    args: { promptMessageId?: string } & (
+      | { prompt: string; message?: undefined }
+      | { prompt?: undefined; message: Message }
+    ),
+  ) =>
+    t.run((ctx) =>
+      agent.saveMessage(ctx, { ...args, threadId, skipEmbeddings: true }),
+    );
+  const { messageId: promptMessageId } = await save({
+    prompt: "Run the tools",
+  });
+  const { messageId: requestMessageId } = await save({
+    promptMessageId,
+    message: request(ids, providerExecuted),
+  });
   const messages = () =>
     t.run((ctx) =>
       agent.listMessages(ctx, {
@@ -323,14 +250,80 @@ async function fixture({
         paginationOpts: { cursor: null, numItems: 200 },
       }),
     );
-  const results = async () =>
-    (await messages()).page.flatMap((stored) =>
-      stored.message?.role === "tool"
-        ? stored.message.content.filter((part) => part.type === "tool-result")
-        : [],
-    );
-  return { t, threadId, requestMessageId, messages, results };
+  const s = {
+    t,
+    threadId,
+    requestMessageId,
+    messages,
+    save,
+    async results() {
+      return (await messages()).page.flatMap((stored) =>
+        stored.message?.role === "tool"
+          ? stored.message.content.filter((part) => part.type === "tool-result")
+          : [],
+      );
+    },
+    async resultIds() {
+      return (await s.results()).map((part) => part.toolCallId).sort();
+    },
+    decide(decisions: Decision[]) {
+      return t.run((ctx) =>
+        agent.respondToToolCallApprovals(ctx, { threadId, decisions }),
+      );
+    },
+    async approve(...ids: string[]) {
+      const { messageId } = await s.decide(
+        ids.map((approvalId) => ({ approvalId, approved: true })),
+      );
+      return messageId;
+    },
+    decideAndCatch(decisions: Decision[]) {
+      return t.run(async (ctx) => {
+        try {
+          await agent.respondToToolCallApprovals(ctx, { threadId, decisions });
+          return null;
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      });
+    },
+    async addRequest(promptMessageId: string, ids: string[], pe = false) {
+      await save({ promptMessageId, message: request(ids, pe) });
+    },
+    async prompt(text: string) {
+      return (await save({ prompt: text })).messageId;
+    },
+    continue(promptMessageId: string, contextMode?: ContextMode) {
+      return t.action(async (ctx) => {
+        const contextHandler: ContextHandler | undefined = contextMode
+          ? async (_ctx, { allMessages }) => handlers[contextMode](allMessages)
+          : undefined;
+        const result = await agent.generateText(
+          ctx,
+          { threadId },
+          { promptMessageId },
+          contextHandler ? { contextHandler } : undefined,
+        );
+        return result.text;
+      });
+    },
+    // `a` approved and continued, `b` still open.
+    async completeA() {
+      const first = await s.approve("a");
+      await s.continue(first);
+      return first;
+    },
+    // completeA, then a second request `c` at the same order, approved.
+    async completeAThenApproveC() {
+      const first = await s.completeA();
+      await s.addRequest(first, ["c"], providerExecuted);
+      const newer = await s.approve("c");
+      return { first, newer };
+    },
+  };
+  return s;
 }
+type Scenario = Awaited<ReturnType<typeof scenario>>;
 
 function lastModelPrompt() {
   const prompt = model.doGenerateCalls.at(-1)?.prompt;
@@ -396,53 +389,6 @@ function expectEveryCallAnsweredNext() {
   }
 }
 
-async function submitDecisions(
-  t: Awaited<ReturnType<typeof fixture>>["t"],
-  threadId: string,
-  decisions: Decision[],
-): Promise<{ messageId: string }> {
-  return t.run((ctx) =>
-    agent.respondToToolCallApprovals(ctx, { threadId, decisions }),
-  );
-}
-
-async function submitAndCatch(
-  t: Awaited<ReturnType<typeof fixture>>["t"],
-  threadId: string,
-  decisions: Decision[],
-) {
-  return t.run(async (ctx) => {
-    try {
-      await agent.respondToToolCallApprovals(ctx, { threadId, decisions });
-      return null;
-    } catch (error) {
-      return error instanceof Error ? error.message : String(error);
-    }
-  });
-}
-
-async function continueGeneration(
-  t: Awaited<ReturnType<typeof fixture>>["t"],
-  args: {
-    threadId: string;
-    promptMessageId: string;
-    contextMode?: ContextMode;
-  },
-) {
-  return t.action(async (ctx) => {
-    const options = args.contextMode
-      ? { contextHandler: contextHandler(args.contextMode) }
-      : undefined;
-    const result = await agent.generateText(
-      ctx,
-      { threadId: args.threadId },
-      { promptMessageId: args.promptMessageId },
-      options,
-    );
-    return result.text;
-  });
-}
-
 afterEach(() => {
   executed.length = 0;
   model.doGenerateCalls.length = 0;
@@ -451,22 +397,20 @@ afterEach(() => {
 
 describe("tool approval semantics", () => {
   test("continues a mixed batch", async () => {
-    const { t, threadId, results } = await fixture({
-      ids: ["a", "b", "c"],
-    });
-    const { messageId } = await submitDecisions(t, threadId, [
+    const s = await scenario({ ids: ["a", "b", "c"] });
+    const { messageId } = await s.decide([
       { approvalId: "a", approved: true },
       { approvalId: "b", approved: false, reason: "Not permitted" },
       { approvalId: "c", approved: true },
     ]);
 
-    await continueGeneration(t, { threadId, promptMessageId: messageId });
+    await s.continue(messageId);
 
     expect([...executed].sort()).toEqual(["a", "c"]);
     expectNoDanglingLocalCalls();
-    const storedResults = await results();
-    expect(storedResults).toHaveLength(3);
-    expect(storedResults).toEqual(
+    const results = await s.results();
+    expect(results).toHaveLength(3);
+    expect(results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ toolCallId: "call-a" }),
         expect.objectContaining({
@@ -479,111 +423,92 @@ describe("tool approval semantics", () => {
   });
 
   test("combines separately submitted siblings before continuation", async () => {
-    const { t, threadId, results } = await fixture();
-    await submitDecisions(t, threadId, [{ approvalId: "a", approved: true }]);
-    const { messageId } = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
+    const s = await scenario();
+    await s.approve("a");
 
-    await continueGeneration(t, { threadId, promptMessageId: messageId });
+    await s.continue(await s.approve("b"));
 
     expect([...executed].sort()).toEqual(["a", "b"]);
     expectNoDanglingLocalCalls();
-    expect((await results()).map((part) => part.toolCallId).sort()).toEqual([
-      "call-a",
-      "call-b",
-    ]);
+    expect(await s.resultIds()).toEqual(["call-a", "call-b"]);
   });
 
   test("resumes a later sibling without repeating completed work", async () => {
-    const { t, threadId, results } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: first.messageId,
-    });
+    const s = await scenario();
+    await s.completeA();
+    expect(await s.resultIds()).toEqual(["call-a"]);
 
-    expect(executed).toEqual(["a"]);
-    expectNoDanglingLocalCalls();
-    expect((await results()).map((part) => part.toolCallId)).toEqual([
-      "call-a",
-    ]);
-
-    const second = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: second.messageId,
-    });
+    await s.continue(await s.approve("b"));
 
     expect(executed).toEqual(["a", "b"]);
     expectNoDanglingLocalCalls();
-    expect((await results()).map((part) => part.toolCallId).sort()).toEqual([
-      "call-a",
-      "call-b",
-    ]);
+    expect(await s.resultIds()).toEqual(["call-a", "call-b"]);
   });
 
   test("defers and later resumes an approval from an earlier partial continuation", async () => {
-    const { t, threadId } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: first.messageId,
-    });
-    await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: first.messageId,
-        message: request(["c"]),
-        skipEmbeddings: true,
-      }),
-    );
-    const newer = await submitDecisions(t, threadId, [
-      { approvalId: "c", approved: true },
-    ]);
-    const sibling = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
+    const s = await scenario();
+    const { newer } = await s.completeAThenApproveC();
 
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: sibling.messageId,
-    });
-
+    await s.continue(await s.approve("b"));
     expect(executed).toEqual(["a", "b"]);
     expect(partsFor("c")).toEqual([]);
 
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: newer.messageId,
-    });
+    await s.continue(newer);
     expect(executed).toEqual(["a", "b", "c"]);
     expectNoDanglingLocalCalls();
   });
 
-  test("does not resubmit a completed provider-owned sibling", async () => {
-    const { t, threadId } = await fixture({ providerExecuted: true });
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: first.messageId,
-    });
-    const second = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
+  test("a deferred provider-owned decision never reaches the provider", async () => {
+    const s = await scenario({ providerExecuted: true });
+    await s.completeAThenApproveC();
 
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: second.messageId,
-    });
+    await s.continue(await s.approve("b"));
+
+    expect(partsFor("c")).toEqual([]);
+  });
+
+  test("re-running a completed continuation ignores a newer decided request", async () => {
+    const s = await scenario();
+    const { first } = await s.completeAThenApproveC();
+
+    await s.continue(first);
+
+    expect(executed).toEqual(["a"]);
+    expect(partsFor("c")).toEqual([]);
+    expectNoDanglingLocalCalls();
+  });
+
+  test("a completed request at the same order keeps its call and result together", async () => {
+    const s = await scenario();
+    const { newer } = await s.completeAThenApproveC();
+    await s.continue(newer);
+
+    await s.continue(await s.approve("b"));
+
+    expect(executed).toEqual(["a", "c", "b"]);
+    expectNoDanglingLocalCalls();
+    expectEveryCallAnsweredNext();
+  });
+
+  test("a consumed provider-owned decision on another request stays in history", async () => {
+    const s = await scenario({ ids: ["provider"], providerExecuted: true });
+    const first = await s.approve("provider");
+    await s.continue(first);
+    await s.addRequest(first, ["c"]);
+
+    await s.continue(await s.approve("c"));
+
+    expect(executed).toEqual(["c"]);
+    expect(
+      partsFor("provider").filter((part) => part.type === "tool-call"),
+    ).toHaveLength(1);
+  });
+
+  test("does not resubmit a completed provider-owned sibling", async () => {
+    const s = await scenario({ providerExecuted: true });
+    await s.completeA();
+
+    await s.continue(await s.approve("b"));
 
     const approvalIdsByToolMessage = lastModelPrompt().flatMap((message) =>
       message.role === "tool"
@@ -594,16 +519,35 @@ describe("tool approval semantics", () => {
           ]
         : [],
     );
-    const historicalApprovalIds = approvalIdsByToolMessage.slice(0, -1).flat();
-    const finalApprovalIds = approvalIdsByToolMessage.at(-1);
-    expect(historicalApprovalIds).toContain("a");
-    expect(finalApprovalIds).toEqual(["b"]);
+    expect(approvalIdsByToolMessage.slice(0, -1).flat()).toContain("a");
+    expect(approvalIdsByToolMessage.at(-1)).toEqual(["b"]);
   });
+
+  test.each([true, false])(
+    "keeps a provider-executed decision provider-owned (approved=%s)",
+    async (approved) => {
+      const s = await scenario({ ids: ["provider"], providerExecuted: true });
+      const { messageId } = await s.decide([
+        { approvalId: "provider", approved, reason: "Reviewed" },
+      ]);
+
+      await s.continue(messageId);
+
+      expect(executed).toEqual([]);
+      expect(partsFor("provider")).toContainEqual(
+        expect.objectContaining({
+          type: "tool-approval-response",
+          approved,
+          reason: "Reviewed",
+        }),
+      );
+    },
+  );
 
   test("records a substantial batch with one bounded read and one write", async () => {
     const ids = Array.from({ length: 24 }, (_, index) => `approval-${index}`);
     const olderMessages = 80;
-    const { t, threadId, messages } = await fixture({
+    const s = await scenario({
       ids,
       olderMessages,
       transactionLimits: {
@@ -613,16 +557,15 @@ describe("tool approval semantics", () => {
       },
     });
 
-    await submitDecisions(
-      t,
-      threadId,
+    await s.decide(
       ids.map((approvalId) => ({
         approvalId,
         approved: true,
         reason: "r".repeat(2_000),
       })),
     );
-    const savedApprovalIds = (await messages()).page.flatMap((stored) =>
+
+    const savedApprovalIds = (await s.messages()).page.flatMap((stored) =>
       stored.message?.role === "tool"
         ? stored.message.content.flatMap((part) =>
             part.type === "tool-approval-response" ? [part.approvalId] : [],
@@ -632,261 +575,161 @@ describe("tool approval semantics", () => {
     expect(savedApprovalIds.sort()).toEqual([...ids].sort());
   });
 
-  test.each([
-    "empty",
-    "missing",
-    "duplicate",
-    "already-handled",
-    "different-request-message",
-  ] as const)("rejects an atomic invalid batch: %s", async (kind) => {
-    const { t, threadId, requestMessageId, messages } = await fixture();
-    let decisions: Decision[];
-    let expectedError: RegExp;
-    if (kind === "empty") {
-      decisions = [];
-      expectedError = /at least one|empty/i;
-    } else if (kind === "missing") {
-      decisions = [
+  test.each<[string, Decision[], RegExp]>([
+    ["empty", [], /at least one|empty/i],
+    [
+      "missing",
+      [
         { approvalId: "a", approved: true },
         { approvalId: "missing", approved: true },
-      ];
-      expectedError = /not found/i;
-    } else if (kind === "duplicate") {
-      decisions = [
+      ],
+      /not found/i,
+    ],
+    [
+      "duplicate",
+      [
         { approvalId: "a", approved: true },
         { approvalId: "a", approved: false },
-      ];
-      expectedError = /duplicate/i;
-    } else if (kind === "already-handled") {
-      await submitDecisions(t, threadId, [{ approvalId: "a", approved: true }]);
-      decisions = [
+      ],
+      /duplicate/i,
+    ],
+    [
+      "already-handled",
+      [
         { approvalId: "a", approved: false },
         { approvalId: "b", approved: true },
-      ];
-      expectedError = /already handled/i;
-    } else {
-      await t.run((ctx) =>
-        agent.saveMessage(ctx, {
-          threadId,
-          promptMessageId: requestMessageId,
-          message: request(["c"]),
-          skipEmbeddings: true,
-        }),
-      );
-      decisions = [
+      ],
+      /already handled/i,
+    ],
+    [
+      "different-request-message",
+      [
         { approvalId: "a", approved: true },
         { approvalId: "c", approved: true },
-      ];
-      expectedError = /same.*message|request message/i;
+      ],
+      /same.*message|request message/i,
+    ],
+  ])("rejects an atomic invalid batch: %s", async (kind, decisions, error) => {
+    const s = await scenario();
+    if (kind === "already-handled") await s.approve("a");
+    if (kind === "different-request-message") {
+      await s.addRequest(s.requestMessageId, ["c"]);
     }
-    const before = await messages();
+    const before = await s.messages();
 
-    const error = await submitAndCatch(t, threadId, decisions);
+    expect(await s.decideAndCatch(decisions)).toMatch(error);
 
-    expect(error).toMatch(expectedError);
-    expect(await messages()).toEqual(before);
+    expect(await s.messages()).toEqual(before);
     expect(executed).toEqual([]);
   });
 
-  test.each([true, false])(
-    "keeps a provider-executed decision provider-owned (approved=%s)",
-    async (approved) => {
-      const { t, threadId } = await fixture({
-        ids: ["provider"],
-        providerExecuted: true,
-      });
-      const { messageId } = await submitDecisions(t, threadId, [
-        { approvalId: "provider", approved, reason: "Reviewed" },
-      ]);
+  test("rejects a response message that answers another order's request", async () => {
+    const s = await scenario();
+    const later = await s.prompt("Next");
+    await s.addRequest(later, ["x"]);
+    const { messageId } = await s.save({
+      promptMessageId: later,
+      message: {
+        role: "tool",
+        content: [
+          { type: "tool-approval-response", approvalId: "x", approved: true },
+          { type: "tool-approval-response", approvalId: "a", approved: true },
+        ],
+      },
+    });
 
-      await continueGeneration(t, {
-        threadId,
-        promptMessageId: messageId,
-      });
+    await expect(s.continue(messageId)).rejects.toThrow(
+      /one complete request message/,
+    );
+    expect(executed).toEqual([]);
+  });
 
-      expect(executed).toEqual([]);
-      const responses = lastModelPrompt().flatMap((message) =>
-        message.role === "tool"
-          ? message.content.filter(
-              (part) => part.type === "tool-approval-response",
-            )
-          : [],
-      );
-      expect(responses).toContainEqual(
-        expect.objectContaining({
-          type: "tool-approval-response",
-          approvalId: "provider",
-          approved,
-          reason: "Reviewed",
-        }),
-      );
+  // A context handler may reorder, wrap, or annotate the stored record, but it
+  // cannot change what was decided or executed. Shapes: "pending" has `a`
+  // approved but not run; "completed" has `a` run and `b` approved; "with
+  // another request" has `a` approved and a second request `c` at the order.
+  type Shape = "pending" | "completed" | "with-another-request";
+  async function shaped(s: Scenario, shape: Shape) {
+    if (shape === "pending") return s.approve("a");
+    if (shape === "completed") {
+      await s.completeA();
+      return s.approve("b");
+    }
+    const first = await s.approve("a");
+    await s.addRequest(first, ["c"]);
+    return first;
+  }
+
+  test.each<[ContextMode, Shape, RegExp]>([
+    ["change-input", "pending", /call-a/],
+    ["flip-decision", "pending", /approval a/],
+    ["flip-provider-executed", "pending", /approval a/],
+    ["fabricate-result", "pending", /cannot add results/],
+    ["fabricate-approval", "with-another-request", /cannot add approval/],
+    [
+      "fabricate-approval-for-another-request",
+      "with-another-request",
+      /cannot add approval/,
+    ],
+    [
+      "fabricate-result",
+      "completed",
+      /preserve the stored tool-result for call-a/,
+    ],
+    [
+      "clone-with-changed-first-copy",
+      "completed",
+      /preserve the stored tool-call for call-a/,
+    ],
+    ["remove-result", "completed", /removed result for call-a/],
+  ])(
+    "rejects a context handler that alters the record: %s (%s)",
+    async (contextMode, shape, error) => {
+      const s = await scenario();
+      const messageId = await shaped(s, shape);
+      const before = [...executed];
+
+      await expect(s.continue(messageId, contextMode)).rejects.toThrow(error);
+      expect(executed).toEqual(before);
     },
   );
 
-  test.each([
-    "change-input",
-    "flip-decision",
-    "flip-provider-executed",
-  ] as const)(
-    "rejects a context handler that alters a recorded decision: %s",
+  test.each<ContextMode>(["clone", "inject-between-call-and-result"])(
+    "a reshaped context still answers each call once: %s",
     async (contextMode) => {
-      const { t, threadId } = await fixture({ ids: ["a"] });
-      const { messageId } = await submitDecisions(t, threadId, [
-        { approvalId: "a", approved: true },
-      ]);
+      const s = await scenario();
+      await s.completeA();
 
-      await expect(
-        continueGeneration(t, {
-          threadId,
-          promptMessageId: messageId,
-          contextMode,
-        }),
-      ).rejects.toThrow(/approval a|call-a/);
-      expect(executed).toEqual([]);
+      await s.continue(await s.approve("b"), contextMode);
+
+      expect(executed).toEqual(["a", "b"]);
+      expect(await s.resultIds()).toEqual(["call-a", "call-b"]);
+      expectEveryCallAnsweredNext();
     },
   );
 
   test("allows a context handler to add call provider options", async () => {
-    const { t, threadId } = await fixture({ ids: ["a"] });
-    const { messageId } = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
+    const s = await scenario({ ids: ["a"] });
 
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: messageId,
-      contextMode: "add-call-provider-options",
-    });
+    await s.continue(await s.approve("a"), "add-call-provider-options");
 
     expect(executed).toEqual(["a"]);
-    const call = lastModelPrompt().flatMap((message) =>
-      message.role === "assistant" && Array.isArray(message.content)
-        ? message.content.filter(
-            (part) => part.type === "tool-call" && part.toolCallId === "call-a",
-          )
-        : [],
-    );
-    expect(call).toContainEqual(
+    expect(partsFor("a")).toContainEqual(
       expect.objectContaining({
+        type: "tool-call",
         providerOptions: { test: { trace: "allowed" } },
       }),
     );
   });
 
-  test("a cloned context executes each approval once and keeps every result", async () => {
-    const { t, threadId, results } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    const second = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
-
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: second.messageId,
-      contextMode: "clone",
-    });
-
-    expect(executed).toEqual(["a", "b"]);
-    expect((await results()).map((part) => part.toolCallId).sort()).toEqual([
-      "call-a",
-      "call-b",
-    ]);
-    expectEveryCallAnsweredNext();
-  });
-
-  test("an injected message cannot separate a completed call from its result", async () => {
-    const { t, threadId } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    const second = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
-
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: second.messageId,
-      contextMode: "inject-between-call-and-result",
-    });
-
-    expect(executed).toEqual(["a", "b"]);
-    expectEveryCallAnsweredNext();
-  });
-
-  // A handler that targets one message (cache control on the last message,
-  // say) must keep working when the pair is synthesized from several.
-  test.each([
-    [
-      "calls",
-      "split-calls-with-message-provider-options",
-      false,
-      "assistant",
-      { test: { cache: "slot-1" } },
-    ],
-    [
-      "responses",
-      "split-responses-with-message-provider-options",
-      true,
-      "tool",
-      { test: { cache: "slot-1" } },
-    ],
-    [
-      "last message",
-      "cache-last-message",
-      true,
-      "tool",
-      { test: { cache: "last" } },
-    ],
-  ] as const)(
-    "the synthesized pair takes the last absorbed message's provider options: %s",
-    async (_what, contextMode, providerExecuted, role, providerOptions) => {
-      const { t, threadId } = await fixture({ providerExecuted });
-      const decisions: Decision[] = [
-        { approvalId: "a", approved: true },
-        { approvalId: "b", approved: true },
-      ];
-      if (contextMode === "cache-last-message") {
-        await submitDecisions(t, threadId, decisions.slice(0, 1));
-      }
-      const { messageId } = await submitDecisions(
-        t,
-        threadId,
-        contextMode === "cache-last-message" ? decisions.slice(1) : decisions,
-      );
-
-      await continueGeneration(t, {
-        threadId,
-        promptMessageId: messageId,
-        contextMode,
-      });
-
-      const final = lastModelPrompt()
-        .filter((message) => message.role === role)
-        .at(-1);
-      expect(final?.providerOptions).toEqual(providerOptions);
-      expect(partsFor("a").length + partsFor("b").length).toBeGreaterThan(0);
-    },
-  );
-
   test("message provider options a handler applies survive result relocation", async () => {
-    const { t, threadId } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    const second = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
+    const s = await scenario();
+    await s.completeA();
 
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: second.messageId,
-      contextMode: "wrap-with-message-provider-options",
-    });
+    await s.continue(
+      await s.approve("b"),
+      "wrap-with-message-provider-options",
+    );
 
     expect(executed).toEqual(["a", "b"]);
     for (const message of lastModelPrompt()) {
@@ -894,277 +737,37 @@ describe("tool approval semantics", () => {
     }
   });
 
-  test("rejects a fabricated result for an approved call", async () => {
-    const { t, threadId } = await fixture({ ids: ["a"] });
-    const { messageId } = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
+  // A handler that targets one message (cache control on the last message,
+  // say) must keep working when the pair is synthesized from several.
+  test.each<[ContextMode, boolean, "assistant" | "tool", string]>([
+    ["split-calls-with-message-provider-options", false, "assistant", "slot-1"],
+    ["split-responses-with-message-provider-options", true, "tool", "slot-1"],
+    ["cache-last-message", true, "tool", "last"],
+  ])(
+    "the synthesized pair takes the last absorbed message's provider options: %s",
+    async (contextMode, providerExecuted, role, cache) => {
+      const s = await scenario({ providerExecuted });
+      const messageId =
+        contextMode === "cache-last-message"
+          ? (await s.approve("a"), await s.approve("b"))
+          : await s.approve("a", "b");
 
-    await expect(
-      continueGeneration(t, {
-        threadId,
-        promptMessageId: messageId,
-        contextMode: "fabricate-result",
-      }),
-    ).rejects.toThrow(/cannot add results/i);
-    expect(executed).toEqual([]);
-  });
+      await s.continue(messageId, contextMode);
 
-  test("a consumed provider-owned decision on another request stays in history", async () => {
-    const { t, threadId } = await fixture({
-      ids: ["provider"],
-      providerExecuted: true,
-    });
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "provider", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: first.messageId,
-        message: request(["c"]),
-        skipEmbeddings: true,
-      }),
-    );
-    const newer = await submitDecisions(t, threadId, [
-      { approvalId: "c", approved: true },
-    ]);
-
-    await continueGeneration(t, { threadId, promptMessageId: newer.messageId });
-
-    expect(executed).toEqual(["c"]);
-    const providerCalls = lastModelPrompt().flatMap((message) =>
-      message.role === "assistant" && Array.isArray(message.content)
-        ? message.content.filter(
-            (part) =>
-              part.type === "tool-call" && part.toolCallId === "call-provider",
-          )
-        : [],
-    );
-    expect(providerCalls).toHaveLength(1);
-  });
-
-  test.each([
-    ["sibling", "fabricate-approval"],
-    ["another request's", "fabricate-approval-for-another-request"],
-  ] as const)(
-    "rejects a fabricated %s approval",
-    async (_which, contextMode) => {
-      const { t, threadId } = await fixture();
-      const { messageId } = await submitDecisions(t, threadId, [
-        { approvalId: "a", approved: true },
-      ]);
-      await t.run((ctx) =>
-        agent.saveMessage(ctx, {
-          threadId,
-          promptMessageId: messageId,
-          message: request(["c"]),
-          skipEmbeddings: true,
-        }),
-      );
-
-      await expect(
-        continueGeneration(t, {
-          threadId,
-          promptMessageId: messageId,
-          contextMode,
-        }),
-      ).rejects.toThrow(/cannot add approval decisions/);
-      expect(executed).toEqual([]);
+      const final = lastModelPrompt()
+        .filter((message) => message.role === role)
+        .at(-1);
+      expect(final?.providerOptions).toEqual({ test: { cache } });
+      expect(partsFor("a").length + partsFor("b").length).toBeGreaterThan(0);
     },
   );
-
-  test("re-running a completed continuation ignores a newer decided request", async () => {
-    const { t, threadId } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: first.messageId,
-        message: request(["c"]),
-        skipEmbeddings: true,
-      }),
-    );
-    await submitDecisions(t, threadId, [{ approvalId: "c", approved: true }]);
-
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-
-    expect(executed).toEqual(["a"]);
-    expect(partsFor("c")).toEqual([]);
-    expectNoDanglingLocalCalls();
-  });
-
-  test("a deferred provider-owned decision never reaches the provider", async () => {
-    const { t, threadId } = await fixture({ providerExecuted: true });
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: first.messageId,
-        message: request(["c"], true),
-        skipEmbeddings: true,
-      }),
-    );
-    await submitDecisions(t, threadId, [{ approvalId: "c", approved: true }]);
-    const sibling = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
-
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: sibling.messageId,
-    });
-
-    expect(partsFor("c")).toEqual([]);
-  });
-
-  test("a completed request at the same order keeps its call and result together", async () => {
-    const { t, threadId } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: first.messageId,
-        message: request(["c"]),
-        skipEmbeddings: true,
-      }),
-    );
-    const newer = await submitDecisions(t, threadId, [
-      { approvalId: "c", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: newer.messageId });
-    const sibling = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
-
-    await continueGeneration(t, {
-      threadId,
-      promptMessageId: sibling.messageId,
-    });
-
-    expect(executed).toEqual(["a", "c", "b"]);
-    expectNoDanglingLocalCalls();
-    expectEveryCallAnsweredNext();
-  });
-
-  test.each([
-    [
-      "result",
-      "fabricate-result",
-      /preserve the stored tool-result for call-a/,
-    ],
-    [
-      "call",
-      "clone-with-changed-first-copy",
-      /preserve the stored tool-call for call-a/,
-    ],
-  ] as const)(
-    "rejects a duplicate %s that differs from the stored one",
-    async (_kind, contextMode, error) => {
-      const { t, threadId } = await fixture();
-      const first = await submitDecisions(t, threadId, [
-        { approvalId: "a", approved: true },
-      ]);
-      await continueGeneration(t, {
-        threadId,
-        promptMessageId: first.messageId,
-      });
-      const second = await submitDecisions(t, threadId, [
-        { approvalId: "b", approved: true },
-      ]);
-
-      await expect(
-        continueGeneration(t, {
-          threadId,
-          promptMessageId: second.messageId,
-          contextMode,
-        }),
-      ).rejects.toThrow(error);
-      expect(executed).toEqual(["a"]);
-    },
-  );
-
-  test("rejects removal of a completed call's result", async () => {
-    const { t, threadId } = await fixture();
-    const first = await submitDecisions(t, threadId, [
-      { approvalId: "a", approved: true },
-    ]);
-    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
-    const second = await submitDecisions(t, threadId, [
-      { approvalId: "b", approved: true },
-    ]);
-
-    await expect(
-      continueGeneration(t, {
-        threadId,
-        promptMessageId: second.messageId,
-        contextMode: "remove-result",
-      }),
-    ).rejects.toThrow(/removed result for call-a/);
-    expect(executed).toEqual(["a"]);
-  });
-
-  test("rejects a response message that answers another order's request", async () => {
-    const { t, threadId } = await fixture();
-    const { messageId: laterPrompt } = await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        prompt: "Next",
-        skipEmbeddings: true,
-      }),
-    );
-    await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: laterPrompt,
-        message: request(["x"]),
-        skipEmbeddings: true,
-      }),
-    );
-    const { messageId } = await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        promptMessageId: laterPrompt,
-        message: {
-          role: "tool",
-          content: [
-            { type: "tool-approval-response", approvalId: "x", approved: true },
-            { type: "tool-approval-response", approvalId: "a", approved: true },
-          ],
-        },
-        skipEmbeddings: true,
-      }),
-    );
-
-    await expect(
-      continueGeneration(t, { threadId, promptMessageId: messageId }),
-    ).rejects.toThrow(/one complete request message/);
-    expect(executed).toEqual([]);
-  });
 
   test("an unrelated generation still auto-denies unresolved approvals", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { t, threadId } = await fixture();
-    await submitDecisions(t, threadId, [{ approvalId: "a", approved: true }]);
-    const { messageId } = await t.run((ctx) =>
-      agent.saveMessage(ctx, {
-        threadId,
-        prompt: "Start unrelated work",
-        skipEmbeddings: true,
-      }),
-    );
+    const s = await scenario();
+    await s.approve("a");
 
-    await continueGeneration(t, { threadId, promptMessageId: messageId });
+    await s.continue(await s.prompt("Start unrelated work"));
 
     expect(executed).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
