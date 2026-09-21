@@ -32,6 +32,9 @@ const MINUTE = 60 * SECOND;
 
 const MAX_DELTAS_PER_REQUEST = 1000;
 const MAX_DELTAS_PER_STREAM = 100;
+const MAX_BYTES_READ_PER_DELETE = 1024 * 1024;
+// Pages are read twice (paginate, then delete), so this is ~8 MiB per transaction.
+const MAX_SYNC_DELETE_PAGES = 4;
 const TIMEOUT_INTERVAL = 10 * MINUTE;
 const DELETE_STREAM_DELAY = MINUTE * 5; // 5 minutes
 
@@ -411,6 +414,7 @@ async function deletePageForStreamId(
     .withIndex("streamId_start_end", (q) => q.eq("streamId", args.streamId))
     .paginate({
       numItems: MAX_DELTAS_PER_REQUEST,
+      maximumBytesRead: MAX_BYTES_READ_PER_DELETE,
       cursor: args.cursor ?? null,
     });
   await Promise.all(
@@ -542,7 +546,12 @@ export const deleteStreamSync = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     let deltas = await deletePageForStreamId(ctx, args);
-    while (!deltas.isDone) {
+    for (let pages = 1; !deltas.isDone; pages++) {
+      if (pages >= MAX_SYNC_DELETE_PAGES) {
+        throw new Error(
+          `Stream ${args.streamId} has too many deltas to delete in one transaction; use deleteStreamAsync`,
+        );
+      }
       deltas = await deletePageForStreamId(ctx, {
         ...args,
         cursor: deltas.continueCursor,
