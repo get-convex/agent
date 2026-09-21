@@ -739,6 +739,11 @@ export async function fetchContextWithPrompt(
         part.type === "tool-approval-request" ? [part.approvalId] : [],
       ),
     );
+    if ([...responseIds].some((approvalId) => !approvalIds.has(approvalId))) {
+      throw new Error(
+        "Approval continuation requires one complete request message",
+      );
+    }
     processedMessages = prepareApprovalContext(
       processedMessages,
       approvalIds,
