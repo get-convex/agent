@@ -36,8 +36,10 @@ type ContextMode =
   | "wrap-with-message-provider-options"
   | "remove-result"
   | "fabricate-approval"
+  | "fabricate-approval-for-another-request"
   | "fabricate-result"
   | "clone"
+  | "clone-with-changed-first-copy"
   | "inject-between-call-and-result"
   | "split-calls-with-message-provider-options"
   | "split-responses-with-message-provider-options";
@@ -46,6 +48,12 @@ function contextHandler(mode: ContextMode): ContextHandler {
   return async (_ctx, { allMessages }): Promise<ModelMessage[]> => {
     if (mode === "clone") {
       return [...allMessages, ...allMessages];
+    }
+    if (mode === "clone-with-changed-first-copy") {
+      return [
+        ...(await contextHandler("change-input")(_ctx, { allMessages })),
+        ...allMessages,
+      ];
     }
     if (mode === "wrap-with-message-provider-options") {
       return allMessages.map((message) => ({
@@ -161,7 +169,10 @@ function contextHandler(mode: ContextMode): ContextHandler {
       }
       return split;
     }
-    if (mode === "fabricate-approval") {
+    if (
+      mode === "fabricate-approval" ||
+      mode === "fabricate-approval-for-another-request"
+    ) {
       return [
         ...allMessages,
         {
@@ -169,7 +180,7 @@ function contextHandler(mode: ContextMode): ContextHandler {
           content: [
             {
               type: "tool-approval-response",
-              approvalId: "b",
+              approvalId: mode === "fabricate-approval" ? "b" : "c",
               approved: true,
             },
           ],
@@ -319,6 +330,18 @@ function lastModelPrompt() {
   return prompt ?? [];
 }
 
+function partsFor(id: string) {
+  return lastModelPrompt().flatMap((message) =>
+    Array.isArray(message.content)
+      ? message.content.filter(
+          (part) =>
+            ("toolCallId" in part && part.toolCallId === `call-${id}`) ||
+            ("approvalId" in part && part.approvalId === id),
+        )
+      : [],
+  );
+}
+
 function expectNoDanglingLocalCalls() {
   const calls = new Set<string>();
   const results = new Set<string>();
@@ -332,6 +355,7 @@ function expectNoDanglingLocalCalls() {
     }
   }
   expect([...calls].filter((id) => !results.has(id))).toEqual([]);
+  expect([...results].filter((id) => !calls.has(id))).toEqual([]);
 }
 
 // Providers with strict turn ordering need each local call answered by the
@@ -525,16 +549,7 @@ describe("tool approval semantics", () => {
     });
 
     expect(executed).toEqual(["a", "b"]);
-    const cParts = lastModelPrompt().flatMap((message) =>
-      Array.isArray(message.content)
-        ? message.content.filter(
-            (part) =>
-              ("toolCallId" in part && part.toolCallId === "call-c") ||
-              ("approvalId" in part && part.approvalId === "c"),
-          )
-        : [],
-    );
-    expect(cParts).toEqual([]);
+    expect(partsFor("c")).toEqual([]);
 
     await continueGeneration(t, {
       threadId,
@@ -590,7 +605,7 @@ describe("tool approval semantics", () => {
       },
     });
 
-    const { messageId } = await submitDecisions(
+    await submitDecisions(
       t,
       threadId,
       ids.map((approvalId) => ({
@@ -890,19 +905,210 @@ describe("tool approval semantics", () => {
     expect(providerCalls).toHaveLength(1);
   });
 
-  test("rejects a fabricated sibling approval", async () => {
+  test.each([
+    ["sibling", "fabricate-approval"],
+    ["another request's", "fabricate-approval-for-another-request"],
+  ] as const)(
+    "rejects a fabricated %s approval",
+    async (_which, contextMode) => {
+      const { t, threadId } = await fixture();
+      const { messageId } = await submitDecisions(t, threadId, [
+        { approvalId: "a", approved: true },
+      ]);
+      await t.run((ctx) =>
+        agent.saveMessage(ctx, {
+          threadId,
+          promptMessageId: messageId,
+          message: request(["c"]),
+          skipEmbeddings: true,
+        }),
+      );
+
+      await expect(
+        continueGeneration(t, {
+          threadId,
+          promptMessageId: messageId,
+          contextMode,
+        }),
+      ).rejects.toThrow(/cannot add approval decisions/);
+      expect(executed).toEqual([]);
+    },
+  );
+
+  test("re-running a completed continuation ignores a newer decided request", async () => {
     const { t, threadId } = await fixture();
-    const { messageId } = await submitDecisions(t, threadId, [
+    const first = await submitDecisions(t, threadId, [
       { approvalId: "a", approved: true },
+    ]);
+    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
+    await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        promptMessageId: first.messageId,
+        message: request(["c"]),
+        skipEmbeddings: true,
+      }),
+    );
+    await submitDecisions(t, threadId, [{ approvalId: "c", approved: true }]);
+
+    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
+
+    expect(executed).toEqual(["a"]);
+    expect(partsFor("c")).toEqual([]);
+    expectNoDanglingLocalCalls();
+  });
+
+  test("a deferred provider-owned decision never reaches the provider", async () => {
+    const { t, threadId } = await fixture({ providerExecuted: true });
+    const first = await submitDecisions(t, threadId, [
+      { approvalId: "a", approved: true },
+    ]);
+    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
+    await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        promptMessageId: first.messageId,
+        message: request(["c"], true),
+        skipEmbeddings: true,
+      }),
+    );
+    await submitDecisions(t, threadId, [{ approvalId: "c", approved: true }]);
+    const sibling = await submitDecisions(t, threadId, [
+      { approvalId: "b", approved: true },
+    ]);
+
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: sibling.messageId,
+    });
+
+    expect(partsFor("c")).toEqual([]);
+  });
+
+  test("a completed request at the same order keeps its call and result together", async () => {
+    const { t, threadId } = await fixture();
+    const first = await submitDecisions(t, threadId, [
+      { approvalId: "a", approved: true },
+    ]);
+    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
+    await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        promptMessageId: first.messageId,
+        message: request(["c"]),
+        skipEmbeddings: true,
+      }),
+    );
+    const newer = await submitDecisions(t, threadId, [
+      { approvalId: "c", approved: true },
+    ]);
+    await continueGeneration(t, { threadId, promptMessageId: newer.messageId });
+    const sibling = await submitDecisions(t, threadId, [
+      { approvalId: "b", approved: true },
+    ]);
+
+    await continueGeneration(t, {
+      threadId,
+      promptMessageId: sibling.messageId,
+    });
+
+    expect(executed).toEqual(["a", "c", "b"]);
+    expectNoDanglingLocalCalls();
+    expectEveryCallAnsweredNext();
+  });
+
+  test.each([
+    [
+      "result",
+      "fabricate-result",
+      /preserve the stored tool-result for call-a/,
+    ],
+    [
+      "call",
+      "clone-with-changed-first-copy",
+      /preserve the stored tool-call for call-a/,
+    ],
+  ] as const)(
+    "rejects a duplicate %s that differs from the stored one",
+    async (_kind, contextMode, error) => {
+      const { t, threadId } = await fixture();
+      const first = await submitDecisions(t, threadId, [
+        { approvalId: "a", approved: true },
+      ]);
+      await continueGeneration(t, {
+        threadId,
+        promptMessageId: first.messageId,
+      });
+      const second = await submitDecisions(t, threadId, [
+        { approvalId: "b", approved: true },
+      ]);
+
+      await expect(
+        continueGeneration(t, {
+          threadId,
+          promptMessageId: second.messageId,
+          contextMode,
+        }),
+      ).rejects.toThrow(error);
+      expect(executed).toEqual(["a"]);
+    },
+  );
+
+  test("rejects removal of a completed call's result", async () => {
+    const { t, threadId } = await fixture();
+    const first = await submitDecisions(t, threadId, [
+      { approvalId: "a", approved: true },
+    ]);
+    await continueGeneration(t, { threadId, promptMessageId: first.messageId });
+    const second = await submitDecisions(t, threadId, [
+      { approvalId: "b", approved: true },
     ]);
 
     await expect(
       continueGeneration(t, {
         threadId,
-        promptMessageId: messageId,
-        contextMode: "fabricate-approval",
+        promptMessageId: second.messageId,
+        contextMode: "remove-result",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/removed result for call-a/);
+    expect(executed).toEqual(["a"]);
+  });
+
+  test("rejects a response message that answers another order's request", async () => {
+    const { t, threadId } = await fixture();
+    const { messageId: laterPrompt } = await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        prompt: "Next",
+        skipEmbeddings: true,
+      }),
+    );
+    await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        promptMessageId: laterPrompt,
+        message: request(["x"]),
+        skipEmbeddings: true,
+      }),
+    );
+    const { messageId } = await t.run((ctx) =>
+      agent.saveMessage(ctx, {
+        threadId,
+        promptMessageId: laterPrompt,
+        message: {
+          role: "tool",
+          content: [
+            { type: "tool-approval-response", approvalId: "x", approved: true },
+            { type: "tool-approval-response", approvalId: "a", approved: true },
+          ],
+        },
+        skipEmbeddings: true,
+      }),
+    );
+
+    await expect(
+      continueGeneration(t, { threadId, promptMessageId: messageId }),
+    ).rejects.toThrow(/one complete request message/);
     expect(executed).toEqual([]);
   });
 
