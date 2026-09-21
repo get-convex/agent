@@ -34,6 +34,7 @@ type ContextMode =
   | "flip-provider-executed"
   | "add-call-provider-options"
   | "wrap-with-message-provider-options"
+  | "cache-last-message"
   | "remove-result"
   | "fabricate-approval"
   | "fabricate-approval-for-another-request"
@@ -54,6 +55,13 @@ function contextHandler(mode: ContextMode): ContextHandler {
         ...(await contextHandler("change-input")(_ctx, { allMessages })),
         ...allMessages,
       ];
+    }
+    if (mode === "cache-last-message") {
+      return allMessages.map((message, i) =>
+        i === allMessages.length - 1
+          ? { ...message, providerOptions: { test: { cache: "last" } } }
+          : message,
+      );
     }
     if (mode === "wrap-with-message-provider-options") {
       return allMessages.map((message) => ({
@@ -809,26 +817,58 @@ describe("tool approval semantics", () => {
     expectEveryCallAnsweredNext();
   });
 
+  // A handler that targets one message (cache control on the last message,
+  // say) must keep working when the pair is synthesized from several.
   test.each([
-    "split-calls-with-message-provider-options",
-    "split-responses-with-message-provider-options",
+    [
+      "calls",
+      "split-calls-with-message-provider-options",
+      false,
+      "assistant",
+      { test: { cache: "slot-1" } },
+    ],
+    [
+      "responses",
+      "split-responses-with-message-provider-options",
+      true,
+      "tool",
+      { test: { cache: "slot-1" } },
+    ],
+    [
+      "last message",
+      "cache-last-message",
+      true,
+      "tool",
+      { test: { cache: "last" } },
+    ],
   ] as const)(
-    "rejects a context that gives approved siblings conflicting message provider options: %s",
-    async (contextMode) => {
-      const { t, threadId } = await fixture();
-      const { messageId } = await submitDecisions(t, threadId, [
+    "the synthesized pair takes the last absorbed message's provider options: %s",
+    async (_what, contextMode, providerExecuted, role, providerOptions) => {
+      const { t, threadId } = await fixture({ providerExecuted });
+      const decisions: Decision[] = [
         { approvalId: "a", approved: true },
         { approvalId: "b", approved: true },
-      ]);
+      ];
+      if (contextMode === "cache-last-message") {
+        await submitDecisions(t, threadId, decisions.slice(0, 1));
+      }
+      const { messageId } = await submitDecisions(
+        t,
+        threadId,
+        contextMode === "cache-last-message" ? decisions.slice(1) : decisions,
+      );
 
-      await expect(
-        continueGeneration(t, {
-          threadId,
-          promptMessageId: messageId,
-          contextMode,
-        }),
-      ).rejects.toThrow(/provider options/i);
-      expect(executed).toEqual([]);
+      await continueGeneration(t, {
+        threadId,
+        promptMessageId: messageId,
+        contextMode,
+      });
+
+      const final = lastModelPrompt()
+        .filter((message) => message.role === role)
+        .at(-1);
+      expect(final?.providerOptions).toEqual(providerOptions);
+      expect(partsFor("a").length + partsFor("b").length).toBeGreaterThan(0);
     },
   );
 
