@@ -16,6 +16,7 @@ import type {
   ActionCtx,
 } from "./types.js";
 import { parse } from "convex-helpers/validators";
+import { runMutation, runQuery } from "./run.js";
 
 /**
  * List messages from a thread.
@@ -50,7 +51,7 @@ export async function listMessages(
       continueCursor: paginationOpts.cursor ?? "",
     };
   }
-  return ctx.runQuery(component.messages.listMessagesByThreadId, {
+  return runQuery(ctx, component.messages.listMessagesByThreadId, {
     order: "desc",
     threadId,
     paginationOpts,
@@ -127,7 +128,7 @@ export async function saveMessages(
       };
     }
   }
-  const result = await ctx.runMutation(component.messages.addMessages, {
+  const result = await runMutation(ctx, component.messages.addMessages, {
     threadId: args.threadId,
     userId: args.userId ?? undefined,
     agentName: args.agentName,

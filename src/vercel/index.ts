@@ -85,6 +85,7 @@ import {
 import { startGeneration } from "./client/start.js";
 import { syncStreams, type StreamingOptions } from "./client/streaming.js";
 import { createThread, getThreadMetadata } from "../client/threads.js";
+import { runMutation } from "../client/run.js";
 import type {
   ActionCtx,
   AgentComponent,
@@ -382,7 +383,7 @@ export class Agent<
           threadId: args.threadId,
         }),
         updateMetadata: (patch: Partial<WithoutSystemFields<ThreadDoc>>) =>
-          ctx.runMutation(this.component.threads.updateThread, {
+          runMutation(ctx, this.component.threads.updateThread, {
             threadId: args.threadId,
             patch,
           }),
@@ -964,7 +965,10 @@ export class Agent<
       ...args,
       contextOptions,
       getEmbedding: async (text) => {
-        assert("runAction" in ctx);
+        assert(
+          "runAction" in ctx && "storage" in ctx,
+          "ActionCtx is required for vector search",
+        );
         const embeddingModel = this.getEmbeddingModel();
         assert(
           embeddingModel,
@@ -1015,7 +1019,8 @@ export class Agent<
       >;
     },
   ): Promise<ThreadDoc> {
-    const thread = await ctx.runMutation(
+    const thread = await runMutation(
+      ctx,
       this.component.threads.updateThread,
       args,
     );
@@ -1395,7 +1400,7 @@ export class Agent<
       result: { status: "failed"; error: string } | { status: "success" };
     },
   ): Promise<void> {
-    await ctx.runMutation(this.component.messages.finalizeMessage, {
+    await runMutation(ctx, this.component.messages.finalizeMessage, {
       messageId: args.messageId,
       result: args.result,
     });
@@ -1437,7 +1442,7 @@ export class Agent<
       this.component,
       args.patch.message,
     );
-    await ctx.runMutation(this.component.messages.updateMessage, {
+    await runMutation(ctx, this.component.messages.updateMessage, {
       messageId: args.messageId,
       patch: {
         message,
@@ -1573,6 +1578,7 @@ export class Agent<
    */
 
   /**
+   * @deprecated use {@link createThread} from within a Workflow directly
    * Create a mutation that creates a thread so you can call it from a Workflow.
    * e.g.
    * ```ts
@@ -1583,7 +1589,7 @@ export class Agent<
    * export const myWorkflow = workflow.define({
    *   args: {},
    *   handler: async (step) => {
-   *     const { threadId } = await step.runMutation(internal.foo.createThread);
+   *     const { threadId } = await createThread(step, components.agent, { ... });
    *     // use the threadId to generate text, object, etc.
    *   },
    * });
