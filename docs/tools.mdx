@@ -222,7 +222,7 @@ const llmTool = createTool({
   inputSchema: z.object({
     message: z.string().describe("The message to ask the LLM"),
   }),
-  execute: async (ctx, args): Promise<string> => {
+  execute: async (ctx, args, options): Promise<string> => {
     const result = await generateText({
       instructions: "You are a helpful assistant.",
       // Pass through all messages from the current generation

@@ -137,11 +137,14 @@ threadActivity: defineTable({
   userId: v.string(),
   threadId: v.string(),
   lastActivityAt: v.number(),
-}).index("by_userId_lastActivityAt", ["userId", "lastActivityAt"]),
+})
+  .index("by_threadId", ["threadId"])
+  .index("by_userId_lastActivityAt", ["userId", "lastActivityAt"]),
 ```
 
-Upsert the row in the same mutation that saves the prompt, delete it when the
-thread is deleted, and list with the index:
+Upsert the row by `by_threadId` in the same mutation that saves the prompt,
+delete it by the same index when the thread is deleted, and list with the
+activity index:
 
 ```ts
 const recent = await ctx.db
