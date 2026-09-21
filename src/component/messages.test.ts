@@ -1421,3 +1421,79 @@ describe("abandoning a save whose prompt was deleted (issue #300)", () => {
     ).rejects.toThrow("not found");
   });
 });
+
+describe("cloneThread", () => {
+  // Five messages across three orders, so a bounded clone has to cross a
+  // batch boundary and stop partway through the source.
+  async function seed() {
+    const t = initConvexTest();
+    const source = await t.mutation(api.threads.createThread, {
+      userId: "cloner",
+    });
+    const target = await t.mutation(api.threads.createThread, {
+      userId: "cloner",
+    });
+    const sourceThreadId = source._id as Id<"threads">;
+    const targetThreadId = target._id as Id<"threads">;
+    const { messages } = await t.mutation(api.messages.addMessages, {
+      threadId: sourceThreadId,
+      messages: [{ message: { role: "user", content: "one" } }],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: sourceThreadId,
+      promptMessageId: messages[0]!._id as Id<"messages">,
+      messages: [{ message: { role: "assistant", content: "one answer" } }],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: sourceThreadId,
+      messages: [
+        { message: { role: "user", content: "two" } },
+        { message: { role: "assistant", content: "two answer" } },
+      ],
+    });
+    await t.mutation(api.messages.addMessages, {
+      threadId: sourceThreadId,
+      messages: [{ message: { role: "user", content: "three" } }],
+    });
+    const targetRows = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query("messages")
+          .withIndex("threadId_status_tool_order_stepOrder", (q) =>
+            q.eq("threadId", targetThreadId),
+          )
+          .collect(),
+      );
+    return { t, sourceThreadId, targetThreadId, targetRows };
+  }
+
+  test.each([
+    { options: { batchSize: 2 }, copied: 5 },
+    { options: { limit: 3 }, copied: 3 },
+    { options: { batchSize: 2, limit: 3 }, copied: 3 },
+  ])("copies exactly what $options asks for", async ({ options, copied }) => {
+    const { t, sourceThreadId, targetThreadId, targetRows } = await seed();
+    const result = await t.action(api.messages.cloneThread, {
+      sourceThreadId,
+      targetThreadId,
+      ...options,
+    });
+    expect(result).toBe(copied);
+    expect(await targetRows()).toHaveLength(copied);
+  });
+
+  test("a cloned message never references a row outside its thread", async () => {
+    const { t, sourceThreadId, targetThreadId, targetRows } = await seed();
+    await t.action(api.messages.cloneThread, {
+      sourceThreadId,
+      targetThreadId,
+    });
+    const rows = await targetRows();
+    const ids = new Set(rows.map((m) => m._id));
+    for (const row of rows) {
+      if (row.parentMessageId !== undefined) {
+        expect(ids.has(row.parentMessageId)).toBe(true);
+      }
+    }
+  });
+});
