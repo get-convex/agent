@@ -758,7 +758,8 @@ describe("tool approval semantics", () => {
         .filter((message) => message.role === role)
         .at(-1);
       expect(final?.providerOptions).toEqual({ test: { cache } });
-      expect(partsFor("a").length + partsFor("b").length).toBeGreaterThan(0);
+      expect(partsFor("a")).not.toEqual([]);
+      expect(partsFor("b")).not.toEqual([]);
     },
   );
 
