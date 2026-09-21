@@ -174,8 +174,11 @@ export function prepareApprovalContext(
       }
     }
   }
-  const assistantOptions = new OptionsOnce("approval calls");
-  const toolOptions = new OptionsOnce("approval responses");
+  // Message-level provider options (cache control, say) are the handler's,
+  // and a handler that targets one message usually means the last one, so the
+  // synthesized pair takes the options of the last message it absorbs.
+  let assistantOptions: ModelMessage["providerOptions"];
+  let toolOptions: ModelMessage["providerOptions"];
   const projected: ModelMessage[] = [];
   for (const message of messages) {
     if (!Array.isArray(message.content)) {
@@ -191,7 +194,7 @@ export function prepareApprovalContext(
           return false;
         }
         if (executable.has(part.toolCallId)) {
-          assistantOptions.see(message.providerOptions);
+          assistantOptions = message.providerOptions;
           return false;
         }
         return true;
@@ -202,7 +205,7 @@ export function prepareApprovalContext(
         }
         const request = requests.get(part.approvalId);
         if (request && executable.has(request.toolCallId)) {
-          toolOptions.see(message.providerOptions);
+          toolOptions = message.providerOptions;
           return false;
         }
         return true;
@@ -237,31 +240,19 @@ export function prepareApprovalContext(
       tool.push(responses.get(approvalId)!);
     }
     projected.push(
-      { role: "assistant", content: assistant, ...assistantOptions.value() },
-      { role: "tool", content: tool, ...toolOptions.value() },
+      {
+        role: "assistant",
+        content: assistant,
+        ...withOptions(assistantOptions),
+      },
+      { role: "tool", content: tool, ...withOptions(toolOptions) },
     );
   }
   return projected;
 }
 
-// Message-level provider options (cache control, for instance) apply to the
-// whole message, so parts fused into one message must agree on them.
-class OptionsOnce {
-  private seen = false;
-  private options: ModelMessage["providerOptions"];
-  constructor(private readonly what: string) {}
-  see(options: ModelMessage["providerOptions"]) {
-    if (this.seen && signature(this.options) !== signature(options)) {
-      throw new Error(
-        `Cannot combine ${this.what} with different message provider options`,
-      );
-    }
-    this.seen = true;
-    this.options = options;
-  }
-  value() {
-    return this.options ? { providerOptions: this.options } : {};
-  }
+function withOptions(providerOptions: ModelMessage["providerOptions"]) {
+  return providerOptions ? { providerOptions } : {};
 }
 
 type ApprovalPart = Request | Call | Response | Result;
