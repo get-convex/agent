@@ -107,10 +107,12 @@ including every step of its tool loop. Actions in the Convex runtime can run for
 [limits](https://docs.convex.dev/production/state/limits). An agent that runs
 many tool calls for one user message can hit that ceiling.
 
-To run longer, split the work so that no single action has to finish it. Each
-`generateText` call saves its steps as it goes, so a follow-up call with
-`promptMessageId` set to the original prompt continues from the saved history.
-The Workflow component below is the durable way to chain such steps.
+For longer work, split generation across actions so each call finishes within
+the limit. Completed steps are saved to the thread, and a later call can use
+`promptMessageId` to start from the original prompt's history. That does not
+resume a tool call that timed out or schedule the next action for you. The
+Workflow component below can chain the calls durably; tools run in retried steps
+must be safe to retry.
 
 ## Using the Workflow component for long-lived durable workflows
 

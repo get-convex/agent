@@ -168,25 +168,31 @@ await thread.generateText({
 When a message carries an image or file as a URL, the component stores the URL
 and hands it to the AI SDK. Providers that accept URLs for that media type
 (OpenAI does for `image/*`) download it themselves; for other providers the AI
-SDK downloads it inside your action before the request. A timeout with the
-provider's API URL in the error (for example `AI_APICallError` from
-`api.openai.com`) means the provider's fetch of your host timed out, not
-anything in Convex. Third-party hosts and CDNs vary in how quickly they answer,
-which is why the same URL can work one minute and fail the next.
+SDK downloads it inside your action before the request. If a provider error
+reports `Timeout while downloading` and names the image URL, the provider could
+not fetch that URL in time. The `AI_APICallError` request URL may be the
+provider's API endpoint; that alone does not identify which fetch timed out.
+Third-party hosts and CDNs can respond inconsistently, so the same image URL may
+work on a later attempt.
 
-The fix is to stop relying on that host. Fetch the image yourself in an action,
-where you control the timeout and can retry, and pass the bytes in the message.
-Bytes up to 64 KiB are sent inline, so nothing is fetched at all; larger images
-are saved to Convex file storage and the provider fetches a storage URL, or the
-AI SDK fetches it for a provider that does not accept URLs. Either way your host
-is out of the path:
+To avoid relying on that host during generation, fetch the image in an action
+and pass its bytes in the message. You can set the fetch timeout or add retries.
+Bytes up to 64 KiB are sent inline, so no image URL fetch is needed; larger
+images are saved to Convex file storage and the provider fetches a storage URL,
+or the AI SDK fetches it for a provider that does not accept URLs. Either way
+your host is out of the path:
 
 ```ts
 export const ask = internalAction({
   args: { threadId: v.string(), imageUrl: v.string(), prompt: v.string() },
   handler: async (ctx, { threadId, imageUrl, prompt }) => {
+    const url = new URL(imageUrl);
+    if (url.protocol !== "https:" || url.hostname !== "images.example.com") {
+      throw new Error("Untrusted image URL");
+    }
     const response = await fetch(imageUrl, {
       signal: AbortSignal.timeout(10_000),
+      redirect: "error",
     });
     if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
     const mediaType = response.headers.get("content-type");
@@ -210,13 +216,10 @@ export const ask = internalAction({
 });
 ```
 
-`AbortSignal.timeout` and a `signal` on `fetch` work in the Convex runtime even
-though the runtime's API list does not mention them.
-
-Only fetch URLs your application trusts. Apart from localhost URLs, which it
-inlines for local development, the component does not download URLs on your
-behalf, since a server that fetches whatever URL a user supplies can be pointed
-at internal hosts.
+Replace `images.example.com` with a host your application trusts. Do not fetch
+arbitrary user-supplied URLs: a server that does so can be pointed at internal
+hosts. Apart from localhost URLs, which it inlines for local development, the
+component does not download URLs on your behalf.
 
 ## Generating images
 

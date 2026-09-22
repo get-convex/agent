@@ -67,9 +67,8 @@ await agent.generateText(
 ```
 
 `hasSuccessfulToolCall` matches only when the tool returned a result. The AI
-SDK's `hasToolCall` matches on the call alone, so a tool that throws or fails
-input validation would stop the loop with no result rather than letting the
-model retry.
+SDK's `hasToolCall` matches the call even if the tool fails, which can stop the
+loop before the model has a chance to retry.
 
 ## Creating a tool with a Convex context
 
@@ -160,9 +159,9 @@ const myTool = createTool({
 
 ## Artifacts and canvases
 
-An artifact (a document, a code file, a canvas) is application data that the
-model edits, not message content. Store it in your own table with a version per
-edit, and give the model tools that write to it:
+An artifact (a document, a code file, a canvas) can live in your application's
+tables rather than in message content. One pattern is to store a version per
+edit and give the model tools that write to it:
 
 ```ts
 // convex/schema.ts
@@ -189,10 +188,10 @@ const writeArtifact = createTool({
 });
 ```
 
-The tool result is what the message stores, so it stays small. The client
-renders the artifact from the table with `useQuery`, keyed by `threadId` and
-`key`, and gets each new version reactively as the tool writes it. Version
-history comes for free from never overwriting a row.
+The mutation must authorize the write and allocate the next version. The tool
+result stays small because it contains only the version, while the client reads
+the artifact with `useQuery` and receives updates reactively. Keeping each
+version as a separate row lets the app show earlier edits.
 
 Avoid asking the model to emit the artifact inside special tags in its text. The
 text is stored verbatim and streamed as it arrives, so a half-written tag is
