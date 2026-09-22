@@ -48,8 +48,10 @@ const supportAgent = new Agent(components.agent, {
 ## Tracing LLM calls with OpenTelemetry
 
 The AI SDK can emit OpenTelemetry spans with the model, token usage, prompt, and
-response for generate and stream calls. Install `@ai-sdk/otel` and register its
-OpenTelemetry integration to enable them.
+response for generate and stream calls. Install `@ai-sdk/otel`,
+`@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/resources`, and
+`@opentelemetry/sdk-trace-base`, then register the AI SDK's OpenTelemetry
+integration to enable them.
 
 To export them to an OTLP backend, register a tracer provider and the AI SDK
 integration:
