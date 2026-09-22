@@ -19,6 +19,7 @@ import type { StorageReader } from "convex/server";
 export const MAX_FILE_SIZE = 1024 * 64;
 
 type File = {
+  userId?: string;
   url: string;
   fileId: string;
   storageId: Id<"_storage">;
@@ -32,6 +33,8 @@ type File = {
  * @param component The agent component.
  * @param blob The blob to store.
  * @param args.filename The filename to store.
+ * @param args.userId Owner supplied by the app. Deduplication stays within this
+ *   user's files. Omit for the shared legacy/unscoped pool.
  * @param args.sha256 The sha256 hash of the file. If not provided, it will be
  *   computed. However, to ensure no corruption during transfer, you can
  *   calculate this on the client to enforce integrity.
@@ -41,7 +44,11 @@ export async function storeFile(
   ctx: ActionCtx | MutationCtx,
   component: AgentComponent,
   blob: Blob,
-  { filename, sha256 }: { filename?: string; sha256?: string } = {},
+  {
+    filename,
+    sha256,
+    userId,
+  }: { filename?: string; sha256?: string; userId?: string } = {},
 ): Promise<{
   file: File;
   filePart: FilePart;
@@ -65,6 +72,7 @@ export async function storeFile(
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   const reused = await ctx.runMutation(component.files.useExistingFile, {
+    userId,
     hash,
     filename,
     mediaType: blob.type || undefined,
@@ -77,6 +85,7 @@ export async function storeFile(
     return {
       ...getParts(url, blob.type, filename),
       file: {
+        userId,
         url,
         fileId: reused.fileId,
         storageId: reused.storageId as Id<"_storage">,
@@ -103,6 +112,7 @@ export async function storeFile(
     const { fileId, storageId } = await ctx.runMutation(
       component.files.addFile,
       {
+        userId,
         storageId: newStorageId,
         hash,
         filename,
@@ -123,6 +133,7 @@ export async function storeFile(
     return {
       ...getParts(url, blob.type, filename),
       file: {
+        userId,
         url,
         fileId,
         storageId: storageId as Id<"_storage">,
@@ -152,14 +163,25 @@ export async function storeFile(
  * @param ctx A ctx object from an action or query.
  * @param component The agent component, usually `components.agent`.
  * @param fileId The fileId of the file to get.
+ * @param options.requireUserId Require this owner before resolving a storage
+ *   URL. The app must authenticate the caller before supplying their user ID.
+ *   Ownerless legacy files fail this check. Omit options only after applying
+ *   your own access policy in trusted server code.
  * @returns The file metadata and content parts.
  */
 export async function getFile(
   ctx: ActionCtx | (QueryCtx & { storage: StorageReader }),
   component: AgentComponent,
   fileId: string,
+  options?: { requireUserId: string },
 ) {
-  const file = await ctx.runQuery(component.files.get, { fileId });
+  if (options !== undefined && typeof options.requireUserId !== "string") {
+    throw new Error("requireUserId must be a string");
+  }
+  const file = await ctx.runQuery(component.files.get, {
+    fileId,
+    ...(options ? { requireUserId: options.requireUserId } : {}),
+  });
   if (!file) {
     throw new Error(`File not found in component: ${fileId}`);
   }
@@ -172,6 +194,7 @@ export async function getFile(
   return {
     ...getParts(url, mediaType, file.filename),
     file: {
+      userId: file.userId,
       fileId,
       url,
       storageId: file.storageId as Id<"_storage">,
@@ -179,6 +202,20 @@ export async function getFile(
       filename: file.filename,
     },
   };
+}
+
+/** Resolve file ownership before serialization; this does not authorize access. */
+export async function resolveFileUserId(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  component: AgentComponent,
+  { userId, threadId }: { userId?: string | null; threadId?: string },
+) {
+  return (
+    userId ??
+    (threadId
+      ? (await ctx.runQuery(component.threads.getThread, { threadId }))?.userId
+      : undefined)
+  );
 }
 
 function getParts(

@@ -203,3 +203,221 @@ describe("files", () => {
     ).resolves.toMatchObject({ page: [] });
   });
 });
+
+describe("file user ownership", () => {
+  afterEach(() => vi.useRealTimers());
+
+  test("deduplication and checked reads isolate users and the unscoped pool", async () => {
+    const t = convexTest(schema, modules);
+    const files = [];
+    for (const userId of [undefined, "alice", "bob"]) {
+      const args = {
+        userId,
+        hash: "same",
+        filename: "same.pdf",
+        mediaType: "application/pdf",
+      };
+      const file = await t.mutation(api.files.addFile, {
+        ...args,
+        storageId: `storage-${userId}`,
+      });
+      files.push(file);
+      await expect(
+        t.mutation(api.files.useExistingFile, args),
+      ).resolves.toEqual(file);
+      await expect(
+        t.mutation(api.files.addFile, { ...args, storageId: "losing-upload" }),
+      ).resolves.toEqual(file);
+      await expect(
+        t.query(api.files.get, { fileId: file.fileId }),
+      ).resolves.toMatchObject({
+        storageId: `storage-${userId}`,
+        refcount: 0,
+      });
+    }
+    expect(new Set(files.map((file) => file.fileId)).size).toBe(3);
+    await expect(
+      t.mutation(api.files.useExistingFile, {
+        userId: "charlie",
+        hash: "same",
+        filename: "same.pdf",
+      }),
+    ).resolves.toBeNull();
+    for (const [index, file] of files.entries()) {
+      const checked = await t.query(api.files.get, {
+        fileId: file.fileId,
+        requireUserId: "alice",
+      });
+      if (index === 1) expect(checked?.userId).toBe("alice");
+      else expect(checked).toBeNull();
+    }
+    await t.mutation(api.files.deleteFiles, {
+      fileIds: [files[1].fileId],
+      force: true,
+    });
+    await expect(
+      t.query(api.files.get, {
+        fileId: files[1].fileId,
+        requireUserId: "alice",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  test("scoped lookups preserve normalized media, legacy mimeType, and filename matching", async () => {
+    const t = convexTest(schema, modules);
+    const args = { userId: "alice", hash: "same", filename: "same" };
+    await t.mutation(api.files.addFile, {
+      ...args,
+      storageId: "pdf",
+      mediaType: "application/pdf",
+    });
+    const text = await t.mutation(api.files.addFile, {
+      ...args,
+      storageId: "text",
+      mimeType: " Text/Plain ",
+    });
+    // The first row has a different media type; both entry points must keep looking.
+    await expect(
+      t.mutation(api.files.useExistingFile, {
+        ...args,
+        mediaType: " TEXT/PLAIN ",
+      }),
+    ).resolves.toEqual(text);
+    await expect(
+      t.mutation(api.files.addFile, {
+        ...args,
+        storageId: "new",
+        mediaType: "text/plain",
+      }),
+    ).resolves.toEqual(text);
+    await expect(
+      t.mutation(api.files.useExistingFile, { ...args, filename: undefined }),
+    ).resolves.toBeNull();
+    await expect(
+      t.mutation(api.files.useExistingFile, { ...args, userId: undefined }),
+    ).resolves.toBeNull();
+
+    const legacy = await t.run((ctx) =>
+      ctx.db.insert("files", {
+        userId: "alice",
+        storageId: "legacy",
+        hash: "legacy",
+        mimeType: "TEXT/PLAIN",
+        refcount: 0,
+        lastTouchedAt: Date.now(),
+      }),
+    );
+    await expect(
+      t.mutation(api.files.useExistingFile, {
+        userId: "alice",
+        hash: "legacy",
+        mediaType: "text/plain",
+      }),
+    ).resolves.toMatchObject({ fileId: legacy });
+    const unknown = await t.mutation(api.files.addFile, {
+      userId: "alice",
+      storageId: "unknown",
+      hash: "unknown",
+    });
+    await expect(
+      t.mutation(api.files.addFile, {
+        userId: "alice",
+        storageId: "new-unknown",
+        hash: "unknown",
+        mediaType: "image/png",
+      }),
+    ).resolves.toEqual(unknown);
+  });
+
+  test("a fresh zero-reference alias protects a shared blob until its own grace expires", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const old = await t.mutation(api.files.addFile, {
+      userId: "alice",
+      storageId: "shared",
+      hash: "same",
+    });
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    const fresh = await t.mutation(api.files.addFile, {
+      userId: "bob",
+      storageId: "shared",
+      hash: "same",
+    });
+    await expect(
+      t.mutation(api.files.deleteFilesWithStorageIds, {
+        fileIds: [old.fileId],
+      }),
+    ).resolves.toEqual({
+      deletedFileIds: [old.fileId],
+      storageIdsToDelete: [],
+    });
+    expect(
+      await t.query(api.files.get, { fileId: fresh.fileId }),
+    ).not.toBeNull();
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    await expect(
+      t.mutation(api.files.deleteFilesWithStorageIds, {
+        fileIds: [fresh.fileId, fresh.fileId],
+      }),
+    ).resolves.toEqual({
+      deletedFileIds: [fresh.fileId],
+      storageIdsToDelete: ["shared"],
+    });
+  });
+
+  test("force never returns a blob still referenced by another file record", async () => {
+    const t = convexTest(schema, modules);
+    const first = await t.mutation(api.files.addFile, {
+      userId: "alice",
+      storageId: "shared",
+      hash: "same",
+    });
+    const second = await t.mutation(api.files.addFile, {
+      userId: "bob",
+      storageId: "shared",
+      hash: "same",
+    });
+    await t.mutation(api.files.copyFile, { fileId: second.fileId });
+    await expect(
+      t.mutation(api.files.deleteFilesWithStorageIds, {
+        fileIds: [first.fileId],
+        force: true,
+      }),
+    ).resolves.toEqual({
+      deletedFileIds: [first.fileId],
+      storageIdsToDelete: [],
+    });
+    await expect(
+      t.query(api.files.get, { fileId: second.fileId }),
+    ).resolves.toMatchObject({ userId: "bob", refcount: 1 });
+    await expect(
+      t.mutation(api.files.deleteFilesWithStorageIds, {
+        fileIds: [second.fileId],
+        force: true,
+      }),
+    ).resolves.toEqual({
+      deletedFileIds: [second.fileId],
+      storageIdsToDelete: ["shared"],
+    });
+  });
+
+  test("deleting all eligible aliases returns their storage ID once", async () => {
+    const t = convexTest(schema, modules);
+    const files = await Promise.all(
+      ["a", "b"].map((filename) =>
+        t.mutation(api.files.addFile, {
+          storageId: "shared",
+          hash: "same",
+          filename,
+        }),
+      ),
+    );
+    const fileIds = files.map((file) => file.fileId);
+    await expect(
+      t.mutation(api.files.deleteFilesWithStorageIds, { fileIds, force: true }),
+    ).resolves.toEqual({
+      deletedFileIds: fileIds,
+      storageIdsToDelete: ["shared"],
+    });
+  });
+});
