@@ -216,7 +216,7 @@ export const chat = httpAction(async (ctx, request) => {
     })
     .join("");
   if (!prompt) return new Response("No prompt text", { status: 400 });
-  await authorizeThreadAccess(ctx, threadId);
+  await authorizeThreadAccess(ctx, threadId, true);
   const result = await agent.streamText(
     ctx,
     { threadId },
@@ -244,6 +244,12 @@ const { messages, sendMessage } = useChat({
 
 This example handles text-only user sends. Add handling for attachments or
 regeneration if your chat UI supports them.
+
+The example app's `authorizeThreadAccess` enforces thread ownership when its
+third argument is `true`. `DefaultChatTransport` does not automatically send the
+Convex client's auth token to an HTTP action. Forward your app's credentials
+with the transport's `headers` or `credentials` option so the helper can check
+ownership before generating a response.
 
 `VITE_CONVEX_SITE_URL` is not set by `npx convex dev`; add it to `.env.local`
 yourself with your deployment's `.convex.site` URL (Dashboard, Settings, URL and
