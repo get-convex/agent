@@ -35,8 +35,7 @@ export const generateTextWithTelemetry = action({
       { threadId },
       {
         prompt,
-        experimental_telemetry: {
-          isEnabled: true,
+        telemetry: {
           functionId: "debugging/telemetry",
         },
       },
