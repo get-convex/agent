@@ -2,6 +2,8 @@
 
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { getConvexSize } from "convex/values";
+import { convexValueSize } from "./streams.js";
 import { api } from "./_generated/api.js";
 import type { Id } from "./_generated/dataModel.js";
 import schema from "./schema.js";
@@ -163,6 +165,27 @@ describe("streams", () => {
         cursors: [{ streamId: earlyStreamId, cursor: 0 }],
       }),
     ).toEqual([]);
+  });
+
+  test.each([
+    ["numbers", { parts: [{ type: "data", data: Array(1000).fill(0) }] }],
+    [
+      "text",
+      { parts: [{ type: "text-delta", id: "t", delta: "x".repeat(1000) }] },
+    ],
+    [
+      "unicode",
+      { parts: [{ type: "text-delta", id: "t", delta: "🦉".repeat(250) }] },
+    ],
+    [
+      "nested",
+      {
+        parts: [{ type: "data", data: { a: [1, "b", null, true, { c: [] }] } }],
+      },
+    ],
+    ["bytes", { parts: [{ type: "file", data: new ArrayBuffer(777) }] }],
+  ])("delta sizing matches Convex accounting for %s", (_name, doc) => {
+    expect(convexValueSize(doc)).toBe(getConvexSize(doc));
   });
 
   test("sync deletion refuses a stream it cannot delete in one transaction", async () => {
