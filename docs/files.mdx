@@ -187,10 +187,14 @@ export const ask = internalAction({
   args: { threadId: v.string(), imageUrl: v.string(), prompt: v.string() },
   handler: async (ctx, { threadId, imageUrl, prompt }) => {
     const url = new URL(imageUrl);
-    if (url.protocol !== "https:" || url.hostname !== "images.example.com") {
+    if (
+      url.origin !== "https://images.example.com" ||
+      url.username ||
+      url.password
+    ) {
       throw new Error("Untrusted image URL");
     }
-    const response = await fetch(imageUrl, {
+    const response = await fetch(url, {
       signal: AbortSignal.timeout(10_000),
       redirect: "error",
     });
