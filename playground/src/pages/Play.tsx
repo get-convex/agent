@@ -18,6 +18,7 @@ import { useThreadMessages } from "@convex-dev/agent/react";
 interface PlayProps {
   apiKey: string;
   api: PlaygroundAPI;
+  openSettings: () => void;
 }
 
 // TODO: store preferences in local storage
@@ -37,7 +38,7 @@ const DEFAULT_STORAGE_OPTIONS = {
   saveMessages: "promptAndOutput",
 } as const satisfies StorageOptions;
 
-function Play({ apiKey, api }: PlayProps) {
+function Play({ apiKey, api, openSettings }: PlayProps) {
   const { toast } = useToast();
   const [stream, setStream] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
@@ -223,7 +224,14 @@ function Play({ apiKey, api }: PlayProps) {
     <div className="h-screen flex flex-col">
       <div className="bg-secondary p-3 border-b flex items-center justify-between">
         <h1 className="font-bold text-lg">Playground</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            className="text-sm underline text-muted-foreground"
+            onClick={openSettings}
+          >
+            API settings
+          </button>
           <label htmlFor="streaming-toggle" className="text-sm font-medium">
             Streaming
           </label>
