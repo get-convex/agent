@@ -171,7 +171,6 @@ export const schema = defineSchema({
     lastTouchedAt: v.number(),
   })
     .index("hash", ["hash"])
-    .index("refcount", ["refcount"])
     .index("refcount_lastTouchedAt", ["refcount", "lastTouchedAt"]),
   ...vectorTables,
   // To authenticate playground usage
