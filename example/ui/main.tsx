@@ -28,7 +28,7 @@ export function App() {
   return (
     <BrowserRouter>
       <div className="h-screen flex flex-col">
-        <header className="z-50 bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+        <header className="z-50 bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
           <nav className="flex gap-4 items-center">
             <Link to="/" className="hover:text-indigo-600">
               <h2 className="text-xl font-semibold accent-text">
@@ -65,7 +65,7 @@ function Index() {
           Explore the available agent/AI examples below.
         </p>
         <ul className="space-y-4">
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/chat-basic"
               className="text-xl font-semibold text-indigo-700 hover:underline"
@@ -77,7 +77,7 @@ function Index() {
               enough to see it in action.
             </p>
           </li>
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/chat-streaming"
               className="text-xl font-semibold text-indigo-700 hover:underline"
@@ -90,7 +90,7 @@ function Index() {
               streaming!).
             </p>
           </li>
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/files-images"
               className="text-xl font-semibold text-indigo-700 hover:underline"
@@ -102,7 +102,7 @@ function Index() {
               saved and tracked.
             </p>
           </li>
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/rag-basic"
               className="text-xl font-semibold text-indigo-700 hover:underline"
@@ -113,7 +113,7 @@ function Index() {
               A simple RAG example with a chat interface.
             </p>
           </li>
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/rate-limiting"
               className="text-xl font-semibold text-indigo-700 hover:underline"
@@ -125,7 +125,7 @@ function Index() {
               based on token usage.
             </p>
           </li>
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/weather-fashion"
               className="text-xl font-semibold text-indigo-700 hover:underline"
@@ -139,7 +139,7 @@ function Index() {
               on the weather.
             </p>
           </li>
-          <li className="border rounded p-4 hover:shadow transition">
+          <li className="border rounded-sm p-4 hover:shadow-sm transition">
             <Link
               to="/chat-approval"
               className="text-xl font-semibold text-indigo-700 hover:underline"

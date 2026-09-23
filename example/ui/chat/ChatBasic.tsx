@@ -34,7 +34,7 @@ export default function ChatBasic() {
 
   return (
     <div className="h-full flex flex-col">
-      <header className="bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+      <header className="bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold accent-text">
             Basic Chat Example
@@ -71,7 +71,7 @@ export default function ChatBasic() {
                       setThreadId(thread._id);
                     }}
                   >
-                    <span className="truncate max-w-[10rem]">
+                    <span className="truncate max-w-40">
                       {thread.title || "Untitled thread"}
                     </span>
                   </button>
@@ -82,7 +82,7 @@ export default function ChatBasic() {
           <div className="px-4 py-2">
             <button
               onClick={() => void newThread()}
-              className="w-full flex justify-center items-center gap-2 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full flex justify-center items-center gap-2 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition font-semibold shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-400"
               type="button"
             >
               <span className="text-lg">+</span>
@@ -158,7 +158,7 @@ function Chat({ threadId }: { threadId: string }) {
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-blue-400 bg-gray-50"
             placeholder="Ask me anything..."
           />
           <button
@@ -179,7 +179,7 @@ function Message({ message }: { message: UIMessage }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`rounded-lg px-4 py-2 max-w-lg whitespace-pre-wrap shadow-sm ${
+        className={`rounded-lg px-4 py-2 max-w-lg whitespace-pre-wrap shadow-xs ${
           isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800"
         }`}
       >
