@@ -93,6 +93,7 @@
     "@ai-sdk/google": "4.0.16",
     "@ai-sdk/groq": "4.0.11",
     "@ai-sdk/openai": "4.0.14",
+    "@ai-sdk/otel": "1.0.28",
     "@ai-sdk/provider": "4.0.3",
     "@ai-sdk/provider-utils": "5.0.10",
     "@convex-dev/ai-sdk-provider": "^0.1.0",

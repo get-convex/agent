@@ -7,9 +7,10 @@ import { useParams } from "react-router-dom";
 
 const API_KEY_STORAGE_KEY = "playground_api_key";
 const API_PATH_STORAGE_KEY = "playground_api_path";
+const ACTIONS_PATH_STORAGE_KEY = "playground_actions_path";
 const CLI_COMMAND = `npx convex run --component agent apiKeys:issue '{name:"..."}'`;
 const PLAYGROUND_CODE = `
-import { definePlaygroundAPI } from "@convex-dev/agent/playground";
+import { definePlaygroundAPI } from "@convex-dev/agent";
 import { components } from "./_generated/api";
 import { weatherAgent, fashionAgent } from "./example";
 
@@ -25,17 +26,33 @@ export const {
 } = definePlaygroundAPI(components.agent, { agents: [weatherAgent, fashionAgent] });
 `;
 
-function getApi(apiPath: string) {
-  return apiPath
+function resolvePath(path: string) {
+  return path
     .trim()
     .split("/")
     .reduce((acc, part) => acc[part], anyApi) as unknown as PlaygroundAPI;
 }
 
+function getApi(apiPath: string, actionsPath?: string): PlaygroundAPI {
+  const queries = resolvePath(apiPath);
+  const actions = actionsPath?.trim() ? resolvePath(actionsPath) : queries;
+  return new Proxy(queries, {
+    get(target, property) {
+      if (property === "generateText") return actions.generateText;
+      if (property === "fetchPromptContext") return actions.fetchPromptContext;
+      return Reflect.get(target, property);
+    },
+  });
+}
+
 function ApiKeyGate({
   children,
 }: {
-  children: (apiKey: string, api: PlaygroundAPI) => ReactNode;
+  children: (
+    apiKey: string,
+    api: PlaygroundAPI,
+    openSettings: () => void,
+  ) => ReactNode;
 }) {
   const { url: encodedUrl } = useParams();
   const deploymentUrl = useMemo(() => {
@@ -70,15 +87,19 @@ function ApiKeyGate({
     return "playground";
   });
   const [apiPathInput, setApiPathInput] = useState(apiPath);
+  const [actionsPath, setActionsPath] = useState<string>(
+    () =>
+      sessionStorage.getItem(`${ACTIONS_PATH_STORAGE_KEY}-${encodedUrl}`) ?? "",
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const convex = useConvex();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
 
-  // Validate on every keystroke
   useEffect(() => {
     if (!apiPathInput) return;
-    const nextApi = getApi(apiPathInput);
+    const nextApi = resolvePath(apiPathInput);
     convex
       .query(nextApi.isApiKeyValid, { apiKey: apiKeyInput })
       .then((isValid) => {
@@ -90,7 +111,6 @@ function ApiKeyGate({
         if (isValid) {
           setApiKeyValid(true);
           setError(null);
-          // Simulate form submission for password managers
         } else {
           setApiKeyValid(false);
           setError("Invalid API key for this playground path.");
@@ -119,7 +139,12 @@ function ApiKeyGate({
         `${API_KEY_STORAGE_KEY}-${encodedUrl}`,
         apiKeyInput,
       );
+      sessionStorage.setItem(
+        `${ACTIONS_PATH_STORAGE_KEY}-${encodedUrl}`,
+        actionsPath,
+      );
       setApiKey(apiKeyInput);
+      setSettingsOpen(false);
     }
   };
 
@@ -129,7 +154,7 @@ function ApiKeyGate({
     setTimeout(() => setCopied(false), 1200);
   };
 
-  if (!apiKey || !apiPath || !apiKeyValid) {
+  if (!apiKey || !apiPath || !apiKeyValid || settingsOpen) {
     return (
       <div className="fixed inset-0 flex py-8 items-start justify-center bg-black bg-opacity-60 z-50">
         <form
@@ -165,14 +190,33 @@ function ApiKeyGate({
               value={apiPathInput}
               onChange={(e) =>
                 setApiPathInput(
-                  e.target.value.trim().replace(/[^a-zA-Z0-9/]/g, ""),
+                  e.target.value.trim().replace(/[^a-zA-Z0-9_/]/g, ""),
                 )
               }
               placeholder="playground"
             />
             <span className="text-xs text-muted-foreground">
-              Where you exported the playground api with definePlaygroundAPI.
-              Usually <code>playground</code>.
+              Module exporting the playground queries. Usually{" "}
+              <code>playground</code>.
+            </span>
+            <label className="text-sm font-medium text-foreground mt-2">
+              Actions Path (optional)
+            </label>
+            <input
+              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
+              type="text"
+              id="agent-playground-actions-path"
+              value={actionsPath}
+              onChange={(e) =>
+                setActionsPath(
+                  e.target.value.trim().replace(/[^a-zA-Z0-9_/]/g, ""),
+                )
+              }
+              placeholder="same as API path"
+            />
+            <span className="text-xs text-muted-foreground">
+              Only if you split the API with definePlaygroundActions into a{" "}
+              <code>"use node"</code> file.
             </span>
           </div>
           <h3 className="text-xl font-bold mb-1 text-foreground">
@@ -269,13 +313,9 @@ function ApiKeyGate({
     );
   }
 
-  // Construct the API object using the playground path
-  const api: PlaygroundAPI = apiPath
-    .trim()
-    .split("/")
-    .reduce((acc, part) => acc[part], anyApi) as unknown as PlaygroundAPI;
-  // Valid
-  return children(apiKey, api);
+  const api = getApi(apiPath, actionsPath);
+  const openSettings = () => setSettingsOpen(true);
+  return children(apiKey, api, openSettings);
 }
 
 export default ApiKeyGate;

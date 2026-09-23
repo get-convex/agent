@@ -513,15 +513,27 @@ export const finalizeMessage = mutation({
         return;
       }
       if (messages.length > 0) {
-        await addMessagesHandler(ctx, {
-          messages,
-          threadId: message.threadId,
-          agentName: message.agentName,
-          failPendingSteps: false,
-          pendingMessageId: messageId,
-          userId: message.userId,
-          embeddings: undefined,
-        });
+        // Nested so an oversized recovered message rolls back on its own and
+        // the pending message is marked failed instead of stuck.
+        try {
+          await ctx.runMutation(api.messages.addMessages, {
+            messages,
+            threadId: message.threadId,
+            agentName: message.agentName,
+            failPendingSteps: false,
+            pendingMessageId: messageId,
+            userId: message.userId,
+            embeddings: undefined,
+          });
+        } catch (error) {
+          console.error("Failed to persist recovered assistant streams", error);
+          await markPendingMessageFailed(
+            ctx,
+            message,
+            result.status === "failed" ? result.error : STREAM_RECOVERY_FAILURE,
+          );
+          return;
+        }
         await releaseStreamFileOwnershipByIds(ctx, streamsToRelease);
         return;
       }
@@ -669,6 +681,9 @@ export const cloneMessageBatch = internalMutation({
               threadId: args.targetThreadId,
             });
           }
+          // parentMessageId would point into the source thread. Nothing
+          // reads it yet, and remapping needs the parent copied first, which
+          // descending batches do not guarantee, so the copy carries none.
           await ctx.db.insert("messages", {
             ...omit(m, [
               "_id",
@@ -676,6 +691,7 @@ export const cloneMessageBatch = internalMutation({
               "threadId",
               "order",
               "embeddingId",
+              "parentMessageId",
             ]),
             embeddingId,
             threadId: args.targetThreadId,
@@ -700,19 +716,20 @@ export const cloneThread = action({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
+    const { batchSize, limit, ...batchArgs } = args;
     let cursor: string | null = null;
     let copiedSoFar = 0;
-    while (copiedSoFar < (args.limit ?? Infinity)) {
+    while (copiedSoFar < (limit ?? Infinity)) {
       const numToCopy = Math.min(
-        args.batchSize ?? DEFAULT_RECENT_MESSAGES,
-        args.limit ?? Infinity - copiedSoFar,
+        batchSize ?? DEFAULT_RECENT_MESSAGES,
+        (limit ?? Infinity) - copiedSoFar,
       );
       const result: {
         numCopied: number;
         continueCursor: string;
         isDone: boolean;
       } = await ctx.runMutation(internal.messages.cloneMessageBatch, {
-        ...args,
+        ...batchArgs,
         paginationOpts: {
           cursor,
           numItems: numToCopy,

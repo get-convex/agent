@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add `definePlaygroundQueries` and `definePlaygroundActions` so the playground
+  actions can live in a `"use node"` module; `definePlaygroundAPI` composes
+  them. `listAgents` now validates the API key before invoking an `agents`
+  callback.
+
 ## 0.7.3
 
 - Preserve stream cleanup order across statuses (#365)
