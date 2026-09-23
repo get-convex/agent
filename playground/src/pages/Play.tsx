@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import LeftPanel from "@/components/LeftPanel";
 import MiddlePanel from "@/components/MiddlePanel";
 import RightPanel from "@/components/RightPanel";
@@ -71,51 +71,44 @@ function Play({ apiKey, api, openSettings }: PlayProps) {
     { apiKey, userId: selectedUserId },
     { initialNumItems: 20 },
   );
-  useEffect(() => {
-    if (threads.results.length > 0 && !selectedThreadId) {
-      setSelectedThreadId(threads.results[0]._id);
-    }
-  }, [threads.results, selectedThreadId]);
+  if (threads.results.length > 0 && !selectedThreadId) {
+    setSelectedThreadId(threads.results[0]._id);
+  }
 
   const messages = useThreadMessages(
     api.listMessages,
     selectedThreadId ? { apiKey, threadId: selectedThreadId } : "skip",
     { initialNumItems: 20, stream },
   );
-  useEffect(() => {
-    if (messages.results.length > 0 && !selectedMessageId) {
-      setSelectedMessageId(messages.results[0].id);
-    }
-  }, [messages.results, selectedMessageId]);
+  const firstMessageId = messages.results[0]?.id;
+  if (firstMessageId && !selectedMessageId) {
+    setSelectedMessageId(firstMessageId);
+  }
 
   const agents = useQuery(api.listAgents, {
     apiKey,
     threadId: selectedThreadId,
     userId: selectedUserId,
   });
-  useEffect(() => {
-    if (agents && agents.length > 0 && !selectedAgent) {
-      setSelectedAgent(agents[0]);
-      if (agents[0].contextOptions) {
-        setContextOptions(agents[0].contextOptions);
-      }
-      if (agents[0].storageOptions) {
-        setStorageOptions(agents[0].storageOptions);
-      }
-    } else if (agents && selectedAgent) {
-      const newAgent = agents.find(
-        (agent) => agent.name === selectedAgent.name,
-      );
-      if (newAgent) {
-        if (JSON.stringify(selectedAgent) !== JSON.stringify(newAgent)) {
-          setSelectedAgent(newAgent);
-        }
-      } else {
-        // The selected agent is no longer in the list of agents, so clear it
-        setSelectedAgent(undefined);
-      }
+  if (agents && agents.length > 0 && !selectedAgent) {
+    setSelectedAgent(agents[0]);
+    if (agents[0].contextOptions) {
+      setContextOptions(agents[0].contextOptions);
     }
-  }, [agents, selectedAgent]);
+    if (agents[0].storageOptions) {
+      setStorageOptions(agents[0].storageOptions);
+    }
+  } else if (agents && selectedAgent) {
+    const newAgent = agents.find((agent) => agent.name === selectedAgent.name);
+    if (newAgent) {
+      if (JSON.stringify(selectedAgent) !== JSON.stringify(newAgent)) {
+        setSelectedAgent(newAgent);
+      }
+    } else {
+      // The selected agent is no longer in the list of agents, so clear it
+      setSelectedAgent(undefined);
+    }
+  }
 
   // Convex actions
   const generateText = useAction(api.generateText);

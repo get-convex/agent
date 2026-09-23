@@ -37,15 +37,24 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem(DEPLOYMENT_URL_STORAGE_KEY);
     return stored ?? "";
   });
-  useEffect(() => {
-    if (deploymentUrl) setInputValue(deploymentUrl);
-  }, [deploymentUrl]);
 
   const [instanceName, setInstanceName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Don't optimistically set isValid to true - wait for async validation
   const [isValid, setIsValid] = useState(false);
+
+  const [prevDeploymentUrl, setPrevDeploymentUrl] = useState(deploymentUrl);
+  if (deploymentUrl !== prevDeploymentUrl) {
+    setPrevDeploymentUrl(deploymentUrl);
+    if (deploymentUrl) {
+      setInputValue(deploymentUrl);
+    } else {
+      setIsValid(false);
+      setInstanceName(null);
+      setError(null);
+    }
+  }
 
   // Validation function
   const validateDeploymentUrl = useCallback(
@@ -93,14 +102,10 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
 
   // Auto-validate deployment URL from path when it changes
   useEffect(() => {
-    if (!deploymentUrl) {
-      setIsValid(false);
-      setInstanceName(null);
-      setError(null);
-      return;
-    }
+    if (!deploymentUrl) return;
     // Only auto-validate if we don't have validation state yet
     if (!isValid && !error && !instanceName && !loading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- starts a network check of the URL from the path; its loading/error state is set when the request begins
       validateDeploymentUrl(deploymentUrl);
     }
   }, [

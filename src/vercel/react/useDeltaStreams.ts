@@ -23,39 +23,37 @@ export function useDeltaStreams<
     skipStreamIds?: string[];
   },
 ): { streamMessage: StreamMessage; deltas: StreamDelta[] }[] | undefined {
-  // We hold onto and modify state directly to avoid re-running unnecessarily.
-  const [state] = useState<{
+  type DeltaStreams =
+    | Array<{ streamMessage: StreamMessage; deltas: StreamDelta[] }>
+    | undefined;
+  const [state, setState] = useState<{
     startOrder: number;
     threadId: string | undefined;
-    deltaStreams:
-      | Array<{
-          streamMessage: StreamMessage;
-          deltas: StreamDelta[];
-        }>
-      | undefined;
-  }>({
+    deltaStreams: DeltaStreams;
+    cursors: Record<string, number>;
+  }>(() => ({
     startOrder: options?.startOrder ?? 0,
     deltaStreams: undefined,
     threadId: args === "skip" ? undefined : args.threadId,
-  });
-  const [cursors, setCursors] = useState<Record<string, number>>({});
-  if (args !== "skip" && state.threadId !== args.threadId) {
-    state.threadId = args.threadId;
-    state.deltaStreams = undefined;
-    state.startOrder = options?.startOrder ?? 0;
-    setCursors({});
+    cursors: {},
+  }));
+  // Computed from the previous render's state and committed at the end via a
+  // render-phase update, so everything below sees this render's values.
+  let { startOrder, threadId, deltaStreams, cursors } = state;
+  if (args !== "skip" && threadId !== args.threadId) {
+    threadId = args.threadId;
+    deltaStreams = undefined;
+    startOrder = options?.startOrder ?? 0;
+    cursors = {};
   }
   if (
-    state.deltaStreams?.length ||
-    (options?.startOrder && options.startOrder < state.startOrder)
+    deltaStreams?.length ||
+    (options?.startOrder && options.startOrder < startOrder)
   ) {
-    const cacheFriendlyStartOrder = options?.startOrder
+    startOrder = options?.startOrder
       ? // round down to the nearest 10 for some cache benefits
         options.startOrder - (options.startOrder % 10)
       : 0;
-    if (cacheFriendlyStartOrder !== state.startOrder) {
-      state.startOrder = cacheFriendlyStartOrder;
-    }
   }
 
   // Get all the active streams
@@ -67,7 +65,7 @@ export function useDeltaStreams<
           ...args,
           streamArgs: {
             kind: "list",
-            startOrder: state.startOrder,
+            startOrder,
           } as StreamArgs,
         } as FunctionArgs<Query>),
   ) as
@@ -78,7 +76,7 @@ export function useDeltaStreams<
     args === "skip"
       ? undefined
       : !streamList
-        ? state.deltaStreams?.map(({ streamMessage }) => streamMessage)
+        ? deltaStreams?.map(({ streamMessage }) => streamMessage)
         : sorted(
             streamList.streams.messages.filter(
               ({ streamId, order }) =>
@@ -90,7 +88,7 @@ export function useDeltaStreams<
   // When no active streams remain, clear the stale state so we stop
   // returning old streaming UIMessages.
   if (streamMessages !== undefined && streamMessages.length === 0) {
-    state.deltaStreams = undefined;
+    deltaStreams = undefined;
   }
 
   // Get the deltas for all the active streams, if any.
@@ -142,12 +140,13 @@ export function useDeltaStreams<
         newCursors[streamId] = cursor;
       }
     }
-    setCursors(newCursors);
+    cursors = newCursors;
 
+    const previousDeltaStreams = deltaStreams;
     // we defensively create a new object so object identity matches contents
-    state.deltaStreams = streamMessages.map((streamMessage) => {
+    deltaStreams = streamMessages.map((streamMessage) => {
       const streamId = streamMessage.streamId;
-      const old = state.deltaStreams?.find(
+      const old = previousDeltaStreams?.find(
         (ds) => ds.streamMessage.streamId === streamId,
       );
       const newDeltas = newDeltasByStreamId.get(streamId);
@@ -160,5 +159,13 @@ export function useDeltaStreams<
       };
     });
   }
-  return state.deltaStreams;
+  if (
+    startOrder !== state.startOrder ||
+    threadId !== state.threadId ||
+    deltaStreams !== state.deltaStreams ||
+    cursors !== state.cursors
+  ) {
+    setState({ startOrder, threadId, deltaStreams, cursors });
+  }
+  return deltaStreams;
 }
