@@ -36,16 +36,19 @@ export function useSmoothText(
   const [visibleText, setVisibleText] = useState(
     startStreaming ? "" : text || "",
   );
+  const [mountedAt] = useState(() => Date.now());
   const smoothState = useRef({
-    tick: Date.now(),
+    tick: mountedAt,
     cursor: visibleText.length,
-    lastUpdate: Date.now(),
+    lastUpdate: mountedAt,
     lastUpdateLength: text.length,
     charsPerMs: charsPerSec / 1000,
     initial: true,
   });
 
-  const isStreaming = smoothState.current.cursor < text.length;
+  // visibleText is always text.slice(0, smoothState.current.cursor).
+  const cursor = visibleText.length;
+  const isStreaming = cursor < text.length;
 
   useEffect(() => {
     if (!isStreaming) {
@@ -103,5 +106,5 @@ export function useSmoothText(
     return () => clearInterval(interval);
   }, [text, isStreaming, charsPerSec]);
 
-  return [visibleText, { cursor: smoothState.current.cursor, isStreaming }];
+  return [visibleText, { cursor, isStreaming }];
 }
