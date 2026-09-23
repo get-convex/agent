@@ -18,7 +18,7 @@ export default function StreamArray() {
 
   return (
     <>
-      <header className="sticky top-0 h-16 z-10 bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+      <header className="sticky top-0 h-16 z-10 bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
         <h1 className="text-xl font-semibold accent-text">
           Streaming Array Example
         </h1>
@@ -31,7 +31,7 @@ export default function StreamArray() {
         {used ? (
           <div>
             <button
-              className="bg-blue-500 text-white p-2 rounded "
+              className="bg-blue-500 text-white p-2 rounded-sm "
               onClick={() =>
                 void resetThread()
                   .then(() => setUsed(false))
@@ -56,7 +56,7 @@ export default function StreamArray() {
         ) : (
           <div className="flex justify-center items-center h-full">
             <button
-              className="bg-blue-500 text-white p-2 rounded "
+              className="bg-blue-500 text-white p-2 rounded-sm "
               disabled={!threadId}
               onClick={() => {
                 setUsed(true);
