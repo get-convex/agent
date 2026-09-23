@@ -119,7 +119,7 @@
     "@types/node": "24.13.3",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "4.7.0",
+    "@vitejs/plugin-react": "6.1.1",
     "ai": "7.0.28",
     "autoprefixer": "10.4.27",
     "chokidar-cli": "3.0.0",
@@ -152,7 +152,7 @@
     "tailwindcss-animate": "1.0.7",
     "typescript": "5.9.3",
     "typescript-eslint": "8.57.1",
-    "vite": "6.4.3",
+    "vite": "8.3.0",
     "vitest": "4.1.11",
     "zod": "3.25.76"
   },
