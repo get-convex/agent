@@ -22,7 +22,6 @@
 
     "assumeChangesOnlyAffectDirectDependencies": false,
 
-    "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "src/vite-env.d.ts"]
