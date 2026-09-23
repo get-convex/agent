@@ -1,6 +1,35 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@plugin "@tailwindcss/typography";
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/*
+  Tailwind CSS v4 no longer sets `cursor: pointer` on buttons, so we restore
+  the v3 behavior.
+*/
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 :root {
   --color-light: #ffffff;
@@ -11,8 +40,8 @@
   @apply text-slate-600;
 }
 
-.button {
-  @apply bg-gradient-to-r bg-blue-500;
+@utility button {
+  @apply bg-linear-to-r bg-blue-500;
 }
 
 body {
@@ -37,7 +66,7 @@ body {
 }
 
 .input-field {
-  @apply w-full px-3 py-2 rounded-md bg-transparent border-2 border-slate-200 focus:outline-none focus:border-blue-500 transition-colors;
+  @apply w-full px-3 py-2 rounded-md bg-transparent border-2 border-slate-200 focus:outline-hidden focus:border-blue-500 transition-colors;
 }
 
 .auth-button {

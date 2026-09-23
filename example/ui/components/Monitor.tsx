@@ -37,7 +37,6 @@ export function Monitor({
   // Canvas refs and state
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const animationRef = useRef<number | undefined>(undefined);
   const canvasSetupRef = useRef<{
     width: number;
     height: number;
@@ -124,10 +123,10 @@ export function Monitor({
   const drawTimeline = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas || !container) return false;
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return false;
 
     const rect = container.getBoundingClientRect();
     const { width, height } = rect;
@@ -349,8 +348,7 @@ export function Monitor({
     ctx.fillStyle = "#374151";
     ctx.font = "bold 14px Inter, sans-serif";
 
-    // Schedule next frame
-    animationRef.current = requestAnimationFrame(drawTimeline);
+    return true;
   }, [timelineData, consumptionHistory, capacity, opts?.name]);
 
   // Setup canvas when component mounts or container size changes
@@ -360,10 +358,16 @@ export function Monitor({
 
   // Start animation loop
   useEffect(() => {
-    drawTimeline();
+    let frame: number | undefined;
+    const loop = () => {
+      if (drawTimeline()) {
+        frame = requestAnimationFrame(loop);
+      }
+    };
+    loop();
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
       }
     };
   }, [drawTimeline]);
@@ -381,7 +385,7 @@ export function Monitor({
   return (
     <div
       ref={containerRef}
-      className="relative w-full bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200"
+      className="relative w-full bg-linear-to-br from-gray-50 to-white rounded-xl border border-gray-200"
       style={{ height }}
     >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
