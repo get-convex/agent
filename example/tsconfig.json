@@ -2,9 +2,8 @@
   "compilerOptions": {
     "target": "ESNext",
     "paths": {
-      "@/*": ["ui/*"]
+      "@/*": ["./ui/*"]
     },
-    "baseUrl": ".",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "skipLibCheck": false,
     "allowSyntheticDefaultImports": true,

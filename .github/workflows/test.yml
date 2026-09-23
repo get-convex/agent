@@ -33,6 +33,11 @@ jobs:
         run: |
           npm i
           npm run build
+      - name: Build playground
+        working-directory: playground
+        run: |
+          npm ci
+          npm run build
       - name: Publish package for testing branch
         run: npx pkg-pr-new publish || echo "pkg-pr-new failed"
       - name: Test
