@@ -22,6 +22,18 @@ function RestorePath() {
   return null;
 }
 
+function PlaygroundRoute() {
+  return (
+    <ConvexProviderGate>
+      <ApiKeyGate>
+        {(apiKey, api, openSettings) => (
+          <Play apiKey={apiKey} api={api} openSettings={openSettings} />
+        )}
+      </ApiKeyGate>
+    </ConvexProviderGate>
+  );
+}
+
 const App = () => {
   return (
     <TooltipProvider>
@@ -30,26 +42,8 @@ const App = () => {
       <Sonner />
       <BrowserRouter basename={base}>
         <Routes>
-          <Route
-            path="/play/:url"
-            element={
-              <ConvexProviderGate>
-                <ApiKeyGate>
-                  {(apiKey, api) => <Play apiKey={apiKey} api={api} />}
-                </ApiKeyGate>
-              </ConvexProviderGate>
-            }
-          />
-          <Route
-            path="/play"
-            element={
-              <ConvexProviderGate>
-                <ApiKeyGate>
-                  {(apiKey, api) => <Play apiKey={apiKey} api={api} />}
-                </ApiKeyGate>
-              </ConvexProviderGate>
-            }
-          />
+          <Route path="/play/:url" element={<PlaygroundRoute />} />
+          <Route path="/play" element={<PlaygroundRoute />} />
           <Route path="/" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
