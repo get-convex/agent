@@ -155,8 +155,11 @@ export {
 export { createTool, type ToolCtx } from "./client/createTool.js";
 export {
   definePlaygroundAPI,
+  definePlaygroundActions,
+  definePlaygroundQueries,
   type AgentsFn,
   type PlaygroundAPI,
+  type PlaygroundAgentInfo,
 } from "./client/definePlaygroundAPI.js";
 export { getFile, storeFile } from "./client/files.js";
 export {
