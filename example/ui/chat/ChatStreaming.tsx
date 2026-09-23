@@ -17,7 +17,7 @@ export default function ChatStreaming() {
 
   return (
     <>
-      <header className="sticky top-0 h-16 z-10 bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+      <header className="sticky top-0 h-16 z-10 bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
         <h1 className="text-xl font-semibold accent-text">
           Streaming Chat Example
         </h1>
@@ -127,7 +127,7 @@ function Story({ threadId, reset }: { threadId: string; reset: () => void }) {
               type="text"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-blue-400 bg-gray-50"
               placeholder={
                 messages.length > 0
                   ? "Continue the story..."
@@ -200,7 +200,7 @@ function Message({ message }: { message: UIMessage }) {
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "rounded-lg px-4 py-2 max-w-lg whitespace-pre-wrap shadow-sm",
+          "rounded-lg px-4 py-2 max-w-lg whitespace-pre-wrap shadow-xs",
           isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800",
           {
             "bg-green-100": message.status === "streaming",
