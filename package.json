@@ -97,7 +97,7 @@
     "@ai-sdk/provider": "4.0.3",
     "@ai-sdk/provider-utils": "5.0.10",
     "@convex-dev/ai-sdk-provider": "^0.1.0",
-    "@convex-dev/eslint-plugin": "4.0.0",
+    "@convex-dev/eslint-plugin": "5.0.0",
     "@convex-dev/rag": "0.7.6",
     "@convex-dev/rate-limiter": "0.3.2",
     "@convex-dev/workflow": "0.4.3",
