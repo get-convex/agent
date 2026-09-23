@@ -381,7 +381,7 @@ export function Monitor({
   return (
     <div
       ref={containerRef}
-      className="relative w-full bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200"
+      className="relative w-full bg-linear-to-br from-gray-50 to-white rounded-xl border border-gray-200"
       style={{ height }}
     >
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />

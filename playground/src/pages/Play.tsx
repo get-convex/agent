@@ -242,7 +242,7 @@ function Play({ apiKey, api, openSettings }: PlayProps) {
           />
         </div>
       </div>
-      <div className="flex-grow flex overflow-hidden">
+      <div className="grow flex overflow-hidden">
         <div className="w-1/5 h-full">
           <LeftPanel
             users={users.results}

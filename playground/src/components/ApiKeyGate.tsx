@@ -156,7 +156,7 @@ function ApiKeyGate({
 
   if (!apiKey || !apiPath || !apiKeyValid || settingsOpen) {
     return (
-      <div className="fixed inset-0 flex py-8 items-start justify-center bg-black bg-opacity-60 z-50">
+      <div className="fixed inset-0 flex py-8 items-start justify-center bg-black/60 z-50">
         <form
           onSubmit={handleSubmit}
           className="bg-white rounded-xl shadow-2xl p-8 flex flex-col gap-6 w-full max-w-4xl border border-muted min-h-[600px]"
@@ -183,7 +183,7 @@ function ApiKeyGate({
               Playground API Path
             </label>
             <input
-              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
+              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
               type="text"
               autoComplete="username"
               id="agent-playground-api-path"
@@ -203,7 +203,7 @@ function ApiKeyGate({
               Actions Path (optional)
             </label>
             <input
-              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
+              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
               type="text"
               id="agent-playground-actions-path"
               value={actionsPath}
@@ -233,7 +233,7 @@ function ApiKeyGate({
               <button
                 type="button"
                 onClick={handleCopy}
-                className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-white rounded px-2 py-1 text-xs flex items-center gap-1 shadow"
+                className="absolute top-2 right-2 bg-gray-800 hover:bg-gray-700 text-white rounded px-2 py-1 text-xs flex items-center gap-1 shadow-sm"
                 tabIndex={-1}
                 aria-label="Copy command"
               >
@@ -275,7 +275,7 @@ function ApiKeyGate({
             </span>
           </div>
           <input
-            className="border border-input rounded-lg px-4 py-3 text-base font-mono bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
+            className="border border-input rounded-lg px-4 py-3 text-base font-mono bg-muted focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition w-full min-w-0"
             type="password"
             autoComplete="current-password"
             name="api-key"

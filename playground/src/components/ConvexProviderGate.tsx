@@ -146,7 +146,7 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
 
   if (!deploymentUrl || !isValid || !convex) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60 z-50">
+      <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50">
         <div
           className="bg-white rounded-xl shadow-2xl p-8 flex flex-col gap-6 border border-muted"
           style={{ minWidth: 750, maxWidth: "90vw", width: 750 }}
@@ -167,7 +167,7 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
           </label>
           <div className="flex gap-2">
             <input
-              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 transition flex-1 min-w-0"
+              className="border border-input rounded-lg px-4 py-2 text-base font-mono bg-muted focus:outline-hidden focus:ring-2 focus:ring-blue-500 transition flex-1 min-w-0"
               type="text"
               value={inputValue}
               onChange={handleInputChange}
@@ -187,7 +187,7 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
           <div style={{ minHeight: "2.5em" }} className="flex items-center">
             {loading ? (
               <div
-                className="text-blue-700 text-sm font-medium break-words whitespace-pre-wrap bg-blue-50 rounded p-3 border border-blue-200"
+                className="text-blue-700 text-sm font-medium wrap-break-word whitespace-pre-wrap bg-blue-50 rounded p-3 border border-blue-200"
                 style={{ wordBreak: "break-word", maxWidth: "100%" }}
               >
                 Validating...
@@ -198,7 +198,7 @@ function ConvexProviderGate({ children }: { children: ReactNode }) {
               </div>
             ) : error ? (
               <div
-                className="text-red-600 text-sm font-medium break-words whitespace-pre-wrap bg-red-50 rounded p-3 border border-red-200"
+                className="text-red-600 text-sm font-medium wrap-break-word whitespace-pre-wrap bg-red-50 rounded p-3 border border-red-200"
                 style={{ wordBreak: "break-word", maxWidth: "100%" }}
               >
                 {error}

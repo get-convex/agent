@@ -292,7 +292,7 @@ function RagBasicUI() {
                           className={`flex ${message.message?.role === "user" ? "justify-end" : "justify-start"}`}
                         >
                           <div
-                            className={`rounded-lg px-4 py-2 max-w-lg whitespace-pre-wrap shadow-sm ${
+                            className={`rounded-lg px-4 py-2 max-w-lg whitespace-pre-wrap shadow-xs ${
                               message.message?.role === "user"
                                 ? "bg-blue-100 text-blue-900"
                                 : "bg-gray-200 text-gray-800"
@@ -333,7 +333,7 @@ function RagBasicUI() {
                                     (result, index) => (
                                       <div
                                         key={index}
-                                        className="bg-white border border-gray-200 rounded p-3"
+                                        className="bg-white border border-gray-200 rounded-sm p-3"
                                       >
                                         <div className="flex items-center justify-between mb-2">
                                           <div className="text-xs font-medium text-gray-600">
@@ -380,7 +380,7 @@ function RagBasicUI() {
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-blue-400 bg-gray-50"
                 placeholder="Ask me anything and I'll leverage the context you added..."
               />
               <button
