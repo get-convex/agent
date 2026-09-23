@@ -8,6 +8,17 @@
     {
       "groupName": "Routine updates",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"]
+    },
+    {
+      "description": "Each @vitejs plugin major peers on one vite major, so they can only land together.",
+      "groupName": "vite",
+      "matchPackageNames": ["vite", "@vitejs/**"],
+      "matchUpdateTypes": ["major"]
+    },
+    {
+      "description": "typescript-eslint's peer range; raise when it supports newer TypeScript.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.1.0"
     }
   ],
   "constraints": {
