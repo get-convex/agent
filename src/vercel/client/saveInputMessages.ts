@@ -69,7 +69,7 @@ export async function saveInputMessages(
     | undefined;
   if ((args.embeddingModel ?? args.textEmbeddingModel) && toSave.length) {
     assert(
-      "runAction" in ctx,
+      "runAction" in ctx && "storage" in ctx,
       "You must be in an action context to generate embeddings",
     );
     embeddings = await embedMessages(
