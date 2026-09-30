@@ -6,6 +6,7 @@ import type {
   MutationCtx,
   QueryCtx,
 } from "./types.js";
+import { runMutation, runQuery } from "./run.js";
 
 /**
  * Create a thread to store messages with an Agent.
@@ -19,7 +20,8 @@ export async function createThread(
   component: AgentComponent,
   args?: { userId?: string | null; title?: string; summary?: string },
 ) {
-  const { _id: threadId } = await ctx.runMutation(
+  const { _id: threadId } = await runMutation(
+    ctx,
     component.threads.createThread,
     {
       userId: args?.userId ?? undefined,
@@ -41,7 +43,7 @@ export async function getThreadMetadata(
   component: AgentComponent,
   args: { threadId: string },
 ): Promise<ThreadDoc> {
-  const thread = await ctx.runQuery(component.threads.getThread, {
+  const thread = await runQuery(ctx, component.threads.getThread, {
     threadId: args.threadId,
   });
   if (!thread) {
@@ -55,7 +57,7 @@ export async function updateThreadMetadata(
   component: AgentComponent,
   args: { threadId: string; patch: Partial<WithoutSystemFields<ThreadDoc>> },
 ) {
-  return ctx.runMutation(component.threads.updateThread, {
+  return runMutation(ctx, component.threads.updateThread, {
     threadId: args.threadId,
     patch: args.patch,
   });
