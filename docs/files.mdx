@@ -180,7 +180,7 @@ and pass its bytes in the message. You can set the fetch timeout or add retries.
 Bytes up to 64 KiB are sent inline, so no image URL fetch is needed; larger
 images are saved to Convex file storage and the provider fetches a storage URL,
 or the AI SDK fetches it for a provider that does not accept URLs. Either way
-your host is out of the path:
+only your own fetch, not the provider request, depends on your image host:
 
 ```ts
 export const ask = internalAction({
