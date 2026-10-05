@@ -23,9 +23,11 @@ describe("@convex-dev/workflow is not a dependency", () => {
     const files = await readdir(new URL("src/", root), { recursive: true });
     const importers: string[] = [];
     for (const file of files) {
-      if (!/\.tsx?$/.test(file) || /\.test\.tsx?$/.test(file)) continue;
+      if (!/\.[cm]?tsx?$/.test(file) || /\.test\.[cm]?tsx?$/.test(file)) {
+        continue;
+      }
       const source = await readFile(new URL(`src/${file}`, root), "utf8");
-      if (source.includes('"@convex-dev/workflow"')) importers.push(file);
+      if (/["'`]@convex-dev\/workflow["'`/]/.test(source)) importers.push(file);
     }
     expect(importers).toEqual([]);
   });
