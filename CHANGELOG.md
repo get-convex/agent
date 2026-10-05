@@ -2,10 +2,14 @@
 
 ## Unreleased
 
-- Add `definePlaygroundQueries` and `definePlaygroundActions` so the playground
-  actions can live in a `"use node"` module; `definePlaygroundAPI` composes
-  them. `listAgents` now validates the API key before invoking an `agents`
-  callback.
+- Run agent queries and mutations inline in workflow steps (#279, #394)
+- Deprecate `agent.createThreadMutation()` in favor of `createThread` (#279)
+- Split the playground API so actions can run in `"use node"` (#373)
+- Read the whole delta log when materializing a failed stream (#370)
+- Bound async stream deletion by bytes (#369)
+- Honor `cloneThread` batch options and drop dangling parent ids (#371)
+- Drop the unused `refcount` index on files (#380)
+- Stop mutating state during render in the streaming React hooks (#335)
 
 ## 0.7.3
 
