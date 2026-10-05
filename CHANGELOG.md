@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.4
 
 - Run agent queries and mutations inline in workflow steps (#279, #394)
 - Deprecate `agent.createThreadMutation()` in favor of `createThread` (#279)
