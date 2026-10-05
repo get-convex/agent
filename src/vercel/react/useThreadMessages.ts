@@ -241,22 +241,26 @@ export function useStreamingThreadMessages<Query extends StreamQuery<any>>(
   const uiMessages = useStreamingUIMessages(query, queryArgs, queryOptions);
   const [messages, setMessages] = useState<Array<MessageDoc> | undefined>();
   const generationRef = useRef(0);
+  const threadId = args === "skip" ? undefined : args.threadId;
+
+  if ((threadId === undefined || !uiMessages) && messages !== undefined) {
+    setMessages(undefined);
+  }
 
   useEffect(() => {
-    if (args === "skip" || !uiMessages) {
-      setMessages(undefined);
+    if (threadId === undefined || !uiMessages) {
       return;
     }
     const currentGeneration = ++generationRef.current;
     (async () => {
       const nested = await Promise.all(
-        uiMessages.map((m) => fromUIMessages([m], { threadId: args.threadId })),
+        uiMessages.map((m) => fromUIMessages([m], { threadId })),
       );
       if (generationRef.current === currentGeneration) {
         setMessages(nested.flat());
       }
     })();
-  }, [uiMessages, args === "skip" ? undefined : args.threadId]);
+  }, [uiMessages, threadId]);
 
   return messages;
 }

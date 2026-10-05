@@ -22,6 +22,10 @@ function makeStep(partial: StepFixture): StepResult<any> {
   } as unknown as StepResult<any>;
 }
 
+// Never stops, so `willContinue` returning true means it reached the end
+// rather than taking the early `toolCalls > completed` bail.
+const neverStop = () => false;
+
 describe("hasSuccessfulToolCall", () => {
   test("returns true when last step has a tool-result for the named tool", () => {
     const step = makeStep({
@@ -75,10 +79,10 @@ describe("willContinue", () => {
         { type: "tool-error", toolName: "b" },
       ],
     });
-    // No stopWhen → returns false (no further stop conditions). The point
-    // is the function progresses past the early `toolCalls > completed`
-    // bail; pre-fix it returned early because tool-error wasn't counted.
-    expect(await willContinue([step], undefined)).toBe(false);
+    // A stop condition that never stops, so reaching the end returns true.
+    // With `undefined` the function returns false either way, which cannot
+    // distinguish "took the early bail" from "ran to the end".
+    expect(await willContinue([step], neverStop)).toBe(true);
   });
 
   test("stops when a tool call has neither a result nor an error yet", async () => {
@@ -87,7 +91,9 @@ describe("willContinue", () => {
       toolResults: [],
       content: [],
     });
-    expect(await willContinue([step], undefined)).toBe(false);
+    // Same never-stopping condition as above, so a `false` here can only
+    // come from the early `toolCalls > completed` bail.
+    expect(await willContinue([step], neverStop)).toBe(false);
   });
 
   test("stops when finishReason is not tool-calls", async () => {

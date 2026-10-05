@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import LeftPanel from "@/components/LeftPanel";
 import MiddlePanel from "@/components/MiddlePanel";
 import RightPanel from "@/components/RightPanel";
@@ -18,6 +18,7 @@ import { useThreadMessages } from "@convex-dev/agent/react";
 interface PlayProps {
   apiKey: string;
   api: PlaygroundAPI;
+  openSettings: () => void;
 }
 
 // TODO: store preferences in local storage
@@ -37,7 +38,7 @@ const DEFAULT_STORAGE_OPTIONS = {
   saveMessages: "promptAndOutput",
 } as const satisfies StorageOptions;
 
-function Play({ apiKey, api }: PlayProps) {
+function Play({ apiKey, api, openSettings }: PlayProps) {
   const { toast } = useToast();
   const [stream, setStream] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>();
@@ -70,51 +71,44 @@ function Play({ apiKey, api }: PlayProps) {
     { apiKey, userId: selectedUserId },
     { initialNumItems: 20 },
   );
-  useEffect(() => {
-    if (threads.results.length > 0 && !selectedThreadId) {
-      setSelectedThreadId(threads.results[0]._id);
-    }
-  }, [threads.results, selectedThreadId]);
+  if (threads.results.length > 0 && !selectedThreadId) {
+    setSelectedThreadId(threads.results[0]._id);
+  }
 
   const messages = useThreadMessages(
     api.listMessages,
     selectedThreadId ? { apiKey, threadId: selectedThreadId } : "skip",
     { initialNumItems: 20, stream },
   );
-  useEffect(() => {
-    if (messages.results.length > 0 && !selectedMessageId) {
-      setSelectedMessageId(messages.results[0].id);
-    }
-  }, [messages.results, selectedMessageId]);
+  const firstMessageId = messages.results[0]?.id;
+  if (firstMessageId && !selectedMessageId) {
+    setSelectedMessageId(firstMessageId);
+  }
 
   const agents = useQuery(api.listAgents, {
     apiKey,
     threadId: selectedThreadId,
     userId: selectedUserId,
   });
-  useEffect(() => {
-    if (agents && agents.length > 0 && !selectedAgent) {
-      setSelectedAgent(agents[0]);
-      if (agents[0].contextOptions) {
-        setContextOptions(agents[0].contextOptions);
-      }
-      if (agents[0].storageOptions) {
-        setStorageOptions(agents[0].storageOptions);
-      }
-    } else if (agents && selectedAgent) {
-      const newAgent = agents.find(
-        (agent) => agent.name === selectedAgent.name,
-      );
-      if (newAgent) {
-        if (JSON.stringify(selectedAgent) !== JSON.stringify(newAgent)) {
-          setSelectedAgent(newAgent);
-        }
-      } else {
-        // The selected agent is no longer in the list of agents, so clear it
-        setSelectedAgent(undefined);
-      }
+  if (agents && agents.length > 0 && !selectedAgent) {
+    setSelectedAgent(agents[0]);
+    if (agents[0].contextOptions) {
+      setContextOptions(agents[0].contextOptions);
     }
-  }, [agents, selectedAgent]);
+    if (agents[0].storageOptions) {
+      setStorageOptions(agents[0].storageOptions);
+    }
+  } else if (agents && selectedAgent) {
+    const newAgent = agents.find((agent) => agent.name === selectedAgent.name);
+    if (newAgent) {
+      if (JSON.stringify(selectedAgent) !== JSON.stringify(newAgent)) {
+        setSelectedAgent(newAgent);
+      }
+    } else {
+      // The selected agent is no longer in the list of agents, so clear it
+      setSelectedAgent(undefined);
+    }
+  }
 
   // Convex actions
   const generateText = useAction(api.generateText);
@@ -223,7 +217,14 @@ function Play({ apiKey, api }: PlayProps) {
     <div className="h-screen flex flex-col">
       <div className="bg-secondary p-3 border-b flex items-center justify-between">
         <h1 className="font-bold text-lg">Playground</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            className="text-sm underline text-muted-foreground"
+            onClick={openSettings}
+          >
+            API settings
+          </button>
           <label htmlFor="streaming-toggle" className="text-sm font-medium">
             Streaming
           </label>
@@ -234,7 +235,7 @@ function Play({ apiKey, api }: PlayProps) {
           />
         </div>
       </div>
-      <div className="flex-grow flex overflow-hidden">
+      <div className="grow flex overflow-hidden">
         <div className="w-1/5 h-full">
           <LeftPanel
             users={users.results}

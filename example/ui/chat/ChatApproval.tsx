@@ -15,7 +15,7 @@ export default function ChatApproval() {
 
   return (
     <>
-      <header className="sticky top-0 h-16 z-10 bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+      <header className="sticky top-0 h-16 z-10 bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
         <h1 className="text-xl font-semibold accent-text">
           Tool Approval Example
         </h1>
@@ -151,7 +151,7 @@ function Chat({ threadId, reset }: { threadId: string; reset: () => void }) {
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-blue-400 bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder={
               hasPendingApprovals
                 ? "Respond to pending approvals first..."
@@ -213,7 +213,7 @@ function Message({
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "rounded-lg px-4 py-2 max-w-lg shadow-sm",
+          "rounded-lg px-4 py-2 max-w-lg shadow-xs",
           isUser ? "bg-blue-100 text-blue-900" : "bg-gray-200 text-gray-800",
           {
             "bg-green-100": message.status === "streaming",
@@ -259,7 +259,7 @@ function ToolCallDisplay({
   const approvalReason = getToolApprovalReason(tool);
 
   return (
-    <div className="mb-2 p-2 rounded bg-white/50 border border-gray-300 text-sm">
+    <div className="mb-2 p-2 rounded-sm bg-white/50 border border-gray-300 text-sm">
       <div className="font-mono text-xs text-gray-500 mb-1">
         {toolName}({JSON.stringify(tool.input)})
       </div>
@@ -276,10 +276,10 @@ function ToolCallDisplay({
                 value={denialReason}
                 onChange={(e) => setDenialReason(e.target.value)}
                 placeholder="Reason for denial..."
-                className="flex-1 px-2 py-1 text-sm rounded border border-gray-300"
+                className="flex-1 px-2 py-1 text-sm rounded-sm border border-gray-300"
               />
               <button
-                className="px-3 py-1 rounded bg-red-500 text-white text-sm hover:bg-red-600"
+                className="px-3 py-1 rounded-sm bg-red-500 text-white text-sm hover:bg-red-600"
                 onClick={() => {
                   void onApproval({
                     threadId,
@@ -301,7 +301,7 @@ function ToolCallDisplay({
           ) : (
             <div className="flex gap-2">
               <button
-                className="px-3 py-1 rounded bg-green-600 text-white text-sm hover:bg-green-700"
+                className="px-3 py-1 rounded-sm bg-green-600 text-white text-sm hover:bg-green-700"
                 onClick={() => {
                   void onApproval({
                     threadId,
@@ -313,7 +313,7 @@ function ToolCallDisplay({
                 Approve
               </button>
               <button
-                className="px-3 py-1 rounded bg-red-500 text-white text-sm hover:bg-red-600"
+                className="px-3 py-1 rounded-sm bg-red-500 text-white text-sm hover:bg-red-600"
                 onClick={() => setShowReasonInput(true)}
               >
                 Deny

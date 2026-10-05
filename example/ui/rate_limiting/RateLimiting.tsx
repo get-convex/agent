@@ -103,7 +103,7 @@ export default function Example() {
 
   return (
     <>
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
         <h1 className="text-xl font-semibold accent-text">
           Rate Limiting Example
         </h1>
@@ -112,9 +112,9 @@ export default function Example() {
         {/* Centered container */}
         <div className="flex max-w-6xl w-full h-[calc(100vh-120px)] gap-6">
           {/* Left side - Monitors (1/3 width, no scroll) */}
-          <div className="w-1/3 space-y-4 flex-shrink-0">
+          <div className="w-1/3 space-y-4 shrink-0">
             {/* Send Message Monitor */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="bg-white rounded-lg shadow-xs border border-gray-200">
               <div className="p-3 border-b border-gray-100">
                 <h3 className="text-sm font-medium text-gray-700">
                   Send Message Rate Limit
@@ -142,7 +142,7 @@ export default function Example() {
             </div>
 
             {/* Token Usage Monitor */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="bg-white rounded-lg shadow-xs border border-gray-200">
               <div className="p-3 border-b border-gray-100">
                 <h3 className="text-sm font-medium text-gray-700">
                   Token Usage Rate Limit
@@ -173,7 +173,7 @@ export default function Example() {
           {/* Right side - Chat interface (2/3 width with scrolling) */}
           <div className="w-2/3 flex flex-col bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
             {/* Chat header */}
-            <div className="p-6 border-b border-gray-200 flex-shrink-0">
+            <div className="p-6 border-b border-gray-200 shrink-0">
               <div className="text-center">
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">
                   Rate Limited Chat
@@ -202,7 +202,7 @@ export default function Example() {
             </div>
 
             {/* Chat Input - Fixed at bottom */}
-            <div className="p-6 border-t border-gray-200 flex-shrink-0">
+            <div className="p-6 border-t border-gray-200 shrink-0">
               <form
                 className="flex flex-col gap-4"
                 onSubmit={(e) => {
@@ -214,7 +214,7 @@ export default function Example() {
                   type="text"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-lg"
+                  className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-blue-400 bg-gray-50 text-lg"
                   placeholder="Ask me anything..."
                 />
                 {status && !status.ok && (
@@ -286,7 +286,7 @@ function Message({ message }: { message: UIMessage }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} w-full`}>
       <div
-        className={`rounded-2xl px-5 py-3 max-w-[75%] whitespace-pre-wrap shadow-md text-base break-words border ${
+        className={`rounded-2xl px-5 py-3 max-w-[75%] whitespace-pre-wrap shadow-md text-base wrap-break-word border ${
           isUser
             ? "bg-blue-100 text-blue-900 border-blue-200"
             : "bg-gray-100 text-gray-800 border-gray-200"
@@ -307,7 +307,7 @@ function Message({ message }: { message: UIMessage }) {
                   <img
                     key={key}
                     src={part.url}
-                    className="max-h-40 rounded-lg mt-2 border border-gray-300 shadow"
+                    className="max-h-40 rounded-lg mt-2 border border-gray-300 shadow-sm"
                   />
                 );
               }

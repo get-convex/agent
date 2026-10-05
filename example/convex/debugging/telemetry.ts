@@ -1,4 +1,5 @@
 // See the docs at https://docs.convex.dev/agents/debugging
+import { OpenTelemetry } from "@ai-sdk/otel";
 import { trace } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -6,6 +7,7 @@ import {
   BasicTracerProvider,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { registerTelemetry } from "ai";
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { agent } from "../agents/simple";
@@ -25,6 +27,7 @@ const tracerProvider = new BasicTracerProvider({
   ],
 });
 trace.setGlobalTracerProvider(tracerProvider);
+registerTelemetry(new OpenTelemetry());
 
 export const generateTextWithTelemetry = action({
   args: { prompt: v.string(), threadId: v.string() },
@@ -35,8 +38,7 @@ export const generateTextWithTelemetry = action({
       { threadId },
       {
         prompt,
-        experimental_telemetry: {
-          isEnabled: true,
+        telemetry: {
           functionId: "debugging/telemetry",
         },
       },

@@ -19,7 +19,7 @@ const ThreadList: React.FC<ThreadListProps> = ({
 }) => {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-grow overflow-y-auto">
+      <div className="grow overflow-y-auto">
         {threads.map((thread) => (
           <ThreadItem
             key={thread._id}

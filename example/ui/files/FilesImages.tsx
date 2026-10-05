@@ -86,7 +86,7 @@ export default function Example() {
 
   return (
     <>
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-sm p-4 flex justify-between items-center border-b">
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-xs p-4 flex justify-between items-center border-b">
         <h1 className="text-xl font-semibold accent-text">
           Files and Images Example
         </h1>
@@ -147,7 +147,7 @@ export default function Example() {
                     type="text"
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50 text-lg"
+                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-blue-400 bg-gray-50 text-lg"
                     placeholder="Ask a question about the file"
                     // disabled={!file?.fileId}
                   />
@@ -174,7 +174,7 @@ function Message({ message }: { message: UIMessage }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} w-full`}>
       <div
-        className={`rounded-2xl px-5 py-3 max-w-[75%] whitespace-pre-wrap shadow-md text-base break-words border ${
+        className={`rounded-2xl px-5 py-3 max-w-[75%] whitespace-pre-wrap shadow-md text-base wrap-break-word border ${
           isUser
             ? "bg-blue-100 text-blue-900 border-blue-200"
             : "bg-gray-100 text-gray-800 border-gray-200"
@@ -191,7 +191,7 @@ function Message({ message }: { message: UIMessage }) {
                   <img
                     key={key}
                     src={part.url}
-                    className="max-h-40 rounded-lg mt-2 border border-gray-300 shadow"
+                    className="max-h-40 rounded-lg mt-2 border border-gray-300 shadow-sm"
                   />
                 );
               }

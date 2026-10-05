@@ -10,6 +10,7 @@ import {
   type GenericQueryCtx,
 } from "convex/server";
 import { v } from "convex/values";
+import type { Instructions } from "ai";
 import {
   vContextOptions,
   vMessage,
@@ -31,7 +32,11 @@ import { serializeResponseMessages, toModelMessage } from "../mapping.js";
 import type { Agent } from "../index.js";
 import { listMessages as listMessages_ } from "./messages.js";
 import { syncStreams, vStreamMessagesReturnValue } from "./streaming.js";
-import type { AgentComponent } from "./types.js";
+import type {
+  AgentComponent,
+  ContextOptions,
+  StorageOptions,
+} from "./types.js";
 
 export type PlaygroundAPI = ApiFromModules<{
   playground: ReturnType<typeof definePlaygroundAPI>;
@@ -42,36 +47,72 @@ export type AgentsFn<DataModel extends GenericDataModel> = (
   args: { userId: string | undefined; threadId: string | undefined },
 ) => Agent[] | Promise<Agent[]>;
 
-// Playground API definition
-export function definePlaygroundAPI<DataModel extends GenericDataModel>(
+/** Metadata for an agent defined in a separate `"use node"` module. */
+export type PlaygroundAgentInfo = {
+  name: string;
+  instructions?: Instructions | undefined;
+  contextOptions?: ContextOptions | undefined;
+  storageOptions?: StorageOptions | undefined;
+  maxRetries?: number | undefined;
+  tools?: string[] | undefined;
+};
+
+function agentName(agent: Agent, index: number) {
+  const name = agent.options.name;
+  if (!name) {
+    console.warn(
+      `Agent has no name (instructions: ${agent.options.instructions})`,
+    );
+  }
+  return name ?? `Agent ${index} (missing 'name')`;
+}
+
+function agentInfo(value: Agent | PlaygroundAgentInfo, index: number) {
+  if (!("options" in value)) {
+    return {
+      ...value,
+      tools: value.tools ?? [],
+    };
+  }
+  const { options } = value;
+  return {
+    name: agentName(value, index),
+    instructions: options.instructions,
+    contextOptions: options.contextOptions,
+    storageOptions: options.storageOptions,
+    maxRetries: options.callSettings?.maxRetries,
+    tools: options.tools ? Object.keys(options.tools) : [],
+  };
+}
+
+function apiKeyValidator(component: AgentComponent) {
+  return async (ctx: QueryCtx | MutationCtx | ActionCtx, apiKey: string) => {
+    await ctx.runQuery(component.apiKeys.validate, { apiKey });
+  };
+}
+
+/** Define playground queries and mutations without importing Node-only agents. */
+export function definePlaygroundQueries<DataModel extends GenericDataModel>(
   component: AgentComponent,
   {
     agents: agentsOrFn,
     userNameLookup,
   }: {
-    agents: Agent[] | AgentsFn<DataModel>;
+    agents:
+      | Array<Agent | PlaygroundAgentInfo>
+      | ((
+          ctx: GenericQueryCtx<DataModel>,
+          args: { userId: string | undefined; threadId: string | undefined },
+        ) =>
+          | Array<Agent | PlaygroundAgentInfo>
+          | Promise<Array<Agent | PlaygroundAgentInfo>>);
     userNameLookup?: (
       ctx: GenericQueryCtx<DataModel>,
       userId: string,
     ) => string | Promise<string>;
   },
 ) {
-  function validateAgents(agents: Agent[]) {
-    for (const agent of agents) {
-      if (!agent.options.name) {
-        console.warn(
-          `Agent has no name (instructions: ${agent.options.instructions})`,
-        );
-      }
-    }
-  }
-
-  async function validateApiKey(
-    ctx: QueryCtx | MutationCtx | ActionCtx,
-    apiKey: string,
-  ) {
-    await ctx.runQuery(component.apiKeys.validate, { apiKey });
-  }
+  const validateApiKey = apiKeyValidator(component);
 
   const isApiKeyValid = queryGeneric({
     args: { apiKey: v.string() },
@@ -86,41 +127,21 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     returns: v.boolean(),
   });
 
-  async function getAgents(
-    ctx: GenericActionCtx<DataModel> | GenericQueryCtx<DataModel>,
-    args: { userId: string | undefined; threadId: string | undefined },
-  ) {
-    const agents = Array.isArray(agentsOrFn)
-      ? agentsOrFn
-      : await agentsOrFn(ctx, args);
-    validateAgents(agents);
-    return agents.map((agent, i) => ({
-      name: agent.options.name ?? `Agent ${i} (missing 'name')`,
-      agent,
-    }));
-  }
-
-  // List all agents
   const listAgents = queryGeneric({
     args: {
       apiKey: v.string(),
       userId: v.optional(v.string()),
       threadId: v.optional(v.string()),
     },
-    handler: async (ctx, args) => {
-      const agents = await getAgents(ctx, {
-        userId: args.userId,
-        threadId: args.threadId,
-      });
+    handler: async (ctx: GenericQueryCtx<DataModel>, args) => {
       await validateApiKey(ctx, args.apiKey);
-      return agents.map(({ name, agent }) => ({
-        name,
-        instructions: agent.options.instructions,
-        contextOptions: agent.options.contextOptions,
-        storageOptions: agent.options.storageOptions,
-        maxRetries: agent.options.callSettings?.maxRetries,
-        tools: agent.options.tools ? Object.keys(agent.options.tools) : [],
-      }));
+      const agents = Array.isArray(agentsOrFn)
+        ? agentsOrFn
+        : await agentsOrFn(ctx, {
+            userId: args.userId,
+            threadId: args.threadId,
+          });
+      return agents.map(agentInfo);
     },
   });
 
@@ -144,7 +165,6 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     returns: vPaginationResult(v.object({ _id: v.string(), name: v.string() })),
   });
 
-  // List threads for a user (query)
   const listThreads = queryGeneric({
     args: {
       apiKey: v.string(),
@@ -192,7 +212,6 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     ),
   });
 
-  // List messages for a thread (query)
   const listMessages = queryGeneric({
     args: {
       apiKey: v.string(),
@@ -214,7 +233,6 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     returns: vStreamMessagesReturnValue,
   });
 
-  // Create a thread (mutation)
   const createThread = mutationGeneric({
     args: {
       apiKey: v.string(),
@@ -236,17 +254,52 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     returns: v.object({ threadId: v.string() }),
   });
 
-  // Send a message (action)
+  return {
+    isApiKeyValid,
+    listUsers,
+    listThreads,
+    listMessages,
+    listAgents,
+    createThread,
+  };
+}
+
+/** Define playground actions, including in a `"use node"` module. */
+export function definePlaygroundActions<DataModel extends GenericDataModel>(
+  component: AgentComponent,
+  { agents: agentsOrFn }: { agents: Agent[] | AgentsFn<DataModel> },
+) {
+  const validateApiKey = apiKeyValidator(component);
+
+  async function getAgent(
+    ctx: GenericActionCtx<DataModel>,
+    args: {
+      agentName: string;
+      userId?: string;
+      threadId?: string;
+    },
+  ) {
+    const agents = Array.isArray(agentsOrFn)
+      ? agentsOrFn
+      : await agentsOrFn(ctx, {
+          userId: args.userId,
+          threadId: args.threadId,
+        });
+    const agent = agents.find(
+      (agent, index) => agentName(agent, index) === args.agentName,
+    );
+    if (!agent) throw new Error(`Unknown agent: ${args.agentName}`);
+    return agent;
+  }
+
   const generateText = actionGeneric({
     args: {
       apiKey: v.string(),
       agentName: v.string(),
       userId: v.string(),
       threadId: v.string(),
-      // Options for generateText
       contextOptions: v.optional(vContextOptions),
       storageOptions: v.optional(vStorageOptions),
-      // Args passed through to generateText
       prompt: v.optional(v.string()),
       messages: v.optional(v.array(vMessage)),
       system: v.optional(v.string()),
@@ -264,13 +317,7 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
         ...rest
       } = args;
       await validateApiKey(ctx, apiKey);
-      const agents = await getAgents(ctx, {
-        userId: args.userId,
-        threadId: args.threadId,
-      });
-      const namedAgent = agents.find(({ name }) => name === agentName);
-      if (!namedAgent) throw new Error(`Unknown agent: ${agentName}`);
-      const { agent } = namedAgent;
+      const agent = await getAgent(ctx, { agentName, userId, threadId });
       const { text, steps } = await agent.streamText(
         ctx,
         { threadId, userId },
@@ -315,7 +362,6 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     returns: v.object({ text: v.string(), messages: v.array(vMessageDoc) }),
   });
 
-  // Fetch prompt context (action)
   const fetchPromptContext = actionGeneric({
     args: {
       apiKey: v.string(),
@@ -329,15 +375,9 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
       messages: v.optional(v.array(vMessage)),
       beforeMessageId: v.optional(v.string()),
     },
-    handler: async (ctx, args) => {
+    handler: async (ctx: GenericActionCtx<DataModel>, args) => {
       await validateApiKey(ctx, args.apiKey);
-      const agents = await getAgents(ctx, {
-        userId: args.userId,
-        threadId: args.threadId,
-      });
-      const namedAgent = agents.find(({ name }) => name === args.agentName);
-      if (!namedAgent) throw new Error(`Unknown agent: ${args.agentName}`);
-      const { agent } = namedAgent;
+      const agent = await getAgent(ctx, args);
       const contextOptions = args.contextOptions;
       const targetMessageId = args.targetMessageId ?? args.beforeMessageId;
       if (targetMessageId) {
@@ -362,15 +402,22 @@ export function definePlaygroundAPI<DataModel extends GenericDataModel>(
     },
   });
 
+  return { generateText, fetchPromptContext };
+}
+
+export function definePlaygroundAPI<DataModel extends GenericDataModel>(
+  component: AgentComponent,
+  options: {
+    agents: Agent[] | AgentsFn<DataModel>;
+    userNameLookup?: (
+      ctx: GenericQueryCtx<DataModel>,
+      userId: string,
+    ) => string | Promise<string>;
+  },
+) {
   return {
-    isApiKeyValid,
-    listUsers,
-    listThreads,
-    listMessages,
-    listAgents,
-    createThread,
-    generateText,
-    fetchPromptContext,
+    ...definePlaygroundQueries(component, options),
+    ...definePlaygroundActions(component, options),
   };
 }
 

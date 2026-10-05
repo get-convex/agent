@@ -62,13 +62,13 @@ export function WeatherFashion() {
                   e.target.style.height = e.target.scrollHeight + "px";
                 }}
                 onKeyDown={handleKeyDown}
-                className="w-full min-h-[4rem] max-h-[70vh] p-4 pb-16 rounded-xl border-2 border-indigo-100 text-lg focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-lg overflow-hidden"
+                className="w-full min-h-16 max-h-[70vh] p-4 pb-16 rounded-xl border-2 border-indigo-100 text-lg focus:outline-hidden focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-lg overflow-hidden"
                 placeholder="Where do you want an outfit for?"
               />
               <button
                 type="submit"
                 disabled={!content.trim()}
-                className="absolute bottom-2 left-2 right-2 px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium text-lg hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:hover:from-indigo-600 disabled:hover:to-purple-600 transition-all shadow-inner flex items-center justify-center gap-2"
+                className="absolute bottom-2 left-2 right-2 px-6 py-4 bg-linear-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium text-lg hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:hover:from-indigo-600 disabled:hover:to-purple-600 transition-all shadow-inner flex items-center justify-center gap-2"
               >
                 <span>Get Outfit For Location</span>
                 {content.trim() && (
@@ -131,7 +131,7 @@ export function WeatherFashion() {
                 return callElements.length > 0 ? (
                   <div
                     key={message._id}
-                    className="bg-gray-50 border rounded p-4 my-2"
+                    className="bg-gray-50 border rounded-sm p-4 my-2"
                   >
                     {callElements}
                   </div>
@@ -146,7 +146,7 @@ export function WeatherFashion() {
                   .map((c: any, i: number) => (
                     <div key={i} className="font-mono text-sm text-green-700">
                       <strong>Result from {c.toolName}:</strong>
-                      <pre className="bg-white border rounded p-2 mt-1 text-xs">
+                      <pre className="bg-white border rounded-sm p-2 mt-1 text-xs">
                         {JSON.stringify(c.output, null, 2)}
                       </pre>
                     </div>
@@ -154,7 +154,7 @@ export function WeatherFashion() {
                 return resultElements.length > 0 ? (
                   <div
                     key={message._id}
-                    className="bg-gray-50 border rounded p-4 my-2"
+                    className="bg-gray-50 border rounded-sm p-4 my-2"
                   >
                     {resultElements}
                   </div>
@@ -179,10 +179,10 @@ export function WeatherFashion() {
             return (
               <div
                 key={message._id}
-                className="p-6 rounded-xl border border-indigo-100 shadow-sm"
+                className="p-6 rounded-xl border border-indigo-100 shadow-xs"
               >
                 {message.message?.role === "assistant" && message.agentName && (
-                  <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium text-sm shadow-sm border border-indigo-100">
+                  <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 font-medium text-sm shadow-xs border border-indigo-100">
                     {message.agentName}
                   </span>
                 )}
@@ -224,13 +224,13 @@ export function WeatherFashion() {
                   e.target.style.height = "auto";
                   e.target.style.height = e.target.scrollHeight + "px";
                 }}
-                className="w-full min-h-[3rem] max-h-[40vh] p-4 rounded-lg border-2 border-indigo-100 text-base focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner resize-none"
+                className="w-full min-h-12 max-h-[40vh] p-4 rounded-lg border-2 border-indigo-100 text-base focus:outline-hidden focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner resize-none"
                 placeholder="Type your follow-up question..."
               />
               <button
                 type="submit"
                 disabled={!followUpContent.trim()}
-                className="self-end flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium text-base hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:hover:from-indigo-600 disabled:hover:to-purple-600 transition-all shadow-inner"
+                className="self-end flex items-center gap-2 px-5 py-3 bg-linear-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-medium text-base hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 disabled:hover:from-indigo-600 disabled:hover:to-purple-600 transition-all shadow-inner"
               >
                 <span>Send</span>
                 {followUpContent.trim() && (

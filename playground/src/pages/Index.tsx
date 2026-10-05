@@ -93,7 +93,7 @@ const Index = () => {
           </p>
           <Button
             size="lg"
-            className="mt-10 text-base px-10 py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-full shadow-sm focus:ring-1 focus:ring-[#B02A5B] hover:shadow-[0_0_20px_rgba(176,42,91,0.3)] border-2 border-[#B02A5B]"
+            className="mt-10 text-base px-10 py-3 bg-gray-800 hover:bg-gray-900 text-white rounded-full shadow-xs focus:ring-1 focus:ring-[#B02A5B] hover:shadow-[0_0_20px_rgba(176,42,91,0.3)] border-2 border-[#B02A5B]"
             onClick={() => navigate("/play")}
           >
             Launch Playground
@@ -108,7 +108,7 @@ const Index = () => {
               style={{ borderColor: "#E5E7EB" }}
             >
               <div className="flex items-center mb-4">
-                <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center mr-4 shadow-sm">
+                <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center mr-4 shadow-xs">
                   <ChatBubbleIcon className="w-4 h-4 text-white" />
                 </div>
                 <h3 className="text-lg features-title text-gray-900">
@@ -124,7 +124,7 @@ const Index = () => {
               style={{ borderColor: "#E5E7EB" }}
             >
               <div className="flex items-center mb-4">
-                <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center mr-4 shadow-sm">
+                <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center mr-4 shadow-xs">
                   <MagnifyingGlassIcon className="w-4 h-4 text-white" />
                 </div>
                 <h3 className="text-lg features-title text-gray-900">
@@ -140,7 +140,7 @@ const Index = () => {
               style={{ borderColor: "#E5E7EB" }}
             >
               <div className="flex items-center mb-4">
-                <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center mr-4 shadow-sm">
+                <div className="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center mr-4 shadow-xs">
                   <LightningBoltIcon className="w-4 h-4 text-white" />
                 </div>
                 <h3 className="text-lg features-title text-gray-900">
@@ -315,7 +315,7 @@ const Index = () => {
           <div className="mt-16 text-center">
             <Button
               size="lg"
-              className="text-base px-10 py-4 bg-gray-800 hover:bg-gray-900 text-white rounded-full shadow-sm focus:ring-1 focus:ring-[#B02A5B] hover:shadow-[0_0_20px_rgba(176,42,91,0.3)] border-2 border-[#B02A5B]"
+              className="text-base px-10 py-4 bg-gray-800 hover:bg-gray-900 text-white rounded-full shadow-xs focus:ring-1 focus:ring-[#B02A5B] hover:shadow-[0_0_20px_rgba(176,42,91,0.3)] border-2 border-[#B02A5B]"
               onClick={() => navigate("/play")}
             >
               Try the Playground Now

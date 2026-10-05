@@ -18,10 +18,10 @@ const ContextMessages: React.FC<ContextMessagesProps> = ({ messages }) => {
         <div className="border rounded-md">
           {/* Column Headers */}
           <div className="p-3 flex items-start gap-3 border-b bg-muted/50">
-            <div className="flex-grow text-center self-end">Message Text</div>
+            <div className="grow text-center self-end">Message Text</div>
 
             {/* TODO: Fetch the text and vector search ranks and show them
-            <div className="flex-shrink-0 w-24 text-right">
+            <div className="shrink-0 w-24 text-right">
               <span className="text-xs font-medium">Text/Vector </span>
               <br />
               <span className="text-xs font-medium">Search Rank</span>
@@ -37,9 +37,9 @@ const ContextMessages: React.FC<ContextMessagesProps> = ({ messages }) => {
               }`}
             >
               {message.text ? (
-                <div className="flex-grow">{message.text}</div>
+                <div className="grow">{message.text}</div>
               ) : (
-                <div className="flex-grow max-w-full overflow-x-auto">
+                <div className="grow max-w-full overflow-x-auto">
                   <span className="text-xs font-medium">
                     {message.message?.role}
                   </span>
@@ -52,7 +52,7 @@ const ContextMessages: React.FC<ContextMessagesProps> = ({ messages }) => {
 
               {message.textSearchRank !== undefined ||
                 (message.vectorSearchRank !== undefined && (
-                  <div className="flex-shrink-0 w-6 text-center">
+                  <div className="shrink-0 w-6 text-center">
                     <div className="flex flex-col">
                       {message.textSearchRank !== undefined && (
                         <span className="search-rank text-rank">

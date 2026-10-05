@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.4
+
+- Run agent queries and mutations inline in workflow steps (#279, #394)
+- Deprecate `agent.createThreadMutation()` in favor of `createThread` (#279)
+- Split the playground API so actions can run in `"use node"` (#373)
+- Read the whole delta log when materializing a failed stream (#370)
+- Bound async stream deletion by bytes (#369)
+- Honor `cloneThread` batch options and drop dangling parent ids (#371)
+- Drop the unused `refcount` index on files (#380)
+- Stop mutating state during render in the streaming React hooks (#335)
+
 ## 0.7.3
 
 - Preserve stream cleanup order across statuses (#365)
