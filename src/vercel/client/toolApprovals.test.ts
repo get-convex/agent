@@ -722,20 +722,24 @@ describe("tool approval semantics", () => {
     );
   });
 
-  test("message provider options a handler applies survive result relocation", async () => {
-    const s = await scenario();
-    await s.completeA();
+  // ai >=7.0.33 drops these options: https://github.com/vercel/ai/issues/22173
+  test.fails(
+    "message provider options a handler applies survive result relocation",
+    async () => {
+      const s = await scenario();
+      await s.completeA();
 
-    await s.continue(
-      await s.approve("b"),
-      "wrap-with-message-provider-options",
-    );
+      await s.continue(
+        await s.approve("b"),
+        "wrap-with-message-provider-options",
+      );
 
-    expect(executed).toEqual(["a", "b"]);
-    for (const message of lastModelPrompt()) {
-      expect(message.providerOptions).toEqual({ test: { cache: "all" } });
-    }
-  });
+      expect(executed).toEqual(["a", "b"]);
+      for (const message of lastModelPrompt()) {
+        expect(message.providerOptions).toEqual({ test: { cache: "all" } });
+      }
+    },
+  );
 
   // A handler that targets one message (cache control on the last message,
   // say) must keep working when the pair is synthesized from several.
