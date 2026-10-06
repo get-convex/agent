@@ -2944,6 +2944,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         },
         Name
       >;
+      respondToToolCallApprovals: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          agentName?: string;
+          decisions: Array<{
+            approvalId: string;
+            approved: boolean;
+            reason?: string;
+          }>;
+          threadId: string;
+        },
+        { messageId: string },
+        Name
+      >;
       searchMessages: FunctionReference<
         "action",
         "internal",
