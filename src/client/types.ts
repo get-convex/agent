@@ -1,6 +1,7 @@
 import type {
   FunctionArgs,
   FunctionReference,
+  FunctionReference_future,
   FunctionReturnType,
   FunctionVisibility,
   GenericActionCtx,
@@ -18,13 +19,19 @@ export type AgentComponent = ComponentApi;
  */
 export type WorkflowStepCtx = {
   workflowId: string;
-  runQuery<Query extends FunctionReference<"query", FunctionVisibility>>(
+  runQuery<
+    Query extends
+      | FunctionReference<"query", FunctionVisibility>
+      | FunctionReference_future<"query", FunctionVisibility>,
+  >(
     query: Query,
     args: FunctionArgs<Query>,
     opts?: { inline?: boolean },
   ): Promise<FunctionReturnType<Query>>;
   runMutation<
-    Mutation extends FunctionReference<"mutation", FunctionVisibility>,
+    Mutation extends
+      | FunctionReference<"mutation", FunctionVisibility>
+      | FunctionReference_future<"mutation", FunctionVisibility>,
   >(
     mutation: Mutation,
     args: FunctionArgs<Mutation>,
