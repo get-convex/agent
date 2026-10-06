@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.5
+
+- Allow tool approvals to be handled atomically and more robust (#367)
+
 ## 0.7.4
 
 - Run agent queries and mutations inline in workflow steps (#279, #394)
