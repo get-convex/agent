@@ -154,7 +154,9 @@ const messages = await listMessages(ctx, components.agent, {
 });
 ```
 
-Or for the UIMessage type (easier for rendering UIs):
+Or for the UIMessage type (each page is converted on its own, so a UIMessage can
+be cut at a page boundary; for React, return MessageDocs and use
+`useUIMessages`):
 
 ```ts
 import { listUIMessages } from "@convex-dev/agent";

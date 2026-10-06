@@ -8,7 +8,7 @@
 // 5. AI SDK automatically handles the approval: executes tool (if approved)
 //    or creates execution-denied result (if denied), then continues generation
 import { paginationOptsValidator } from "convex/server";
-import { listUIMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
+import { listMessages, syncStreams, vStreamArgs } from "@convex-dev/agent";
 import { components, internal } from "../_generated/api";
 import { internalAction, mutation, query } from "../_generated/server";
 import { v } from "convex/values";
@@ -135,7 +135,7 @@ export const listThreadMessages = query({
       threadId,
       streamArgs,
     });
-    const paginated = await listUIMessages(ctx, components.agent, args);
+    const paginated = await listMessages(ctx, components.agent, args);
     return { ...paginated, streams };
   },
 });

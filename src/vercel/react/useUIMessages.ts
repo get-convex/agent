@@ -4,7 +4,6 @@ import {
   type ErrorMessage,
   type Expand,
 } from "convex-helpers";
-import { usePaginatedQuery } from "convex-helpers/react";
 import {
   type PaginatedQueryArgs,
   type UsePaginatedQueryResult,
@@ -17,15 +16,22 @@ import type {
 } from "convex/server";
 import { useMemo } from "react";
 import type { SyncStreamsReturnValue } from "../client/types.js";
-import type { StreamArgs } from "../../validators.js";
+import type { MessageDoc, StreamArgs } from "../../validators.js";
 import type { StreamQuery } from "./types.js";
 import {
   type UIMessage,
   type UIStatus,
   combineUIMessages,
+  toUIMessages,
 } from "../UIMessages.js";
 import { sorted } from "../../shared.js";
 import { useStreamingUIMessages } from "./useStreamingUIMessages.js";
+import {
+  resolveStreams,
+  usePaginatedOrders,
+  type StreamCandidate,
+} from "./assemble.js";
+import type { MessageDocLike } from "./useThreadMessages.js";
 
 export type UIMessageLike = {
   order: number;
@@ -37,7 +43,7 @@ export type UIMessageLike = {
 
 export type UIMessagesQuery<
   Args = unknown,
-  M extends UIMessageLike = UIMessageLike,
+  M extends UIMessageLike | MessageDocLike = UIMessageLike | MessageDocLike,
 > = FunctionReference<
   "query",
   "public",
@@ -53,29 +59,42 @@ export type UIMessagesQuery<
   PaginationResult<M> & { streams?: SyncStreamsReturnValue }
 >;
 
-export type UIMessagesQueryArgs<
-  Query extends UIMessagesQuery<unknown, UIMessageLike>,
-> =
-  Query extends UIMessagesQuery<unknown, UIMessageLike>
+export type UIMessagesQueryArgs<Query extends UIMessagesQuery<unknown, any>> =
+  Query extends UIMessagesQuery<unknown, any>
     ? Expand<BetterOmit<FunctionArgs<Query>, "paginationOpts" | "streamArgs">>
     : never;
 
-export type UIMessagesQueryResult<
-  Query extends UIMessagesQuery<unknown, UIMessageLike>,
-> = Query extends UIMessagesQuery<unknown, infer M> ? M : never;
+/**
+ * The items the hook returns: the query's own items when it returns
+ * UIMessages, or UIMessages when it returns MessageDocs.
+ */
+export type UIMessagesQueryResult<Query extends UIMessagesQuery<unknown, any>> =
+  Query extends UIMessagesQuery<unknown, infer M>
+    ? M extends UIMessageLike
+      ? M
+      : UIMessage
+    : never;
 
 /**
  * A hook that fetches UIMessages from a thread.
  *
- * It's similar to useThreadMessages, for endpoints that return UIMessages.
- * The streaming messages are materialized as UIMessages. The rest are passed
- * through from the query.
+ * The query returns MessageDocs (from `listMessages`), which the hook
+ * assembles into UIMessages together with the streaming messages, so a
+ * UIMessage is whole no matter where pagination split its documents. Pages of
+ * UIMessages (from `listUIMessages`) are still accepted but legacy: each page
+ * was converted on its own, so a tool approval response on a different page
+ * from its tool call is lost.
+ *
+ * A page can end partway through a UIMessage. The hook loads the rest of the
+ * oldest one before settling (reporting `LoadingMore`), so results always
+ * start at a whole UIMessage and can hold more rows than `initialNumItems`.
+ * Rows of older UIMessages read along the way appear on the next `loadMore`.
  *
  * This hook is a wrapper around `usePaginatedQuery` and `useStreamingUIMessages`.
  * It will fetch both full messages and streaming messages, and merge them together.
  *
  * The query must take as arguments `{ threadId, paginationOpts }` and return a
- * pagination result of objects similar to UIMessage:
+ * pagination result of MessageDocs.
  *
  * For streaming, it should look like this:
  * ```ts
@@ -88,8 +107,7 @@ export type UIMessagesQueryResult<
  *   },
  *   handler: async (ctx, args) => {
  *     // await authorizeThreadAccess(ctx, threadId);
- *     // NOTE: listUIMessages returns UIMessages, not MessageDocs.
- *     const paginated = await listUIMessages(ctx, components.agent, args);
+ *     const paginated = await listMessages(ctx, components.agent, args);
  *     const streams = await syncStreams(ctx, components.agent, args);
  *     // Here you could filter out / modify the documents & stream deltas.
  *     return { ...paginated, streams };
@@ -108,8 +126,8 @@ export type UIMessagesQueryResult<
  *
  * @param query The query to use to fetch messages.
  * It must take as arguments `{ threadId, paginationOpts }` and return a
- * pagination result of objects similar to UIMessage:
- * Required fields: (role, parts, status, order, stepOrder).
+ * pagination result of MessageDocs, or (legacy) of objects similar to
+ * UIMessage with the fields role, parts, status, order and stepOrder.
  * To support streaming, it must also take in `streamArgs: vStreamArgs` and
  * return a `streams` object returned from `syncStreams`.
  * @param args The arguments to pass to the query other than `paginationOpts`
@@ -119,8 +137,7 @@ export type UIMessagesQueryResult<
  * To enable streaming, pass `stream: true`.
  * @returns The messages. If stream is true, it will return a list of messages
  *   that includes both full messages and streaming messages.
- *   The streaming messages are materialized as UIMessages. The rest are passed
- *   through from the query.
+ *   The streaming messages are materialized as UIMessages.
  */
 export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
   query: Query,
@@ -133,8 +150,7 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
     skipStreamIds?: string[];
   },
 ): UsePaginatedQueryResult<UIMessagesQueryResult<Query>> {
-  // These are full messages
-  const paginated = usePaginatedQuery(
+  const paginated = usePaginatedOrders(
     query,
     args as PaginatedQueryArgs<Query> | "skip",
     { initialNumItems: options.initialNumItems },
@@ -144,7 +160,7 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
     ? Math.min(...paginated.results.map((m) => m.order))
     : 0;
   // These are streaming messages that will not include full messages.
-  const streamMessages = useStreamingUIMessages(
+  const streams = useStreamingUIMessages(
     query as StreamQuery<UIMessagesQueryArgs<Query>>,
     !options.stream ||
       args === "skip" ||
@@ -154,50 +170,66 @@ export function useUIMessages<Query extends UIMessagesQuery<any, any>>(
     { startOrder, skipStreamIds: options.skipStreamIds },
   );
 
-  const merged = useMemo(() => {
-    return {
-      ...paginated,
-      results: mergeUIMessages(paginated.results, streamMessages ?? []),
-    };
-  }, [paginated, streamMessages]);
+  // Rows are converted only when the loaded pages or the streams' positions
+  // change, not on every delta.
+  const candidatesKey = JSON.stringify(
+    (streams ?? []).map(candidateOf).map((c) => ({ ...c, value: 0 })),
+  );
+  const assembled = useMemo(
+    () =>
+      assembleUIMessages(
+        paginated.results,
+        JSON.parse(candidatesKey) as StreamCandidate<number>[],
+      ),
+    [paginated.results, candidatesKey],
+  );
+  const results = useMemo(
+    () =>
+      combineUIMessages(
+        sorted([
+          ...assembled.messages,
+          ...(streams ?? []).filter((m) => assembled.shown.has(m.id)),
+        ]),
+      ),
+    [assembled, streams],
+  );
 
-  return merged as UIMessagesQueryResult<Query>;
+  return { ...paginated, results } as UIMessagesQueryResult<Query>;
 }
 
-export function mergeUIMessages<M extends UIMessageLike>(
-  messages: M[],
-  streamMessages: M[],
-): M[] {
-  const deduped = dedupeMessages(messages, streamMessages);
-  // Messages may have been split by pagination. Re-combine them here
-  // after dedupe has had access to each message's original stepOrder.
-  return combineUIMessages(deduped as unknown as UIMessage[]) as unknown as M[];
-}
+const isUIMessage = (item: UIMessageLike | MessageDocLike) =>
+  Array.isArray((item as UIMessageLike).parts);
 
-export function dedupeMessages<
-  M extends {
-    order: number;
-    stepOrder: number;
-    status: UIStatus;
-  },
->(messages: M[], streamMessages: M[]): M[] {
-  return sorted(messages.concat(streamMessages)).reduce((msgs, msg) => {
-    const last = msgs.at(-1);
-    if (!last) {
-      return [msg];
-    }
-    if (last.order !== msg.order || last.stepOrder !== msg.stepOrder) {
-      return [...msgs, msg];
-    }
-    if (
-      (last.status === "pending" || last.status === "streaming") &&
-      msg.status !== "pending"
-    ) {
-      // Let's prefer a streaming or finalized message over a pending
-      // one.
-      return [...msgs.slice(0, -1), msg];
-    }
-    // skip the new one if the previous one (listed) was finalized
-    return msgs;
-  }, [] as M[]);
+const candidateOf = (m: UIMessage): StreamCandidate<string> => ({
+  id: m.id,
+  order: m.order,
+  stepOrder: m.stepOrder,
+  live: m.status === "streaming",
+  value: m.id,
+});
+
+/**
+ * Resolves the streams against the loaded items and converts the remaining
+ * items to UIMessages. Rows (MessageDocs) are converted together, so a step's
+ * parts meet whatever page they came from; items that are already UIMessages
+ * are kept as they are.
+ */
+function assembleUIMessages(
+  items: (UIMessageLike | MessageDocLike)[],
+  candidates: StreamCandidate<unknown>[],
+): { messages: UIMessage[]; shown: Set<string> } {
+  const resolved = resolveStreams(
+    items,
+    candidates.map((c) => ({ ...c, value: c.id })),
+  );
+  const rows = resolved.rows.filter(
+    (item) => !isUIMessage(item),
+  ) as MessageDoc[];
+  return {
+    messages: [
+      ...(resolved.rows.filter(isUIMessage) as UIMessage[]),
+      ...toUIMessages(rows),
+    ],
+    shown: new Set(resolved.streams),
+  };
 }

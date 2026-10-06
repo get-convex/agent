@@ -177,7 +177,10 @@ histories where tool calls lack results.
 ## Client-side flow
 
 On the client, use `useUIMessages` to detect pending approvals and show
-Approve/Deny buttons. Tool parts with `state === "approval-requested"` are
+Approve/Deny buttons. Its query should return MessageDocs from `listMessages`
+(see [retrieving messages](./messages.mdx#retrieving-messages)): with pages of
+`listUIMessages`, an approval response on a different page from its tool call
+is lost. Tool parts with `state === "approval-requested"` are
 waiting for a decision.
 
 ```tsx

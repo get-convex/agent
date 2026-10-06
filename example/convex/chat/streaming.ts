@@ -2,7 +2,7 @@
 import { paginationOptsValidator } from "convex/server";
 import {
   createThread,
-  listUIMessages,
+  listMessages,
   syncStreams,
   vStreamArgs,
 } from "@convex-dev/agent";
@@ -99,7 +99,9 @@ export const listThreadMessages = query({
     // Here you could filter out / modify the stream of deltas / filter out
     // deltas.
 
-    const paginated = await listUIMessages(ctx, components.agent, args);
+    // MessageDocs, which useUIMessages assembles into UIMessages across
+    // pages and streams.
+    const paginated = await listMessages(ctx, components.agent, args);
 
     // Here you could filter out metadata that you don't want from any optional
     // fields on the messages.

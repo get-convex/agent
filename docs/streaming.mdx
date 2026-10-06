@@ -68,7 +68,7 @@ stream deltas. This is very similar to
 ```ts
 import { paginationOptsValidator } from "convex/server";
 // highlight-next-line
-import { vStreamArgs, listUIMessages, syncStreams } from "@convex-dev/agent";
+import { vStreamArgs, listMessages, syncStreams } from "@convex-dev/agent";
 import { components } from "./_generated/api";
 
 export const listThreadMessages = query({
@@ -83,7 +83,7 @@ export const listThreadMessages = query({
     await authorizeThreadAccess(ctx, threadId);
 
     // Fetches the regular non-streaming messages.
-    const paginated = await listUIMessages(ctx, components.agent, args);
+    const paginated = await listMessages(ctx, components.agent, args);
 
     // highlight-next-line
     const streams = await syncStreams(ctx, components.agent, args);
@@ -274,6 +274,8 @@ export const listStreams = query({
       // By default syncStreams only returns streaming messages. However, if
       // your messages aren't saved in the same transaction as the streaming
       // ends, you might want to include them here to avoid UI flashes.
+      // useUIMessages and useThreadMessages show a finished or aborted stream
+      // only where its order has no saved message at or after its start.
       includeStatuses: ["streaming", "aborted", "finished"],
     });
     return { streams };

@@ -39,6 +39,9 @@ import { prepareApprovalContext } from "./prepareApprovalContext.js";
 const DEFAULT_VECTOR_SCORE_THRESHOLD = 0.0;
 // Bound the rare boundary-extension query; incomplete orders are trimmed below.
 const MAX_ORDER_COMPLETION_MESSAGES = 1_000;
+// Half the 16 MiB read limit, so large rows end the completion early instead
+// of failing the query.
+const MAX_ORDER_COMPLETION_BYTES = 8 * 1024 * 1024;
 // 10k characters should be more than enough for most cases, and stays under
 // the 8k token limit for some models.
 const MAX_EMBEDDING_TEXT_LENGTH = 10_000;
@@ -152,11 +155,15 @@ export async function fetchRecentAndSearchMessages(
   const targetMessageId =
     args.targetMessageId ?? args.upToAndIncludingMessageId;
   if (threadId && opts.recentMessages !== 0) {
-    const fetchRecentPage = (numItems: number, cursor: string | null) =>
+    const fetchRecentPage = (
+      numItems: number,
+      cursor: string | null,
+      maximumBytesRead?: number,
+    ) =>
       ctx.runQuery(component.messages.listMessagesByThreadId, {
         threadId,
         excludeToolMessages: opts.excludeToolMessages,
-        paginationOpts: { numItems, cursor },
+        paginationOpts: { numItems, cursor, maximumBytesRead },
         upToAndIncludingMessageId: targetMessageId,
         order: "desc",
         statuses: ["success"],
@@ -176,6 +183,7 @@ export async function fetchRecentAndSearchMessages(
       const completionPage = await fetchRecentPage(
         Math.min(oldest.stepOrder, MAX_ORDER_COMPLETION_MESSAGES),
         firstPage.continueCursor,
+        MAX_ORDER_COMPLETION_BYTES,
       );
       page = [
         ...page,

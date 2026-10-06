@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Assemble `useUIMessages` and `useThreadMessages` results by order across pages and streams (#193)
+- `useUIMessages` accepts `MessageDoc` pages from `listMessages` (#193)
+- Bound the context order-completion query by bytes (#193)
+
 ## 0.7.6
 
 - Bounds listDeltas by bytes (#375)
