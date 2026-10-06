@@ -177,10 +177,10 @@ work on a later attempt.
 
 To avoid relying on that host during generation, fetch the image in an action
 and pass its bytes in the message. You can set the fetch timeout or add retries.
-Bytes up to 64 KiB are sent inline, so no image URL fetch is needed; larger
-images are saved to Convex file storage and the provider fetches a storage URL,
-or the AI SDK fetches it for a provider that does not accept URLs. Either way
-only your own fetch, not the provider request, depends on your image host:
+The bytes are sent inline on this call. When the message is saved, images over
+64 KiB are moved to Convex file storage, so later turns replay a storage URL.
+Either way only your own fetch, not the provider request, depends on your image
+host:
 
 ```ts
 export const ask = internalAction({

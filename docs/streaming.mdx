@@ -219,7 +219,11 @@ export const chat = httpAction(async (ctx, request) => {
     })
     .join("");
   if (!prompt) return new Response("No prompt text", { status: 400 });
-  await authorizeThreadAccess(ctx, threadId, true);
+  try {
+    await authorizeThreadAccess(ctx, threadId, true);
+  } catch {
+    return new Response("Forbidden", { status: 403 });
+  }
   const result = await storyAgent.streamText(
     ctx,
     { threadId },
