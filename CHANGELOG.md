@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.6
+
+- Bounds listDeltas by bytes (#375)
+- Fixes peer dependencies and updates types to match convex 1.46
+
 ## 0.7.5
 
 - Allow tool approvals to be handled atomically and more robust (#367)
