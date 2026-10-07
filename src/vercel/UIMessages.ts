@@ -86,7 +86,7 @@ export async function fromUIMessages<METADATA = unknown>(
         ]),
         ...omit(uiMessage, ["parts", "role", "key", "text", "userId"]),
         userId: uiMessage.userId ?? meta.userId,
-        status: uiMessage.status === "streaming" ? "pending" : "success",
+        status: uiMessage.status === "streaming" ? "pending" : uiMessage.status,
         streaming: uiMessage.status === "streaming",
         // to override
         _id: uiMessage.id,
@@ -922,8 +922,10 @@ export function combineUIMessages(messages: UIMessage[]): UIMessage[] {
         newParts.push(part);
         continue;
       }
-      const previousPart = newParts.splice(previousPartIndex, 1)[0];
-      newParts.push(mergeParts(previousPart, part));
+      newParts[previousPartIndex] = mergeParts(
+        newParts[previousPartIndex],
+        part,
+      );
     }
     acc.push({
       ...previous,

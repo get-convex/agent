@@ -48,8 +48,7 @@ function Story({ threadId, reset }: { threadId: string; reset: () => void }) {
     { threadId },
     { initialNumItems: 10, stream: true },
   );
-  // If you don't want to use UIMessages, you can use this hook:
-  // (note: you'll need to return MessageDoc from listThreadMessages)
+  // If you want the MessageDocs themselves, use this hook with the same query:
   /*
   const { results } = useThreadMessages(
     api.chat.streaming.listThreadMessages,

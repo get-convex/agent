@@ -18,11 +18,14 @@ import type { ActionCtx, QueryCtx } from "./types.js";
 import {
   fetchContextWithPrompt,
   fetchContextMessages,
+  fetchRecentAndSearchMessages,
   filterOutOrphanedToolMessages,
   getPromptArray,
   trimIncompleteOldestOrder,
 } from "./search.js";
-import { components, initConvexTest } from "./setup.test.js";
+import { components, initConvexTest, modules } from "./setup.test.js";
+import component from "../../test.js";
+import { convexTest } from "convex-test";
 import { createThread } from "../../client/threads.js";
 import { saveMessages } from "../../client/messages.js";
 
@@ -699,11 +702,51 @@ describe("search.ts", () => {
       expect(mockCtx.runQuery).toHaveBeenNthCalledWith(2, expect.anything(), {
         threadId: "thread123",
         excludeToolMessages: undefined,
-        paginationOpts: { numItems: 1, cursor: "complete-order" },
+        paginationOpts: {
+          numItems: 1,
+          cursor: "complete-order",
+          maximumBytesRead: 8 * 1024 * 1024,
+        },
         upToAndIncludingMessageId: undefined,
         order: "desc",
         statuses: ["success"],
       });
+    });
+
+    it("bounds the order completion by bytes and drops an order it cannot finish", async () => {
+      const limited = convexTest({ schema, modules, transactionLimits: true });
+      component.register(limited);
+      const threadId = await limited.run((c) =>
+        createThread(c, components.agent, { userId: "large" }),
+      );
+      // Each row is roughly 600 KB once stored, so completing this order
+      // reads far more than one query may.
+      const large = "x".repeat(300_000);
+      const { messages } = await limited.run((c) =>
+        saveMessages(c, components.agent, {
+          threadId,
+          messages: [{ role: "user", content: large }],
+        }),
+      );
+      for (let i = 0; i < 39; i++) {
+        await limited.run((c) =>
+          saveMessages(c, components.agent, {
+            threadId,
+            promptMessageId: messages[0]._id,
+            messages: [{ role: "assistant", content: large }],
+          }),
+        );
+      }
+      const { recentMessages } = await fetchRecentAndSearchMessages(
+        {
+          runQuery: limited.query,
+          runAction: limited.action,
+          runMutation: limited.mutation,
+        } as ActionCtx,
+        components.agent,
+        { userId: undefined, threadId, contextOptions: { recentMessages: 1 } },
+      );
+      expect(recentMessages).toEqual([]);
     });
 
     it("should omit an order when its boundary cannot be fetched", async () => {

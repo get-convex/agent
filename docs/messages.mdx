@@ -24,7 +24,7 @@ example.
 ```ts
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { listUIMessages } from "@convex-dev/agent";
+import { listMessages } from "@convex-dev/agent";
 import { components } from "./_generated/api";
 
 export const listThreadMessages = query({
@@ -32,7 +32,7 @@ export const listThreadMessages = query({
   handler: async (ctx, args) => {
     await authorizeThreadAccess(ctx, threadId);
 
-    const paginated = await listUIMessages(ctx, components.agent, args);
+    const paginated = await listMessages(ctx, components.agent, args);
 
     // Here you could filter out / modify the documents
     return paginated;
@@ -40,13 +40,19 @@ export const listThreadMessages = query({
 });
 ```
 
-Note: Above we used `listUIMessages`, which returns UIMessages, specifically the
-Agent extension that includes some extra fields like order, status, etc.
-UIMessages combine multiple MessageDocs into a single UIMessage when there are
-multiple tool calls followed by an assistant message, making it easy to build
-UIs that work with the various "parts" on the UIMessage.
+Note: Above we used `listMessages`, which returns MessageDocs: one per stored
+message, with fields like order, stepOrder and status. Both React hooks below
+take this query: `useUIMessages` assembles the documents into UIMessages on the
+client, and `useThreadMessages` returns the MessageDocs themselves. UIMessages
+combine multiple MessageDocs into a single UIMessage when there are multiple
+tool calls followed by an assistant message, making it easy to build UIs that
+work with the various "parts" on the UIMessage.
 
-If you want to get MessageDocs, you can use `listMessages` instead.
+If you need UIMessages on the server, `listUIMessages` converts each page
+separately. Returning those pages to `useUIMessages` is still supported but
+legacy: a page boundary can fall inside one UIMessage, and a tool approval
+response whose tool call is on another page is lost. Return MessageDocs from
+`listMessages` instead.
 
 ## Showing messages in React
 
@@ -56,8 +62,13 @@ non-streaming example.
 
 ### `useUIMessages` hook
 
-The crux is to use the `useUIMessages` hook. For streaming, pass in
-`stream: true` to the hook.
+The crux is to use the `useUIMessages` hook with the query above. For streaming,
+pass in `stream: true` to the hook.
+
+Pagination can end a page partway through one UIMessage. The hook loads the rest
+of the oldest message before it settles (reporting `LoadingMore`), so `results`
+always start at a whole message, and may hold more rows than `initialNumItems`.
+Rows of older messages read along the way are shown on the next `loadMore`.
 
 ```tsx
 import { api } from "../convex/_generated/api";
@@ -80,9 +91,9 @@ function MyComponent({ threadId }: { threadId: string }) {
 ```
 
 Note: If you want to work with MessageDocs instead of UIMessages, you can use
-the older `useThreadMessages` hook instead. However, working with UIMessages
-enables richer streaming capabilities, such as status on whether the agent is
-actively reasoning.
+the older `useThreadMessages` hook with the same query. However, working with
+UIMessages enables richer streaming capabilities, such as status on whether the
+agent is actively reasoning.
 
 ### UIMessage type
 
@@ -273,12 +284,12 @@ To associate a response message with a previous message, you can pass in the
 `promptMessageId` to `generateText` and others.
 
 To start a standalone message at the next order, pass `order: "next"` to
-`saveMessage` or `saveMessages`. The component allocates that order
-atomically. To place a standalone message at a specific order, pass a number
-instead. If that order is empty, the first message is saved with `stepOrder: 0`;
-otherwise it is appended at the next `stepOrder`. `order` cannot be combined
-with `promptMessageId` or `pendingMessageId`; numeric orders must be
-non-negative safe integers less than `Number.MAX_SAFE_INTEGER`.
+`saveMessage` or `saveMessages`. The component allocates that order atomically.
+To place a standalone message at a specific order, pass a number instead. If
+that order is empty, the first message is saved with `stepOrder: 0`; otherwise
+it is appended at the next `stepOrder`. `order` cannot be combined with
+`promptMessageId` or `pendingMessageId`; numeric orders must be non-negative
+safe integers less than `Number.MAX_SAFE_INTEGER`.
 
 Note: if the `promptMessageId` is not the latest message in the thread, the
 context for the message generation will not include any messages following the

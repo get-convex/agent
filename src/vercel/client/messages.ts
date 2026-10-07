@@ -22,6 +22,13 @@ import type {
 
 export { listMessages } from "../../client/messages.js";
 
+/**
+ * List messages from a thread as UIMessages, converting each page on its own.
+ * For `useUIMessages`, return MessageDocs from `listMessages` instead: the hook
+ * assembles them across pages, while a UIMessage here can be cut at a page
+ * boundary, losing a tool approval response whose tool call is on another
+ * page.
+ */
 export async function listUIMessages(
   ctx: QueryCtx | MutationCtx | ActionCtx,
   component: AgentComponent,
