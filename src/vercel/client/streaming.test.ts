@@ -5,7 +5,11 @@ import type { GenericSchema, SchemaDefinition } from "convex/server";
 import { streamText } from "ai";
 import { components, initConvexTest } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
-import { compressUIMessageChunks, DeltaStreamer } from "./streaming.js";
+import {
+  compressUIMessageChunks,
+  DeltaStreamer,
+  syncStreams,
+} from "./streaming.js";
 import { getParts } from "../deltas.js";
 import type { TestConvex } from "convex-test";
 
@@ -27,6 +31,76 @@ const testMetadata = {
   providerOptions: {},
   format: "UIMessageChunk" as const,
 };
+
+describe("syncStreams", () => {
+  test.each(["first", "last"])(
+    "rejects a mixed-thread request with the foreign stream %s",
+    async (position) => {
+      const t = initConvexTest();
+      await t.run(async (ctx) => {
+        const threadId = await createThread(ctx, components.agent, {});
+        const otherThreadId = await createThread(ctx, components.agent, {});
+        const cursors = [];
+        for (const id of [threadId, otherThreadId]) {
+          const streamId = await ctx.runMutation(
+            components.agent.streams.create,
+            {
+              ...testMetadata,
+              threadId: id,
+            },
+          );
+          await ctx.runMutation(components.agent.streams.addDelta, {
+            streamId,
+            start: 0,
+            end: 1,
+            parts: [id === threadId ? "allowed" : "private"],
+          });
+          cursors.push({ streamId, cursor: 0 });
+        }
+        if (position === "first") cursors.reverse();
+
+        await expect(
+          syncStreams(ctx, components.agent, {
+            threadId,
+            streamArgs: { kind: "deltas", cursors },
+          }),
+        ).rejects.toThrow("Stream does not belong to the given thread");
+      });
+    },
+  );
+
+  test("returns same-thread deltas from each stream's cursor", async () => {
+    const t = initConvexTest();
+    await t.run(async (ctx) => {
+      const threadId = await createThread(ctx, components.agent, {});
+      const cursors = [];
+      const expected = [];
+      for (let stepOrder = 0; stepOrder < 2; stepOrder++) {
+        const streamId = await ctx.runMutation(
+          components.agent.streams.create,
+          {
+            ...testMetadata,
+            threadId,
+            stepOrder,
+          },
+        );
+        for (let start = 0; start < 2; start++) {
+          const delta = { streamId, start, end: start + 1, parts: ["allowed"] };
+          await ctx.runMutation(components.agent.streams.addDelta, delta);
+          if (start >= stepOrder) expected.push(delta);
+        }
+        cursors.push({ streamId, cursor: stepOrder });
+      }
+
+      await expect(
+        syncStreams(ctx, components.agent, {
+          threadId,
+          streamArgs: { kind: "deltas", cursors },
+        }),
+      ).resolves.toEqual({ kind: "deltas", deltas: expected });
+    });
+  });
+});
 
 describe("DeltaStreamer", () => {
   let t: TestConvex<SchemaDefinition<GenericSchema, boolean>>;
@@ -521,5 +595,4 @@ describe("DeltaStreamer", () => {
     expect(sent).toHaveLength(1);
     expect((sent[0] as { parts: string[] }).parts).toEqual(["A"]);
   });
-
 });
