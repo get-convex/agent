@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Save every step the AI SDK runs instead of predicting the final one (#388)
+- A caller's `onStepEnd` now runs before that step is saved (#388)
+- Fail a generation only once the AI SDK gives up on its error (#387)
+- Require `ai@^7.0.91`, the first version with stream retries (#388)
+
 ## 0.7.6
 
 - Bounds listDeltas by bytes (#375)
