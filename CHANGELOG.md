@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.7
+
+- Enforce that the stream being synced matches the thread ID associated with the
+  request. (#398)
+
 ## 0.7.6
 
 - Bounds listDeltas by bytes (#375)
