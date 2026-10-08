@@ -131,6 +131,12 @@ export const listDeltas = query({
     let bytesRemaining = MAX_DELTA_BYTES_PER_REQUEST;
     const deltas: StreamDelta[] = [];
     for (const cursor of args.cursors) {
+      const stream = await ctx.db.get("streamingMessages", cursor.streamId);
+      // Clients can retain cursors after a stream has been cleaned up.
+      if (!stream) continue;
+      if (stream.threadId !== args.threadId) {
+        throw new Error("Stream does not belong to the given thread");
+      }
       const { page } = await paginator(ctx.db, schema)
         .query("streamDeltas")
         .withIndex("streamId_start_end", (q) =>

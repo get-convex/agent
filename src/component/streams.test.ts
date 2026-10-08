@@ -31,6 +31,44 @@ async function seedStream(t: ReturnType<typeof initConvexTest>) {
 }
 
 describe("streams", () => {
+  test("listDeltas rejects streams belonging to another thread", async () => {
+    const t = initConvexTest();
+    const { streamId } = await seedStream(t);
+    const otherThread = await t.mutation(api.threads.createThread, {});
+    await t.mutation(api.streams.addDelta, {
+      streamId,
+      start: 0,
+      end: 1,
+      parts: ["private delta"],
+    });
+
+    await expect(
+      t.query(api.streams.listDeltas, {
+        threadId: otherThread._id as Id<"threads">,
+        cursors: [{ streamId, cursor: 0 }],
+      }),
+    ).rejects.toThrow("Stream does not belong to the given thread");
+  });
+
+  test("listDeltas skips deleted streams even if deltas remain", async () => {
+    const t = initConvexTest();
+    const { threadId, streamId } = await seedStream(t);
+    await t.mutation(api.streams.addDelta, {
+      streamId,
+      start: 0,
+      end: 1,
+      parts: ["orphaned delta"],
+    });
+    await t.run((ctx) => ctx.db.delete("streamingMessages", streamId));
+
+    await expect(
+      t.query(api.streams.listDeltas, {
+        threadId,
+        cursors: [{ streamId, cursor: 0 }],
+      }),
+    ).resolves.toEqual([]);
+  });
+
   test("stream file ownership flows from addDelta to the final message", async () => {
     const t = initConvexTest();
     const { threadId, streamId, fileId } = await seedStream(t);
