@@ -1,24 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { Agent, createTool } from "../index.js";
-import type {
-  DataModelFromSchemaDefinition,
-  ApiFromModules,
-  ActionBuilder,
-  MutationBuilder,
-} from "convex/server";
-import { anyApi, actionGeneric, mutationGeneric } from "convex/server";
 import { v } from "convex/values";
-import { defineSchema } from "convex/server";
 import { stepCountIs, type LanguageModelUsage } from "ai";
-import { components, initConvexTest } from "./setup.test.js";
+import { app, components } from "./setup.test.js";
 import { z } from "zod/v4";
 import { mockModel } from "./mockModel.js";
 import type { UsageHandler } from "./types.js";
-
-const schema = defineSchema({});
-type DataModel = DataModelFromSchemaDefinition<typeof schema>;
-const action = actionGeneric as ActionBuilder<DataModel, "public">;
-const mutation = mutationGeneric as MutationBuilder<DataModel, "public">;
 
 // Tool that always requires approval
 const deleteFileTool = createTool({
@@ -117,9 +104,22 @@ const denialAgent = new Agent(components.agent, {
 
 // --- Test helpers ---
 
-export const testApproveFlow = action({
+const testApproveFlow = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{
+    approvalId: string;
+    firstText: string;
+    secondText: string;
+    firstSavedCount: number;
+    secondSavedCount: number;
+    totalThreadMessages: number;
+    threadMessageRoles: (string | undefined)[];
+    toolResults: unknown[];
+    usageCallCount: number;
+    lastUsage: LanguageModelUsage | undefined;
+  }> => {
     const { thread } = await approvalAgent.createThread(ctx, { userId: "u1" });
 
     // Step 1: Generate text — model returns tool call, SDK sees needsApproval → stops
@@ -131,7 +131,7 @@ export const testApproveFlow = action({
 
     // Step 2: Approve the tool call
     const { messageId } = await ctx.runMutation(
-      anyApi["approval.test"].submitApprovalForApprovalAgent,
+      api.approval.submitApprovalForApprovalAgent,
       { threadId: thread.threadId, approvalId },
     );
 
@@ -170,9 +170,19 @@ export const testApproveFlow = action({
   },
 });
 
-export const testDenyFlow = action({
+const testDenyFlow = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{
+    approvalId: string;
+    firstText: string;
+    secondText: string;
+    totalThreadMessages: number;
+    threadMessageRoles: (string | undefined)[];
+    usageCallCount: number;
+    lastUsage: LanguageModelUsage | undefined;
+  }> => {
     const { thread } = await denialAgent.createThread(ctx, { userId: "u2" });
 
     // Step 1: Generate — model returns tool call, approval requested
@@ -184,7 +194,7 @@ export const testDenyFlow = action({
 
     // Step 2: Deny the tool call
     const { messageId } = await ctx.runMutation(
-      anyApi["approval.test"].submitDenialForDenialAgent,
+      api.approval.submitDenialForDenialAgent,
       {
         threadId: thread.threadId,
         approvalId,
@@ -215,9 +225,17 @@ export const testDenyFlow = action({
   },
 });
 
-export const testApproveFlowWithInterveningMessage = action({
+const testApproveFlowWithInterveningMessage = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{
+    secondText: string;
+    approvalResponseOrder: number;
+    approvalRequestId: string;
+    approvalRequestOrder: number;
+    interveningOrder: number;
+  }> => {
     const { thread } = await approvalAgent.createThread(ctx, { userId: "u3" });
 
     const result1 = await thread.generateText({
@@ -251,7 +269,7 @@ export const testApproveFlowWithInterveningMessage = action({
     });
 
     const { messageId } = await ctx.runMutation(
-      anyApi["approval.test"].submitApprovalForApprovalAgent,
+      api.approval.submitApprovalForApprovalAgent,
       { threadId: thread.threadId, approvalId },
     );
 
@@ -313,9 +331,16 @@ const multiToolAgent = new Agent(components.agent, {
   usageHandler: testUsageHandler,
 });
 
-export const testMultiToolApproveFlow = action({
+const testMultiToolApproveFlow = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{
+    approvalCount: number;
+    firstText: string;
+    secondText: string;
+    toolResultIds: string[];
+  }> => {
     const { thread } = await multiToolAgent.createThread(ctx, {
       userId: "u-multi",
     });
@@ -350,11 +375,11 @@ export const testMultiToolApproveFlow = action({
 
     // Approve both tool calls
     const { messageId: _msgId1 } = await ctx.runMutation(
-      anyApi["approval.test"].submitApprovalForMultiToolAgent,
+      api.approval.submitApprovalForMultiToolAgent,
       { threadId: thread.threadId, approvalId: approvalParts[0].approvalId },
     );
     const { messageId: msgId2 } = await ctx.runMutation(
-      anyApi["approval.test"].submitApprovalForMultiToolAgent,
+      api.approval.submitApprovalForMultiToolAgent,
       { threadId: thread.threadId, approvalId: approvalParts[1].approvalId },
     );
 
@@ -385,7 +410,7 @@ export const testMultiToolApproveFlow = action({
   },
 });
 
-export const submitApprovalForMultiToolAgent = mutation({
+const submitApprovalForMultiToolAgent = app.mutation({
   args: {
     threadId: v.string(),
     approvalId: v.string(),
@@ -395,7 +420,7 @@ export const submitApprovalForMultiToolAgent = mutation({
   },
 });
 
-export const submitApprovalForApprovalAgent = mutation({
+const submitApprovalForApprovalAgent = app.mutation({
   args: {
     threadId: v.string(),
     approvalId: v.string(),
@@ -406,7 +431,7 @@ export const submitApprovalForApprovalAgent = mutation({
   },
 });
 
-export const submitDenialForDenialAgent = mutation({
+const submitDenialForDenialAgent = app.mutation({
   args: {
     threadId: v.string(),
     approvalId: v.string(),
@@ -417,23 +442,23 @@ export const submitDenialForDenialAgent = mutation({
   },
 });
 
-const testApi: ApiFromModules<{
-  fns: {
-    testApproveFlow: typeof testApproveFlow;
-    testDenyFlow: typeof testDenyFlow;
-    testApproveFlowWithInterveningMessage: typeof testApproveFlowWithInterveningMessage;
-    testMultiToolApproveFlow: typeof testMultiToolApproveFlow;
-    submitApprovalForApprovalAgent: typeof submitApprovalForApprovalAgent;
-    submitApprovalForMultiToolAgent: typeof submitApprovalForMultiToolAgent;
-    submitDenialForDenialAgent: typeof submitDenialForDenialAgent;
-  };
-}>["fns"] = anyApi["approval.test"] as any;
+const { api, createTest } = app.defineModules({
+  approval: {
+    testApproveFlow,
+    testDenyFlow,
+    testApproveFlowWithInterveningMessage,
+    testMultiToolApproveFlow,
+    submitApprovalForMultiToolAgent,
+    submitApprovalForApprovalAgent,
+    submitDenialForDenialAgent,
+  },
+});
 
 describe("Tool Approval Workflow", () => {
   test("approve: generate → approval request → approve → tool executes → final text", async () => {
     usageCalls.length = 0;
-    const t = initConvexTest(schema);
-    const result = await t.action(testApi.testApproveFlow, {});
+    const t = createTest();
+    const result = await t.action(api.approval.testApproveFlow, {});
 
     expect(result.approvalId).toBeDefined();
     // First call produces no text (just a tool call)
@@ -470,8 +495,8 @@ describe("Tool Approval Workflow", () => {
 
   test("deny: generate → approval request → deny → model acknowledges denial", async () => {
     usageCalls.length = 0;
-    const t = initConvexTest(schema);
-    const result = await t.action(testApi.testDenyFlow, {});
+    const t = createTest();
+    const result = await t.action(api.approval.testDenyFlow, {});
 
     expect(result.approvalId).toBeDefined();
     expect(result.firstText).toBe("");
@@ -492,8 +517,8 @@ describe("Tool Approval Workflow", () => {
 
   test("multi-tool: approve two tool calls from the same step", async () => {
     usageCalls.length = 0;
-    const t = initConvexTest(schema);
-    const result = await t.action(testApi.testMultiToolApproveFlow, {});
+    const t = createTest();
+    const result = await t.action(api.approval.testMultiToolApproveFlow, {});
 
     expect(result.approvalCount).toBe(2);
     expect(result.firstText).toBe("");
@@ -505,9 +530,9 @@ describe("Tool Approval Workflow", () => {
 
   test("approve remains valid with an intervening thread message", async () => {
     usageCalls.length = 0;
-    const t = initConvexTest(schema);
+    const t = createTest();
     const result = await t.action(
-      testApi.testApproveFlowWithInterveningMessage,
+      api.approval.testApproveFlowWithInterveningMessage,
       {},
     );
 

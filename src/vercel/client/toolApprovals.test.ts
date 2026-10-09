@@ -1,13 +1,10 @@
 import type { ModelMessage, ToolModelMessage } from "ai";
-import { defineSchema } from "convex/server";
-import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod/v4";
-import component from "../../test.js";
 import type { Message } from "../../validators.js";
 import { Agent, createTool, type ContextHandler } from "../index.js";
 import { MockLanguageModel } from "./mockModel.js";
-import { components, modules } from "./setup.test.js";
+import { components, initConvexTest } from "./setup.test.js";
 
 const executed: string[] = [];
 const model = new MockLanguageModel({
@@ -199,12 +196,7 @@ async function scenario({
   providerExecuted?: boolean;
   transactionLimits?: true | Limits;
 } = {}) {
-  const t = convexTest({
-    schema: defineSchema({}),
-    modules,
-    transactionLimits,
-  });
-  component.register(t);
+  const t = initConvexTest({ transactionLimits });
   const { threadId } = await t.run((ctx) => agent.createThread(ctx));
   if (olderMessages > 0) {
     const batchSize =

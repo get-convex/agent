@@ -8,7 +8,6 @@ import {
 } from "vitest";
 import type { ModelMessage } from "ai";
 import {
-  defineSchema,
   type Auth,
   type StorageActionWriter,
   type StorageReader,
@@ -45,10 +44,8 @@ const createMockMessageDoc = (
   message: { role, content },
 });
 
-const schema = defineSchema({});
-
 describe("search.ts", () => {
-  let t = initConvexTest(schema);
+  let t = initConvexTest();
   let mockCtx: ActionCtx;
   let ctx: ActionCtx;
 
@@ -89,7 +86,7 @@ describe("search.ts", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    t = initConvexTest(schema);
+    t = initConvexTest();
     ctx = {
       runQuery: t.query,
       runAction: t.action,
@@ -665,29 +662,19 @@ describe("search.ts", () => {
         })
         .mockResolvedValueOnce({
           page: [
-            createMockMessageDoc(
-              "user",
-              "user",
-              "What is the weather?",
-              1,
-              0,
-            ),
+            createMockMessageDoc("user", "user", "What is the weather?", 1, 0),
           ],
           continueCursor: "done",
           isDone: true,
         });
 
-      const result = await fetchContextWithPrompt(
-        mockCtx,
-        components.agent,
-        {
-          ...baseArgs,
-          prompt: "What should I do next?",
-          messages: undefined,
-          promptMessageId: undefined,
-          contextOptions: { recentMessages: 3 },
-        },
-      );
+      const result = await fetchContextWithPrompt(mockCtx, components.agent, {
+        ...baseArgs,
+        prompt: "What should I do next?",
+        messages: undefined,
+        promptMessageId: undefined,
+        contextOptions: { recentMessages: 3 },
+      });
 
       expect(result.messages.map((message) => message.role)).toEqual([
         "user",
@@ -735,17 +722,13 @@ describe("search.ts", () => {
           isDone: true,
         });
 
-      const result = await fetchContextWithPrompt(
-        mockCtx,
-        components.agent,
-        {
-          ...baseArgs,
-          prompt: "New prompt",
-          messages: undefined,
-          promptMessageId: undefined,
-          contextOptions: { recentMessages: 1 },
-        },
-      );
+      const result = await fetchContextWithPrompt(mockCtx, components.agent, {
+        ...baseArgs,
+        prompt: "New prompt",
+        messages: undefined,
+        promptMessageId: undefined,
+        contextOptions: { recentMessages: 1 },
+      });
 
       expect(result.messages).toEqual([
         { role: "user", content: "New prompt" },

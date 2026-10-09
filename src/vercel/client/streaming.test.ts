@@ -37,7 +37,7 @@ describe("syncStreams", () => {
     "rejects a mixed-thread request with the foreign stream %s",
     async (position) => {
       const t = initConvexTest();
-      await t.run(async (ctx) => {
+      await t.action(async (ctx) => {
         const threadId = await createThread(ctx, components.agent, {});
         const otherThreadId = await createThread(ctx, components.agent, {});
         const cursors = [];
@@ -71,7 +71,7 @@ describe("syncStreams", () => {
 
   test("returns same-thread deltas from each stream's cursor", async () => {
     const t = initConvexTest();
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       const threadId = await createThread(ctx, components.agent, {});
       const cursors = [];
       const expected = [];
@@ -107,12 +107,12 @@ describe("DeltaStreamer", () => {
   let threadId: string;
   beforeEach(async () => {
     t = initConvexTest();
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       threadId = await createThread(ctx, components.agent, {});
     });
   });
   test("should save chunks via DeltaStreamer", async () => {
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       const streamer = new DeltaStreamer(
         components.agent,
         ctx,
@@ -139,7 +139,7 @@ describe("DeltaStreamer", () => {
     });
   });
   test("should save all parts when throttleMs is 0", async () => {
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       const streamer = new DeltaStreamer(
         components.agent,
         ctx,
@@ -189,7 +189,7 @@ describe("DeltaStreamer", () => {
   });
 
   test("should save compressed parts via DeltaStreamer", async () => {
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       const streamer = new DeltaStreamer(
         components.agent,
         ctx,
@@ -260,7 +260,7 @@ describe("DeltaStreamer", () => {
     const abortController = new AbortController();
     abortController.abort();
 
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       const streamer = new DeltaStreamer<string>(
         components.agent,
         ctx,
@@ -284,7 +284,7 @@ describe("DeltaStreamer", () => {
   });
 
   test("preserves the public throwing behavior after an existing stream aborts", async () => {
-    await t.run(async (ctx) => {
+    await t.action(async (ctx) => {
       const streamer = new DeltaStreamer<string>(
         components.agent,
         ctx,

@@ -1,22 +1,19 @@
 /// <reference types="vite/client" />
 import { describe, expect, test } from "vitest";
 import { Agent, createTool, stepCountIs, mockModel } from "@convex-dev/agent";
-import { anyApi, actionGeneric, mutationGeneric } from "convex/server";
-import type {
-  ApiFromModules,
-  ActionBuilder,
-  MutationBuilder,
-} from "convex/server";
 import { v } from "convex/values";
-import { components } from "./_generated/api.js";
-import { initConvexTest } from "./setup.test.js";
+import { defineTestApp } from "convex-test";
+import agentTest from "@convex-dev/agent/test";
+import schema from "./schema.js";
 import { z } from "zod/v4";
+import * as usageHandlerModule from "./usage_tracking/usageHandler.js";
 import { usageHandler } from "./usage_tracking/usageHandler.js";
 import { rawRequestResponseHandler } from "./debugging/rawRequestResponseHandler.js";
-import type { DataModel } from "./_generated/dataModel.js";
 
-const action = actionGeneric as ActionBuilder<DataModel, "public">;
-const mutation = mutationGeneric as MutationBuilder<DataModel, "public">;
+const app = defineTestApp({
+  schema,
+  components: { agent: agentTest },
+});
 
 // Same tools as the example approval agent
 const deleteFileTool = createTool({
@@ -46,7 +43,7 @@ const transferMoneyTool = createTool({
 
 // Agent that mirrors the real example config: same tools, same usageHandler,
 // same rawRequestResponseHandler — but with a mock model that produces tool calls.
-const testApprovalAgent = new Agent(components.agent, {
+const testApprovalAgent = new Agent(app.components.agent, {
   name: "Approval Demo Agent",
   instructions:
     "You are a helpful assistant that can delete files and transfer money.",
@@ -73,7 +70,7 @@ const testApprovalAgent = new Agent(components.agent, {
   rawRequestResponseHandler,
 });
 
-const testDenialAgent = new Agent(components.agent, {
+const testDenialAgent = new Agent(app.components.agent, {
   name: "Approval Demo Agent",
   instructions:
     "You are a helpful assistant that can delete files and transfer money.",
@@ -101,7 +98,7 @@ const testDenialAgent = new Agent(components.agent, {
 
 // Agent with two tool calls in a single step — both need approval.
 // This exercises write-time merging of approval responses into a single message.
-const testMultiToolApprovalAgent = new Agent(components.agent, {
+const testMultiToolApprovalAgent = new Agent(app.components.agent, {
   name: "Multi-Tool Approval Agent",
   instructions:
     "You are a helpful assistant that can delete files and transfer money.",
@@ -137,9 +134,11 @@ const testMultiToolApprovalAgent = new Agent(components.agent, {
 
 // --- Test actions that mirror example/convex/chat/approval.ts ---
 
-export const testApproveE2E = action({
+const testApproveE2E = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{ secondText: string; totalThreadMessages: number }> => {
     const { thread } = await testApprovalAgent.createThread(ctx, {
       userId: "test user",
     });
@@ -167,7 +166,7 @@ export const testApproveE2E = action({
 
     // Step 2: Approve (same as handleApproval in the example)
     const { messageId } = await ctx.runMutation(
-      anyApi["approval.test"].submitApprovalForTestApprovalAgent,
+      api.approval.submitApprovalForTestApprovalAgent,
       { threadId: thread.threadId, approvalId: approvalPart.approvalId },
     );
 
@@ -193,9 +192,11 @@ export const testApproveE2E = action({
   },
 });
 
-export const testDenyE2E = action({
+const testDenyE2E = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{ secondText: string; totalThreadMessages: number }> => {
     const { thread } = await testDenialAgent.createThread(ctx, {
       userId: "test user",
     });
@@ -219,7 +220,7 @@ export const testDenyE2E = action({
     );
 
     const { messageId } = await ctx.runMutation(
-      anyApi["approval.test"].submitDenialForTestDenialAgent,
+      api.approval.submitDenialForTestDenialAgent,
       {
         threadId: thread.threadId,
         approvalId: approvalPart.approvalId,
@@ -247,9 +248,15 @@ export const testDenyE2E = action({
   },
 });
 
-export const testMultiToolApproveE2E = action({
+const testMultiToolApproveE2E = app.action({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{
+    secondText: string;
+    totalThreadMessages: number;
+    approvalCount: number;
+  }> => {
     const { thread } = await testMultiToolApprovalAgent.createThread(ctx, {
       userId: "test user",
     });
@@ -288,7 +295,7 @@ export const testMultiToolApproveE2E = action({
     let lastMessageId: string | undefined;
     for (const { approvalId } of approvalParts) {
       const { messageId } = await ctx.runMutation(
-        anyApi["approval.test"].submitApprovalForTestMultiToolAgent,
+        api.approval.submitApprovalForTestMultiToolAgent,
         { threadId: thread.threadId, approvalId },
       );
       lastMessageId = messageId;
@@ -316,7 +323,7 @@ export const testMultiToolApproveE2E = action({
   },
 });
 
-export const submitApprovalForTestApprovalAgent = mutation({
+const submitApprovalForTestApprovalAgent = app.mutation({
   args: {
     threadId: v.string(),
     approvalId: v.string(),
@@ -331,7 +338,7 @@ export const submitApprovalForTestApprovalAgent = mutation({
   },
 });
 
-export const submitDenialForTestDenialAgent = mutation({
+const submitDenialForTestDenialAgent = app.mutation({
   args: {
     threadId: v.string(),
     approvalId: v.string(),
@@ -342,7 +349,7 @@ export const submitDenialForTestDenialAgent = mutation({
   },
 });
 
-export const submitApprovalForTestMultiToolAgent = mutation({
+const submitApprovalForTestMultiToolAgent = app.mutation({
   args: {
     threadId: v.string(),
     approvalId: v.string(),
@@ -357,21 +364,22 @@ export const submitApprovalForTestMultiToolAgent = mutation({
   },
 });
 
-const testApi: ApiFromModules<{
-  fns: {
-    testApproveE2E: typeof testApproveE2E;
-    testDenyE2E: typeof testDenyE2E;
-    testMultiToolApproveE2E: typeof testMultiToolApproveE2E;
-    submitApprovalForTestApprovalAgent: typeof submitApprovalForTestApprovalAgent;
-    submitDenialForTestDenialAgent: typeof submitDenialForTestDenialAgent;
-    submitApprovalForTestMultiToolAgent: typeof submitApprovalForTestMultiToolAgent;
-  };
-}>["fns"] = anyApi["approval.test"] as any;
+const { api, createTest } = app.defineModules({
+  approval: {
+    testApproveE2E,
+    testDenyE2E,
+    testMultiToolApproveE2E,
+    submitApprovalForTestApprovalAgent,
+    submitDenialForTestDenialAgent,
+    submitApprovalForTestMultiToolAgent,
+  },
+  "usage_tracking/usageHandler": usageHandlerModule,
+});
 
 describe("Example Approval E2E (exercises usageHandler + insertRawUsage)", () => {
   test("approve flow: streamText → approval → tool executes → usageHandler persists", async () => {
-    const t = initConvexTest();
-    const result = await t.action(testApi.testApproveE2E, {});
+    const t = createTest();
+    const result = await t.action(api.approval.testApproveE2E, {});
 
     expect(result.secondText).toBe("I deleted the file important.txt.");
     expect(result.totalThreadMessages).toBeGreaterThanOrEqual(4);
@@ -393,8 +401,8 @@ describe("Example Approval E2E (exercises usageHandler + insertRawUsage)", () =>
   });
 
   test("multi-tool approval: two tools need approval → both approved → both execute", async () => {
-    const t = initConvexTest();
-    const result = await t.action(testApi.testMultiToolApproveE2E, {});
+    const t = createTest();
+    const result = await t.action(api.approval.testMultiToolApproveE2E, {});
 
     expect(result.approvalCount).toBe(2);
     expect(result.secondText).toBe(
@@ -404,8 +412,8 @@ describe("Example Approval E2E (exercises usageHandler + insertRawUsage)", () =>
   });
 
   test("deny flow: streamText → denial → model responds → usageHandler persists", async () => {
-    const t = initConvexTest();
-    const result = await t.action(testApi.testDenyE2E, {});
+    const t = createTest();
+    const result = await t.action(api.approval.testDenyE2E, {});
 
     expect(result.secondText).toBe("Understood, I won't delete that file.");
     expect(result.totalThreadMessages).toBeGreaterThanOrEqual(4);
