@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { anyApi, defineSchema, type ApiFromModules } from "convex/server";
 import {
   Agent,
   definePlaygroundAPI,
@@ -7,10 +6,8 @@ import {
   definePlaygroundQueries,
   type PlaygroundAgentInfo,
 } from "../index.js";
-import { components, initConvexTest } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
-
-const schema = defineSchema({});
+import { app, components } from "./setup.test.js";
 
 const info: PlaygroundAgentInfo = {
   name: "node-agent",
@@ -25,49 +22,51 @@ const agent = new Agent(components.agent, {
     content: [{ type: "text", text: "hello from the split" }],
   }),
 });
-export const { listAgents: listAgentsFromInfos, createThread } =
+const { listAgents: listAgentsFromInfos, createThread } =
   definePlaygroundQueries(components.agent, {
     agents: [info, { name: "bare" }],
   });
-export const { generateText: generateTextSplit } = definePlaygroundActions(
+const { generateText: generateTextSplit } = definePlaygroundActions(
   components.agent,
   { agents: [agent] },
 );
-export const { listAgents: listAgentsCombined } = definePlaygroundAPI(
+const { listAgents: listAgentsCombined } = definePlaygroundAPI(
   components.agent,
   { agents: () => [agent] },
 );
 
-const api = anyApi["definePlaygroundAPI.test"] as unknown as ApiFromModules<{
-  m: {
-    listAgentsFromInfos: typeof listAgentsFromInfos;
-    listAgentsCombined: typeof listAgentsCombined;
-    generateTextSplit: typeof generateTextSplit;
-    createThread: typeof createThread;
-  };
-}>["m"];
+const { api, createTest } = app.defineModules({
+  playground: {
+    listAgentsFromInfos,
+    listAgentsCombined,
+    generateTextSplit,
+    createThread,
+  },
+});
 
 describe("split playground API", () => {
   test("queries list agents from metadata alone, in the shape the playground expects", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const apiKey = await t.mutation(components.agent.apiKeys.issue, {});
-    expect(await t.query(api.listAgentsFromInfos, { apiKey })).toStrictEqual([
-      info,
-      { name: "bare", tools: [] },
-    ]);
+    expect(
+      await t.query(api.playground.listAgentsFromInfos, { apiKey }),
+    ).toStrictEqual([info, { name: "bare", tools: [] }]);
   });
 
   test("actions defined on their own run the agent", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const apiKey = await t.mutation(components.agent.apiKeys.issue, {});
-    const [{ name: agentName }] = await t.query(api.listAgentsFromInfos, {
-      apiKey,
-    });
-    const { threadId } = await t.mutation(api.createThread, {
+    const [{ name: agentName }] = await t.query(
+      api.playground.listAgentsFromInfos,
+      {
+        apiKey,
+      },
+    );
+    const { threadId } = await t.mutation(api.playground.createThread, {
       apiKey,
       userId: "u",
     });
-    const result = await t.action(api.generateTextSplit, {
+    const result = await t.action(api.playground.generateTextSplit, {
       apiKey,
       agentName,
       userId: "u",
@@ -78,12 +77,14 @@ describe("split playground API", () => {
   });
 
   test("combined API lists agent instances from a callback", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const apiKey = await t.mutation(components.agent.apiKeys.issue, {});
-    expect(await t.query(api.listAgentsCombined, { apiKey })).toMatchObject([
-      { name: info.name, tools: [] },
-    ]);
+    expect(
+      await t.query(api.playground.listAgentsCombined, { apiKey }),
+    ).toMatchObject([{ name: info.name, tools: [] }]);
     await t.mutation(components.agent.apiKeys.destroy, { apiKey });
-    await expect(t.query(api.listAgentsCombined, { apiKey })).rejects.toThrow();
+    await expect(
+      t.query(api.playground.listAgentsCombined, { apiKey }),
+    ).rejects.toThrow();
   });
 });

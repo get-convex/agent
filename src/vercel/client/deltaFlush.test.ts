@@ -2,21 +2,9 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { stepCountIs } from "ai";
 import { Agent, createTool, createThread } from "../index.js";
-import {
-  actionGeneric,
-  anyApi,
-  defineSchema,
-  type ActionBuilder,
-  type ApiFromModules,
-  type DataModelFromSchemaDefinition,
-} from "convex/server";
 import { v } from "convex/values";
-import { components, initConvexTest } from "./setup.test.js";
+import { app, components } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
-
-const schema = defineSchema({});
-type DataModel = DataModelFromSchemaDefinition<typeof schema>;
-const action = actionGeneric as ActionBuilder<DataModel, "public">;
 
 // The AI SDK emits tool-input-available before the tool runs. The whole point
 // of issue #221 is that a client can see it while the tool is still working,
@@ -70,7 +58,7 @@ const agent = new Agent(components.agent, {
   tools: { sleepTool },
 });
 
-export const run = action({
+const run = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const r = await agent.streamText(
@@ -84,20 +72,19 @@ export const run = action({
   },
 });
 
-const testApi: ApiFromModules<{ fns: { run: typeof run } }>["fns"] =
-  anyApi["deltaFlush.test"] as unknown as ApiFromModules<{
-    fns: { run: typeof run };
-  }>["fns"];
+const { api, createTest } = app.defineModules({
+  deltaFlush: { run },
+});
 
 describe("throttled deltas flush on time (issue #221)", () => {
   test("the tool call is queryable while the tool is still running", async () => {
     partsSeenDuringTool.length = 0;
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u" }),
     );
 
-    await t.action(testApi.run, { threadId });
+    await t.action(api.deltaFlush.run, { threadId });
     await t.finishAllScheduledFunctions(() => {});
 
     expect(partsSeenDuringTool).toContain("tool-input-available");
