@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fix answering a tool approval after an earlier approval in the same thread
+  (#404)
+
 ## 0.7.7
 
 - Enforce that the stream being synced matches the thread ID associated with the
