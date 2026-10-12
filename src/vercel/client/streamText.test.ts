@@ -1,24 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { Agent, createThread } from "../index.js";
-import {
-  defineSchema,
-  type DataModelFromSchemaDefinition,
-  type ApiFromModules,
-  type ActionBuilder,
-  actionGeneric,
-  anyApi,
-} from "convex/server";
 import { v } from "convex/values";
 import type { LanguageModelV4Source } from "@ai-sdk/provider";
-import { components, initConvexTest } from "./setup.test.js";
+import { app, components } from "./setup.test.js";
 import { mockModel } from "./mockModel.js";
 import { runStreamCleanup } from "./streamText.js";
 import type { StreamingOptions } from "./streaming.js";
 import { errorToString } from "./utils.js";
-
-const schema = defineSchema({});
-type DataModel = DataModelFromSchemaDefinition<typeof schema>;
-const action = actionGeneric as ActionBuilder<DataModel, "public">;
 
 const FINAL_TEXT = "Hello from the model";
 const PROVIDER_FAILURE_TEXT = "Mock provider failure";
@@ -86,7 +74,7 @@ const sourceAgent = new Agent(components.agent, {
 // Action that exercises streamText with saveStreamDeltas.returnImmediately=true.
 // It consumes the stream after streamText returns, simulating the HTTP response
 // path described in issue #265.
-export const streamTextReturnImmediately = action({
+const streamTextReturnImmediately = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const result = await agent.streamText(
@@ -107,7 +95,7 @@ export const streamTextReturnImmediately = action({
   },
 });
 
-export const streamTextEmptyAwaited = action({
+const streamTextEmptyAwaited = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     await emptyAgent.streamText(
@@ -120,7 +108,7 @@ export const streamTextEmptyAwaited = action({
   },
 });
 
-export const streamTextEmptyReturnImmediately = action({
+const streamTextEmptyReturnImmediately = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const result = await emptyAgent.streamText(
@@ -139,7 +127,7 @@ export const streamTextEmptyReturnImmediately = action({
   },
 });
 
-export const streamTextThrottled = action({
+const streamTextThrottled = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const result = await agent.streamText(
@@ -161,7 +149,7 @@ export const streamTextThrottled = action({
 
 // Same as streamTextThrottled, but awaited: streamText consumes the stream
 // itself, so the terminal transition happens at end-of-stream.
-export const streamTextThrottledAwaited = action({
+const streamTextThrottledAwaited = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     await agent.streamText(
@@ -179,7 +167,7 @@ export const streamTextThrottledAwaited = action({
   },
 });
 
-export const streamTextNoStorage = action({
+const streamTextNoStorage = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     await agent.streamText(
@@ -195,7 +183,7 @@ export const streamTextNoStorage = action({
   },
 });
 
-export const streamTextNoStorageImmediate = action({
+const streamTextNoStorageImmediate = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const r = await agent.streamText(
@@ -216,7 +204,7 @@ export const streamTextNoStorageImmediate = action({
   },
 });
 
-export const streamTextCleanupFailure = action({
+const streamTextCleanupFailure = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const providerErrors: string[] = [];
@@ -257,7 +245,7 @@ export const streamTextCleanupFailure = action({
 // a client cancelling a request would: list the streaming row and abort it.
 // The throttle holds every part after the first, so the only remaining delta
 // write is the one the finishing save drains, and the component refuses it.
-export const streamTextAbortedMidStream = action({
+const streamTextAbortedMidStream = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const result = await agent.streamText(
@@ -292,7 +280,7 @@ export const streamTextAbortedMidStream = action({
 
 // An empty generation on the awaited path with nothing stored: no part ever
 // reaches the streamer, so no row exists when consumption ends.
-export const streamTextEmptyNoStorageAwaited = action({
+const streamTextEmptyNoStorageAwaited = app.action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     await emptyAgent.streamText(
@@ -308,7 +296,7 @@ export const streamTextEmptyNoStorageAwaited = action({
   },
 });
 
-export const streamTextWithSources = action({
+const streamTextWithSources = app.action({
   args: { threadId: v.string(), sendSources: v.optional(v.boolean()) },
   handler: async (ctx, { threadId, sendSources }) => {
     const saveStreamDeltas: StreamingOptions = {
@@ -328,21 +316,21 @@ export const streamTextWithSources = action({
   },
 });
 
-const testApi: ApiFromModules<{
-  fns: {
-    streamTextReturnImmediately: typeof streamTextReturnImmediately;
-    streamTextThrottled: typeof streamTextThrottled;
-    streamTextThrottledAwaited: typeof streamTextThrottledAwaited;
-    streamTextAbortedMidStream: typeof streamTextAbortedMidStream;
-    streamTextNoStorage: typeof streamTextNoStorage;
-    streamTextNoStorageImmediate: typeof streamTextNoStorageImmediate;
-    streamTextEmptyNoStorageAwaited: typeof streamTextEmptyNoStorageAwaited;
-    streamTextEmptyAwaited: typeof streamTextEmptyAwaited;
-    streamTextEmptyReturnImmediately: typeof streamTextEmptyReturnImmediately;
-    streamTextCleanupFailure: typeof streamTextCleanupFailure;
-    streamTextWithSources: typeof streamTextWithSources;
-  };
-}>["fns"] = anyApi["streamText.test"] as any;
+const { api, createTest } = app.defineModules({
+  streamText: {
+    streamTextReturnImmediately,
+    streamTextEmptyAwaited,
+    streamTextEmptyReturnImmediately,
+    streamTextThrottled,
+    streamTextThrottledAwaited,
+    streamTextNoStorage,
+    streamTextNoStorageImmediate,
+    streamTextCleanupFailure,
+    streamTextAbortedMidStream,
+    streamTextEmptyNoStorageAwaited,
+    streamTextWithSources,
+  },
+});
 
 describe("streamText source visibility", () => {
   test.each([
@@ -351,12 +339,12 @@ describe("streamText source visibility", () => {
   ])(
     "keeps awaited deltas healthy with sources $name",
     async ({ sendSources }) => {
-      const t = initConvexTest(schema);
+      const t = createTest();
       const threadId = await t.run(async (ctx) =>
         createThread(ctx, components.agent, { userId: "u1" }),
       );
 
-      await t.action(testApi.streamTextWithSources, {
+      await t.action(api.streamText.streamTextWithSources, {
         threadId,
         ...(sendSources === undefined ? {} : { sendSources }),
       });
@@ -426,12 +414,12 @@ describe("streamText source visibility", () => {
 
 describe("streamText with saveStreamDeltas.returnImmediately (issue #265)", () => {
   test("persists the final assistant text to the messages table", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextReturnImmediately, { threadId });
+    await t.action(api.streamText.streamTextReturnImmediately, { threadId });
 
     // Allow any background work scheduled by consumeStream to settle.
     await t.finishAllScheduledFunctions(() => {});
@@ -501,13 +489,13 @@ describe("streamText abort cleanup", () => {
   });
 
   test("surfaces a cleanup failure without hiding the provider error", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
     const { providerErrors, aborts, caught } = await t.action(
-      testApi.streamTextCleanupFailure,
+      api.streamText.streamTextCleanupFailure,
       { threadId },
     );
 
@@ -534,12 +522,12 @@ describe("streamText abort cleanup", () => {
 
 describe("streamText with an empty final step (issue #274)", () => {
   test.each([
-    ["awaited", testApi.streamTextEmptyAwaited],
-    ["returnImmediately", testApi.streamTextEmptyReturnImmediately],
+    ["awaited", api.streamText.streamTextEmptyAwaited],
+    ["returnImmediately", api.streamText.streamTextEmptyReturnImmediately],
   ])(
     "finalizes the pending assistant message in the %s path",
     async (_, fn) => {
-      const t = initConvexTest(schema);
+      const t = createTest();
       const threadId = await t.run(async (ctx) =>
         createThread(ctx, components.agent, { userId: "u1" }),
       );
@@ -585,12 +573,12 @@ describe("streamText with an empty final step (issue #274)", () => {
 
 describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
   test("deltas hold the full text when the generation outpaces the throttle", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextThrottled, { threadId });
+    await t.action(api.streamText.streamTextThrottled, { threadId });
     await t.finishAllScheduledFunctions(() => {});
 
     const streams = await t.run(async (ctx) =>
@@ -646,12 +634,12 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
   });
 
   test("an out of band abort fails the generation instead of saving it", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextAbortedMidStream, { threadId });
+    await t.action(api.streamText.streamTextAbortedMidStream, { threadId });
     await t.finishAllScheduledFunctions(() => {});
 
     const streams = await t.run(async (ctx) =>
@@ -678,12 +666,12 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
   });
 
   test("the awaited path captures the stream-level finish chunk", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextThrottledAwaited, { threadId });
+    await t.action(api.streamText.streamTextThrottledAwaited, { threadId });
     await t.finishAllScheduledFunctions(() => {});
 
     const streams = await t.run(async (ctx) =>
@@ -727,12 +715,12 @@ describe("saveStreamDeltas flushes buffered parts (issue #323)", () => {
 
 describe("stream finish ownership without message storage", () => {
   test("the row still terminates when saveMessages is none", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextNoStorage, { threadId });
+    await t.action(api.streamText.streamTextNoStorage, { threadId });
     await t.finishAllScheduledFunctions(() => {});
 
     const streams = await t.run(async (ctx) =>
@@ -745,12 +733,14 @@ describe("stream finish ownership without message storage", () => {
   });
 
   test("leaves no row behind when the generation produces nothing", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextEmptyNoStorageAwaited, { threadId });
+    await t.action(api.streamText.streamTextEmptyNoStorageAwaited, {
+      threadId,
+    });
     await t.finishAllScheduledFunctions(() => {});
 
     const streams = await t.run(async (ctx) =>
@@ -763,12 +753,12 @@ describe("stream finish ownership without message storage", () => {
   });
 
   test("the row still terminates on the returnImmediately path", async () => {
-    const t = initConvexTest(schema);
+    const t = createTest();
     const threadId = await t.run(async (ctx) =>
       createThread(ctx, components.agent, { userId: "u1" }),
     );
 
-    await t.action(testApi.streamTextNoStorageImmediate, { threadId });
+    await t.action(api.streamText.streamTextNoStorageImmediate, { threadId });
     await t.finishAllScheduledFunctions(() => {});
 
     const streams = await t.run(async (ctx) =>

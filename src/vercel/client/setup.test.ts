@@ -1,29 +1,19 @@
-/// <reference types="vite/client" />
 import { test } from "vitest";
-import { convexTest } from "convex-test";
-export const modules = {
-  ...import.meta.glob("./**/*.*s"),
-  "./_generated/api.ts": () => import("../../component/_generated/api.js"),
-};
+import { defineTestApp } from "convex-test";
+import { defineSchema } from "convex/server";
+import componentTest from "../../test.js";
 
-import {
-  defineSchema,
-  type GenericSchema,
-  type SchemaDefinition,
-} from "convex/server";
-import { type AgentComponent } from "./types.js";
-import { componentsGeneric } from "convex/server";
-import component from "../../test.js";
+/**
+ * A test app with the agent component registered as `agent`.
+ * Tests that need their own functions can call `app.defineModules`.
+ */
+export const app = defineTestApp({
+  schema: defineSchema({}),
+  components: { agent: componentTest },
+});
+export const components = app.components;
 
-export function initConvexTest<
-  Schema extends SchemaDefinition<GenericSchema, boolean>,
->(schema?: Schema) {
-  const t = convexTest((schema ?? defineSchema({})) as Schema, modules);
-  component.register(t);
-  return t;
-}
-export const components = componentsGeneric() as unknown as {
-  agent: AgentComponent;
-};
+/** Create a fresh test instance with no app functions defined. */
+export const initConvexTest = app.defineModules({}).createTest;
 
 test("setup", () => {});
