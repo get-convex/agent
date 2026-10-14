@@ -1,5 +1,17 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import {
+  AssistantRuntimeProvider,
+  ComposerPrimitive,
+} from "@assistant-ui/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { UIMessage } from "@convex-dev/agent/react";
 import type { PaginationStatus } from "convex/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,6 +61,40 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("useConvexRuntime", () => {
+  it("disables the Stop button until a stream is available to cancel", async () => {
+    const sending = Promise.withResolvers<void>();
+    mocks.send.mockReturnValue(sending.promise);
+    mocks.abort.mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(() => useConvexRuntime("thread-1"));
+    render(
+      <AssistantRuntimeProvider runtime={result.current.runtime}>
+        <ComposerPrimitive.Cancel>Stop response</ComposerPrimitive.Cancel>
+      </AssistantRuntimeProvider>,
+    );
+    act(() => result.current.runtime.thread.append("Tell a story"));
+    await waitFor(() =>
+      expect(result.current.runtime.thread.getState().isRunning).toBe(true),
+    );
+    const stop = screen.getByRole("button", {
+      name: "Stop response",
+    }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(true);
+    fireEvent.click(stop);
+    expect(mocks.abort).not.toHaveBeenCalled();
+    mocks.messages = [streamingMessage];
+    rerender();
+    expect(stop.disabled).toBe(false);
+    fireEvent.click(stop);
+    expect(mocks.abort).toHaveBeenCalledWith({
+      threadId: "thread-1",
+      order: 1,
+    });
+    mocks.messages = [{ ...streamingMessage, status: "failed" }];
+    rerender();
+    await act(async () => sending.resolve());
+    expect(stop.disabled).toBe(true);
+  });
+
   it("disables sending while the first history page loads, without marking it as generation", () => {
     mocks.status = "LoadingFirstPage";
     const { result, rerender } = renderHook(() => useConvexRuntime("thread-1"));
