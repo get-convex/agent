@@ -1,4 +1,5 @@
 import { AssistantRuntimeProvider, AuiIf } from "@assistant-ui/react";
+import { useState } from "react";
 import { useDemoThread } from "../hooks/use-demo-thread";
 import { Thread } from "./assistant-ui/Thread";
 import { useConvexRuntime } from "./assistant-ui/useConvexRuntime";
@@ -27,6 +28,25 @@ function Conversation({
 }) {
   const { runtime, error, paginationStatus, loadMore } =
     useConvexRuntime(threadId);
+  const [isCreatingThread, setIsCreatingThread] = useState(false);
+  const [newThreadError, setNewThreadError] = useState<string>();
+
+  const handleNewThread = async () => {
+    setNewThreadError(undefined);
+    setIsCreatingThread(true);
+    try {
+      await resetThread();
+    } catch (cause) {
+      setNewThreadError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to create a new conversation.",
+      );
+    } finally {
+      setIsCreatingThread(false);
+    }
+  };
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-full min-h-0 flex-col bg-white">
@@ -42,13 +62,23 @@ function Conversation({
           <AuiIf condition={(s) => !s.thread.isRunning}>
             <button
               type="button"
-              onClick={() => void resetThread()}
-              className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50"
+              onClick={() => void handleNewThread()}
+              disabled={isCreatingThread}
+              aria-busy={isCreatingThread}
+              className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
             >
               New conversation
             </button>
           </AuiIf>
         </header>
+        {newThreadError && (
+          <p
+            role="alert"
+            className="mx-auto w-full max-w-3xl px-4 py-3 text-sm text-red-700"
+          >
+            {newThreadError}
+          </p>
+        )}
         {error && (
           <div
             role="alert"
