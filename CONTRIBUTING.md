@@ -10,8 +10,7 @@ npm run dev
 ## Testing
 
 ```sh
-npm run clean
-npm run build
+npm run build:clean
 npm run typecheck
 npm run lint
 npm run test
@@ -22,8 +21,8 @@ npm run test
 ### Building a one-off package
 
 ```sh
-npm run clean
 npm ci
+npm run build:clean
 npm pack
 ```
 

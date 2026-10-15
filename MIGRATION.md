@@ -22,7 +22,7 @@ pnpm add @ai-sdk/openai@^4.0.0 @ai-sdk/anthropic@^4.0.0 \
 
 Update third-party providers to releases that support AI SDK 7. If your
 application uses `@convex-dev/rag` with Agent, use an AI SDK 7-compatible RAG
-release (>= 0.8.0.alpha.0).
+release (0.7.6 or newer).
 
 Avoid installing with `--force`. Mixed AI SDK major versions can compile
 against incompatible model, tool, and message types.
