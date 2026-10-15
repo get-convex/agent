@@ -14,12 +14,12 @@ import {
   mutation,
   type MutationCtx,
   query,
+  type QueryCtx,
   action,
 } from "./_generated/server.js";
 import schema from "./schema.js";
 import { stream } from "convex-helpers/server/stream";
 import { mergedStream } from "convex-helpers/server/stream";
-import { paginator } from "convex-helpers/server/pagination";
 import type { WithoutSystemFields } from "convex/server";
 import {
   getPersistedUIMessageChunkParts,
@@ -60,10 +60,46 @@ function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
+/**
+ * Reads a stream's deltas in `start` order until `maxRows` documents or
+ * `maxBytes` bytes have been read. `isDone` is false if a limit was reached.
+ * Iterates the query instead of calling `.paginate()`, since a transaction
+ * (including its parent app function) may only call `.paginate()` once.
+ */
+async function readDeltas(
+  ctx: Pick<QueryCtx, "db">,
+  streamId: Id<"streamingMessages">,
+  opts: { startGte?: number; maxRows: number; maxBytes?: number },
+): Promise<{ page: Doc<"streamDeltas">[]; isDone: boolean }> {
+  const query = ctx.db
+    .query("streamDeltas")
+    .withIndex("streamId_start_end", (q) =>
+      opts.startGte === undefined
+        ? q.eq("streamId", streamId)
+        : q.eq("streamId", streamId).gte("start", opts.startGte),
+    );
+  const page: Doc<"streamDeltas">[] = [];
+  if (opts.maxRows <= 0) {
+    return { page, isDone: (await query.first()) === null };
+  }
+  let bytesRead = 0;
+  for await (const delta of query) {
+    page.push(delta);
+    bytesRead += convexValueSize(delta);
+    if (
+      page.length >= opts.maxRows ||
+      (opts.maxBytes !== undefined && bytesRead >= opts.maxBytes)
+    ) {
+      return { page, isDone: false };
+    }
+  }
+  return { page, isDone: true };
+}
+
 // Half the 16 MiB read limit across a request's cursors.
 const MAX_DELTA_BYTES_PER_REQUEST = 8 * 1024 * 1024;
 const MAX_BYTES_READ_PER_DELETE = 1024 * 1024;
-// Pages are read twice (paginate, then delete), so this is ~8 MiB per transaction.
+// Pages are read twice (read, then delete), so this is ~8 MiB per transaction.
 const MAX_SYNC_DELETE_PAGES = 4;
 const TIMEOUT_INTERVAL = 10 * MINUTE;
 const DELETE_STREAM_DELAY = MINUTE * 5; // 5 minutes
@@ -137,19 +173,14 @@ export const listDeltas = query({
       if (stream.threadId !== args.threadId) {
         throw new Error("Stream does not belong to the given thread");
       }
-      const { page } = await paginator(ctx.db, schema)
-        .query("streamDeltas")
-        .withIndex("streamId_start_end", (q) =>
-          q.eq("streamId", cursor.streamId).gte("start", cursor.cursor),
-        )
-        .paginate({
-          numItems: Math.min(
-            MAX_DELTAS_PER_STREAM,
-            MAX_DELTAS_PER_REQUEST - totalDeltas,
-          ),
-          maximumBytesRead: bytesRemaining,
-          cursor: null,
-        });
+      const { page } = await readDeltas(ctx, cursor.streamId, {
+        startGte: cursor.cursor,
+        maxRows: Math.min(
+          MAX_DELTAS_PER_STREAM,
+          MAX_DELTAS_PER_REQUEST - totalDeltas,
+        ),
+        maxBytes: bytesRemaining,
+      });
       totalDeltas += page.length;
       for (const d of page) {
         bytesRemaining -= convexValueSize(d);
@@ -450,14 +481,19 @@ async function deletePageForStreamId(
   ctx: MutationCtx,
   args: { streamId: Id<"streamingMessages">; cursor?: string },
 ) {
-  const deltas = await paginator(ctx.db, schema)
-    .query("streamDeltas")
-    .withIndex("streamId_start_end", (q) => q.eq("streamId", args.streamId))
-    .paginate({
-      numItems: MAX_DELTAS_PER_REQUEST,
-      maximumBytesRead: MAX_BYTES_READ_PER_DELETE,
-      cursor: args.cursor ?? null,
-    });
+  // Deltas are deleted as they're read, so each call starts from the
+  // beginning of the stream rather than from `args.cursor`. This avoids
+  // `.paginate()`, which may only be called once per transaction, and is called
+  // in a loop and alongside other paginated queries.
+  const { page, isDone } = await readDeltas(ctx, args.streamId, {
+    maxRows: MAX_DELTAS_PER_REQUEST,
+    maxBytes: MAX_BYTES_READ_PER_DELETE,
+  });
+  const deltas = {
+    page,
+    isDone,
+    continueCursor: String(page.at(-1)?.start ?? args.cursor ?? ""),
+  };
   await Promise.all(
     deltas.page.map((d) => ctx.db.delete("streamDeltas", d._id)),
   );
@@ -698,17 +734,10 @@ export async function getStreamingMessagesWithMetadata(
   const streamsToRelease: Id<"streamingMessages">[] = [];
   for (const streamingMessage of streamingMessages) {
     try {
-      const deltas = await paginator(ctx.db, schema)
-        .query("streamDeltas")
-        .withIndex("streamId_start_end", (q) =>
-          q.eq("streamId", streamingMessage._id),
-        )
-        .paginate({
-          numItems: rowsRemaining,
-          maximumRowsRead: rowsRemaining,
-          maximumBytesRead: bytesRemaining,
-          cursor: null,
-        });
+      const deltas = await readDeltas(ctx, streamingMessage._id, {
+        maxRows: rowsRemaining,
+        maxBytes: bytesRemaining,
+      });
       if (!deltas.isDone) {
         throw new Error(
           `Delta logs for order ${order} exceed the ${MAX_MATERIALIZATION_BYTES} byte or ${MAX_MATERIALIZATION_ROWS} document recovery budget at stream ${streamingMessage._id}`,

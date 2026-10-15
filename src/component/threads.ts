@@ -1,5 +1,4 @@
 import { assert, omit, pick } from "convex-helpers";
-import { paginator } from "convex-helpers/server/pagination";
 import { partial } from "convex-helpers/validators";
 import { paginationOptsValidator } from "convex/server";
 import type { ObjectType } from "convex/values";
@@ -47,7 +46,7 @@ export const listThreadsByUserId = query({
     paginationOpts: v.optional(paginationOptsValidator),
   },
   handler: async (ctx, args) => {
-    const threads = await paginator(ctx.db, schema)
+    const threads = await ctx.db
       .query("threads")
       .withIndex("userId", (q) => q.eq("userId", args.userId))
       .order(args.order ?? "desc")
@@ -224,14 +223,17 @@ async function deletePageForThreadIdHandler(
   ctx: MutationCtx,
   args: DeleteThreadArgs,
 ): Promise<DeleteThreadReturns> {
-  const messages = await paginator(ctx.db, schema)
+  const messages = await ctx.db
     .query("messages")
     .withIndex("threadId_status_tool_order_stepOrder", (q) =>
       q.eq("threadId", args.threadId),
     )
     .paginate({
       numItems: args.limit ?? 100,
-      cursor: args.cursor ?? null,
+      // Cursors from the previous paginator-based implementation are JSON
+      // arrays and aren't valid built-in cursors. Messages are deleted as
+      // they're read, so restarting from the beginning is safe.
+      cursor: args.cursor && !args.cursor.startsWith("[") ? args.cursor : null,
     });
   await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
   if (messages.isDone) {
