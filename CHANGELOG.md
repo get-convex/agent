@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.8
 
 - Fix answering a tool approval after an earlier approval in the same thread
   (#404)
