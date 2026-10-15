@@ -1,4 +1,5 @@
 import { assert, omit, pick } from "convex-helpers";
+import { paginator } from "convex-helpers/server/pagination";
 import { partial } from "convex-helpers/validators";
 import { paginationOptsValidator } from "convex/server";
 import type { ObjectType } from "convex/values";
@@ -223,17 +224,17 @@ async function deletePageForThreadIdHandler(
   ctx: MutationCtx,
   args: DeleteThreadArgs,
 ): Promise<DeleteThreadReturns> {
-  const messages = await ctx.db
+  // Uses paginator: deleteAllForThreadIdAsync also paginates stream deltas in
+  // the same transaction, and built-in .paginate() is limited to once per
+  // transaction.
+  const messages = await paginator(ctx.db, schema)
     .query("messages")
     .withIndex("threadId_status_tool_order_stepOrder", (q) =>
       q.eq("threadId", args.threadId),
     )
     .paginate({
       numItems: args.limit ?? 100,
-      // Cursors from the previous paginator-based implementation are JSON
-      // arrays and aren't valid built-in cursors. Messages are deleted as
-      // they're read, so restarting from the beginning is safe.
-      cursor: args.cursor && !args.cursor.startsWith("[") ? args.cursor : null,
+      cursor: args.cursor ?? null,
     });
   await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
   if (messages.isDone) {

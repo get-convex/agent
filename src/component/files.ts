@@ -1,7 +1,10 @@
 import type { Doc, Id } from "./_generated/dataModel.js";
 import { mutation, type MutationCtx, query } from "./_generated/server.js";
 import { v } from "./schema.js";
-import { paginationOptsValidator } from "convex/server";
+import {
+  paginationOptsValidator,
+  paginationResultValidator,
+} from "convex/server";
 import type { Infer } from "convex/values";
 
 const FILE_CLEANUP_GRACE_MS = 24 * 60 * 60 * 1000;
@@ -199,17 +202,9 @@ export const getFilesToDelete = query({
           .lte("lastTouchedAt", Date.now() - FILE_CLEANUP_GRACE_MS),
       )
       .paginate(args.paginationOpts);
-    return {
-      page: files.page,
-      continueCursor: files.continueCursor,
-      isDone: files.isDone,
-    };
+    return files;
   },
-  returns: v.object({
-    page: v.array(v.doc("files")),
-    continueCursor: v.string(),
-    isDone: v.boolean(),
-  }),
+  returns: paginationResultValidator(v.doc("files")),
 });
 
 export const deleteFiles = mutation({

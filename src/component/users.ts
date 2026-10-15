@@ -1,3 +1,4 @@
+import { paginator } from "convex-helpers/server/pagination";
 import { stream } from "convex-helpers/server/stream";
 import { nullable } from "convex-helpers/validators";
 import { paginationOptsValidator } from "convex/server";
@@ -154,28 +155,17 @@ async function deletePageForUserId(
 
   // Phase 1: Get a thread to work on if we don't have one
   if (!threadsCursor || !threadInProgress) {
-    // Phase 2 paginates messages in this same transaction, and `.paginate()`
-    // may only be called once per transaction, so walk threads by
-    // `_creationTime` instead. `threadsCursor` is the `_creationTime` of the
-    // last thread started. Cursors from the previous paginator-based
-    // implementation (JSON arrays) restart from the newest thread, which is
-    // safe since processed threads are deleted.
-    const lastCreationTime =
-      args.threadsCursor && !args.threadsCursor.startsWith("[")
-        ? Number(args.threadsCursor)
-        : undefined;
-    const thread = await ctx.db
+    const threads = await paginator(ctx.db, schema)
       .query("threads")
-      .withIndex("userId", (q) =>
-        lastCreationTime === undefined || Number.isNaN(lastCreationTime)
-          ? q.eq("userId", args.userId)
-          : q.eq("userId", args.userId).lt("_creationTime", lastCreationTime),
-      )
+      .withIndex("userId", (q) => q.eq("userId", args.userId))
       .order("desc")
-      .first();
-    if (thread) {
-      threadsCursor = String(thread._creationTime);
-      threadInProgress = thread._id;
+      .paginate({
+        numItems: 1,
+        cursor: args.threadsCursor ?? null,
+      });
+    threadsCursor = threads.continueCursor;
+    if (threads.page.length > 0) {
+      threadInProgress = threads.page[0]._id;
       messagesCursor = null;
       streamsInProgress = false;
       streamOrder = undefined;
@@ -183,7 +173,7 @@ async function deletePageForUserId(
     } else {
       return {
         isDone: true,
-        threadsCursor: threadsCursor ?? "",
+        threadsCursor,
         threadInProgress,
         messagesCursor,
         streamsInProgress,
@@ -195,7 +185,7 @@ async function deletePageForUserId(
 
   // Phase 2: Delete messages for the current thread
   if (!streamsInProgress) {
-    const messages = await ctx.db
+    const messages = await paginator(ctx.db, schema)
       .query("messages")
       .withIndex("threadId_status_tool_order_stepOrder", (q) =>
         q.eq("threadId", threadInProgress!),
@@ -203,7 +193,7 @@ async function deletePageForUserId(
       .order("desc")
       .paginate({
         numItems: 100,
-        cursor: builtInCursorOrNull(messagesCursor),
+        cursor: args.messagesCursor,
       });
     await Promise.all(messages.page.map((m) => deleteMessage(ctx, m)));
 
@@ -270,12 +260,3 @@ export const getThreadUserId = internalQuery({
     return thread?.userId ?? null;
   },
 });
-
-/**
- * Cursors from the previous paginator-based implementation are JSON arrays and
- * aren't valid built-in pagination cursors. Deletion pages delete what they
- * read, so restarting from the beginning is safe.
- */
-function builtInCursorOrNull(cursor: string | null | undefined) {
-  return cursor && !cursor.startsWith("[") ? cursor : null;
-}
