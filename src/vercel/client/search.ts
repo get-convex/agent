@@ -677,6 +677,10 @@ export async function fetchContextWithPrompt(
     }
   }
 
+  const continuation =
+    args.prompt === undefined
+      ? approvalContinuation(promptMessage, searchMessages, recentMessages)
+      : undefined;
   const search = docsToModelMessages(searchMessages);
   const recent = docsToModelMessages(prePromptDocs);
   const inputMessages = messages.map(toModelMessage);
@@ -703,51 +707,11 @@ export async function fetchContextWithPrompt(
       })
     : allMessages;
 
-  if (
-    args.prompt === undefined &&
-    promptMessage?.message?.role === "tool" &&
-    promptMessage.message.content.some(
-      (part) => part.type === "tool-approval-response",
-    )
-  ) {
-    const responseIds = new Set(
-      promptMessage.message.content.flatMap((part) =>
-        part.type === "tool-approval-response" ? [part.approvalId] : [],
-      ),
-    );
-    const storedOrderDocs = recentMessages.filter(
-      (doc) => doc.order === promptMessage.order,
-    );
-    const requestContents = storedOrderDocs.flatMap((doc) =>
-      doc.message?.role === "assistant" &&
-      Array.isArray(doc.message.content) &&
-      doc.message.content.some(
-        (part) =>
-          part.type === "tool-approval-request" &&
-          responseIds.has(part.approvalId),
-      )
-        ? [doc.message.content]
-        : [],
-    );
-    if (requestContents.length !== 1) {
-      throw new Error(
-        "Approval continuation requires one complete request message",
-      );
-    }
-    const approvalIds = new Set(
-      requestContents[0].flatMap((part) =>
-        part.type === "tool-approval-request" ? [part.approvalId] : [],
-      ),
-    );
-    if ([...responseIds].some((approvalId) => !approvalIds.has(approvalId))) {
-      throw new Error(
-        "Approval continuation requires one complete request message",
-      );
-    }
+  if (continuation) {
     processedMessages = prepareApprovalContext(
       processedMessages,
-      approvalIds,
-      docsToModelMessages(storedOrderDocs),
+      continuation.approvalIds,
+      continuation.storedContext,
     );
   }
 
@@ -765,6 +729,61 @@ export async function fetchContextWithPrompt(
     messages: processedMessages,
     order: promptMessage?.order,
     stepOrder: promptMessage?.stepOrder,
+  };
+}
+
+// Read before the context handler runs and from copies, since the messages
+// it is given share nested objects with these docs.
+function approvalContinuation(
+  promptMessage: MessageDoc | undefined,
+  searchMessages: MessageDoc[],
+  recentMessages: MessageDoc[],
+): { approvalIds: Set<string>; storedContext: ModelMessage[] } | undefined {
+  if (
+    promptMessage?.message?.role !== "tool" ||
+    !promptMessage.message.content.some(
+      (part) => part.type === "tool-approval-response",
+    )
+  ) {
+    return undefined;
+  }
+  const responseIds = new Set(
+    promptMessage.message.content.flatMap((part) =>
+      part.type === "tool-approval-response" ? [part.approvalId] : [],
+    ),
+  );
+  const requestContents = recentMessages.flatMap((doc) =>
+    doc.order === promptMessage.order &&
+    doc.message?.role === "assistant" &&
+    Array.isArray(doc.message.content) &&
+    doc.message.content.some(
+      (part) =>
+        part.type === "tool-approval-request" &&
+        responseIds.has(part.approvalId),
+    )
+      ? [doc.message.content]
+      : [],
+  );
+  if (requestContents.length !== 1) {
+    throw new Error(
+      "Approval continuation requires one complete request message",
+    );
+  }
+  const approvalIds = new Set(
+    requestContents[0].flatMap((part) =>
+      part.type === "tool-approval-request" ? [part.approvalId] : [],
+    ),
+  );
+  if ([...responseIds].some((approvalId) => !approvalIds.has(approvalId))) {
+    throw new Error(
+      "Approval continuation requires one complete request message",
+    );
+  }
+  return {
+    approvalIds,
+    storedContext: docsToModelMessages(
+      structuredClone([...searchMessages, ...recentMessages]),
+    ),
   };
 }
 
