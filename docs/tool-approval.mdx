@@ -172,7 +172,13 @@ remains pending while you resume an earlier sibling.
 If an unrelated generation starts while approvals are still unresolved, they
 are **automatically denied** with the reason
 `"auto-denied: new generation started"`. This prevents broken message
-histories where tool calls lack results.
+histories where tool calls lack results. These denials are synthetic and only
+added to the model's context for that request; they are not saved, so the
+approvals remain pending in storage.
+
+This does not apply when resuming approvals: on that continuation, earlier
+approvals that were not part of the resume are omitted from that model request.
+No response is written for them, so they remain pending in storage.
 
 ## Client-side flow
 

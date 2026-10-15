@@ -150,7 +150,7 @@ import { SmoothText } from "@convex-dev/agent/react";
 
 You can consume the stream in all the ways you can with the underlying AI SDK -
 for instance iterating over the content, or using
-[`result.toDataStreamResponse()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-data-stream-response).
+[`result.toUIMessageStreamResponse()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#to-ui-message-stream-response).
 
 If you are not also saving the deltas, it might look like this:
 
@@ -161,6 +161,11 @@ for await (const textPart of result.textStream) {
   console.log(textPart);
 }
 ```
+
+`agent.streamObject` saves the object from the AI SDK's `onFinish`, which only
+runs once the stream has been read to the end. Read `result.partialObjectStream`
+to the end before the action returns: awaiting `result.object` alone does not
+read the stream.
 
 If you want to both iterate as the stream is happening, as well as save the
 deltas, you can pass `{ saveStreamDeltas: { returnImmediately: true } }` to

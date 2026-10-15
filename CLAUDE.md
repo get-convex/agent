@@ -88,26 +88,22 @@ Follow the rules in `.cursor/rules/convex_rules.mdc`:
 - `@convex-dev/agent/validators` - Convex validators for integration
 - `@convex-dev/agent/test` - Testing utilities
 
-## AI Guidance: Helping Users Upgrade to v0.6.0
+## AI Guidance: Helping Users Upgrade
 
-**IMPORTANT: v0.6.0 requires AI SDK v6 (ai@^6.0.0)**
-
-When helping users upgrade from @convex-dev/agent v0.3.x (AI SDK v5) to v0.6.0 (AI SDK v6):
-
-### Step 1: Update Dependencies First
-
-Update all AI SDK packages together to avoid peer dependency conflicts:
+**IMPORTANT: v0.7 requires AI SDK v7 (ai@^7.0.0) and Node.js 22 or newer.** For v0.6.x to v0.7, follow `MIGRATION.md`.
 
 ```bash
-npm install @convex-dev/agent@^0.6.0 ai@^6.0.35 @ai-sdk/provider-utils@^4.0.6
-npm install @ai-sdk/openai@^3.0.10  # or whichever provider
+npm install @convex-dev/agent@^0.7.0 ai@^7.0.0 @ai-sdk/provider@^4.0.0 @ai-sdk/provider-utils@^5.0.0
+npm install @ai-sdk/openai@^4.0.0  # or whichever provider
 ```
 
-**Compatible sibling packages:**
-- `@convex-dev/rag@^0.7.0` (v0.6.0 has type conflicts with AI SDK v6)
-- `@convex-dev/workflow@^0.3.2`
+`@convex-dev/rag` needs 0.7.6 or newer, the first release on AI SDK 7.
 
-### Step 2: Detect v5 Patterns
+### Historical: v0.3.x (AI SDK v5) to v0.6.0 (AI SDK v6)
+
+The remaining sections describe the older v5 to v6 upgrade. Apply them first when a project is still on v0.3.x, then continue with `MIGRATION.md`.
+
+#### Step 2: Detect v5 Patterns
 
 Search for these patterns indicating v5 usage:
 - `createTool({ args:` - should be `inputSchema`
@@ -118,14 +114,14 @@ Search for these patterns indicating v5 usage:
 - `@ai-sdk/*` packages at v1.x or v2.x - should be v3.x
 - Type imports: `LanguageModelV2` → `LanguageModelV3`, `EmbeddingModel<string>` → `EmbeddingModelV3`
 
-### Step 3: Apply Transformations
+#### Step 3: Apply Transformations
 
 **Tool definitions:**
 ```typescript
 // BEFORE (v5)
 const myTool = createTool({
   description: "...",
-  parameters: z.object({ query: z.string() }),
+  args: z.object({ query: z.string() }),
   handler: async (ctx, args) => {
     return args.query.toUpperCase();
   }
@@ -202,14 +198,14 @@ await generateObject({
 })
 ```
 
-### Step 4: Verify
+#### Step 4: Verify
 
 ```bash
 npm run typecheck
 npm test
 ```
 
-### Common Issues
+#### Common Issues
 
 - **EmbeddingModelV2 vs V3 errors**: Ensure all `@ai-sdk/*` packages are v3.x
 - **Tool `args` vs `input`**: v6 uses `input` in execute signature (2nd param)
@@ -217,7 +213,7 @@ npm test
 - **Type import errors**: `LanguageModelV2` is now `LanguageModelV3`, `EmbeddingModel<string>` is now `EmbeddingModelV3` (no longer generic)
 - **generateObject mode errors**: `mode: "json"` was removed in v6 - just remove the mode option
 
-### New v6 Features to Mention
+#### New v6 Features to Mention
 
 After upgrade, users can now use:
 - **Tool approval**: `needsApproval` in createTool, `agent.approveToolCall()`, `agent.denyToolCall()`
