@@ -575,7 +575,7 @@ data at rest is backwards compatible.
   - On the right you can see the selected message's details, as well as fetch
     contextual messages to investigate what messages would get fetched for that
     message, with configurable ContextOptions.
-  - Use the [hosted version](https://get-convex.github.io/agent/) or run it
+  - Use the [hosted version](https://convex.github.io/agent/) or run it
     locally with `npx @convex-dev/agent-playground` - uses Vite internally for
     now.
   - API key management (to authenticate into the UI Playground)

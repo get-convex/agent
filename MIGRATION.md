@@ -94,4 +94,4 @@ for upstream breaking changes.
 
 An earlier version of this guide to transition from AI SDK v5 to v6 can be found here:
 
-https://github.com/get-convex/agent/blob/2ac74487d69462b6575e21526e09d52a9371c578/MIGRATION.md
+https://github.com/convex/agent/blob/2ac74487d69462b6575e21526e09d52a9371c578/MIGRATION.md

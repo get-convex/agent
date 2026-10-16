@@ -3,13 +3,13 @@
   "description": "A dashboard for the Convex Agent component.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/get-convex/agent",
+    "url": "https://github.com/convex/agent",
     "directory": "playground"
   },
-  "homepage": "https://get-convex.github.io/agent/",
+  "homepage": "https://convex.github.io/agent/",
   "bugs": {
     "email": "support@convex.dev",
-    "url": "https://github.com/get-convex/agent/issues"
+    "url": "https://github.com/convex/agent/issues"
   },
   "version": "0.0.23",
   "license": "Apache-2.0",
