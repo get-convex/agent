@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Save every step the AI SDK runs and fail only once it gives up; onStepEnd now
+  runs before the step is saved, and ai@^7.0.91 is required (#397)
+
 ## 0.7.8
 
 - Fix answering a tool approval after an earlier approval in the same thread
