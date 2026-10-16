@@ -63,7 +63,7 @@ const Index = () => {
             <div className="flex items-center">
               <nav className="hidden md:flex">
                 <a
-                  href="https://github.com/get-convex/agent#installation"
+                  href="https://github.com/convex/agent#installation"
                   className="neutral-800 hover:text-gray-900"
                 >
                   Readme
@@ -339,7 +339,7 @@ const Index = () => {
             </div>
             <div className="flex items-center space-x-6 mt-4 md:mt-0">
               <a
-                href="https://github.com/get-convex/agent#installation"
+                href="https://github.com/convex/agent#installation"
                 className="text-white hover:text-gray-300 text-sm"
               >
                 Readme

@@ -63,15 +63,15 @@ or dynamic workflows.
 Play with the example:
 
 ```sh
-git clone https://github.com/get-convex/agent.git
+git clone https://github.com/convex/agent.git
 cd agent
 npm run setup
 npm run dev
 ```
 
 Found a bug? Feature request?
-[File it here](https://github.com/get-convex/agent/issues).
+[File it here](https://github.com/convex/agent/issues).
 
 <!-- END: Include on https://convex.dev/components -->
 
-[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/get-convex/agent)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/convex/agent)

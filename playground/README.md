@@ -14,4 +14,4 @@ This is a playground for @convex-dev/agent.
 
 Read the [docs](https://docs.convex.dev/agents/playground) for more details.
 
-There is also a [hosted version here](https://get-convex.github.io/agent/).
+There is also a [hosted version here](https://convex.github.io/agent/).
