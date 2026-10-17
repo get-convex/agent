@@ -47,7 +47,7 @@ export const listThreadsByUserId = query({
     paginationOpts: v.optional(paginationOptsValidator),
   },
   handler: async (ctx, args) => {
-    const threads = await paginator(ctx.db, schema)
+    const threads = await ctx.db
       .query("threads")
       .withIndex("userId", (q) => q.eq("userId", args.userId))
       .order(args.order ?? "desc")
@@ -224,6 +224,9 @@ async function deletePageForThreadIdHandler(
   ctx: MutationCtx,
   args: DeleteThreadArgs,
 ): Promise<DeleteThreadReturns> {
+  // Uses paginator: deleteAllForThreadIdAsync also paginates stream deltas in
+  // the same transaction, and built-in .paginate() is limited to once per
+  // transaction.
   const messages = await paginator(ctx.db, schema)
     .query("messages")
     .withIndex("threadId_status_tool_order_stepOrder", (q) =>
