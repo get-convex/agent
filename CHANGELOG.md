@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Avoid TS2590 in Agent and standalone generation options with large model
+  catalogs.
+
 ## 0.7.8
 
 - Fix answering a tool approval after an earlier approval in the same thread

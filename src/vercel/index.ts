@@ -212,6 +212,44 @@ export type {
   UsageHandler,
 };
 
+/** Configuration for an Agent, with a required language model. */
+export interface AgentOptions<
+  AgentTools extends ToolSet = ToolSet,
+> extends Config {
+  /**
+   * The name for the agent. This will be attributed on each message
+   * created by this agent.
+   */
+  name: string;
+  /**
+   * The LLM model to use for generating / streaming text and objects.
+   * e.g.
+   * import { openai } from "@ai-sdk/openai"
+   * const myAgent = new Agent(components.agent, {
+   *   languageModel: openai.chat("gpt-4o-mini"),
+   */
+  languageModel: NonNullable<Config["languageModel"]>;
+  /**
+   * The default system prompt to put in each request.
+   * Override per-prompt by passing the "system" parameter.
+   */
+  instructions?: Instructions;
+  /**
+   * Tools that the agent can call out to and get responses from.
+   * They can be AI SDK tools (import {tool} from "ai")
+   * or tools that have Convex context
+   * (import { createTool } from "@convex-dev/agent")
+   */
+  tools?: AgentTools;
+  /**
+   * When generating or streaming text with tools available, this
+   * determines when to stop. Defaults to the AI SDK default.
+   */
+  stopWhen?:
+    | StopCondition<NoInfer<AgentTools>>
+    | Array<StopCondition<NoInfer<AgentTools>>>;
+}
+
 export class Agent<
   /**
    * You can require that all `ctx` args to generateText & streamText
@@ -237,40 +275,7 @@ export class Agent<
 > {
   constructor(
     public component: AgentComponent,
-    public options: Config & {
-      /**
-       * The name for the agent. This will be attributed on each message
-       * created by this agent.
-       */
-      name: string;
-      /**
-       * The LLM model to use for generating / streaming text and objects.
-       * e.g.
-       * import { openai } from "@ai-sdk/openai"
-       * const myAgent = new Agent(components.agent, {
-       *   languageModel: openai.chat("gpt-4o-mini"),
-       */
-      languageModel: LanguageModel;
-      /**
-       * The default system prompt to put in each request.
-       * Override per-prompt by passing the "system" parameter.
-       */
-      instructions?: Instructions;
-      /**
-       * Tools that the agent can call out to and get responses from.
-       * They can be AI SDK tools (import {tool} from "ai")
-       * or tools that have Convex context
-       * (import { createTool } from "@convex-dev/agent")
-       */
-      tools?: AgentTools;
-      /**
-       * When generating or streaming text with tools available, this
-       * determines when to stop. Defaults to the AI SDK default.
-       */
-      stopWhen?:
-        | StopCondition<NoInfer<AgentTools>>
-        | Array<StopCondition<NoInfer<AgentTools>>>;
-    },
+    public options: AgentOptions<AgentTools>,
   ) {
     if (this.options.textEmbeddingModel && !this.options.embeddingModel) {
       warnDeprecation(

@@ -148,7 +148,6 @@ export async function startGeneration<
     Config & {
       userId?: string | null;
       threadId?: string;
-      languageModel?: LanguageModel;
       agentName: string;
       agentForToolCtx?: Agent;
     },
